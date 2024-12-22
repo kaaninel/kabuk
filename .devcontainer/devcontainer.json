@@ -1,0 +1,10 @@
+{
+	"name": "Dev",
+	"image": "mcr.microsoft.com/devcontainers/base:jammy",
+	"runArgs": ["--device=/dev/net/tun"],
+	"features": {
+    "ghcr.io/tailscale/codespace/tailscale": {},
+		"ghcr.io/nordcominc/devcontainer-features/android-sdk:1": {}
+	},
+	"forwardPorts": []
+}
