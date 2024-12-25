@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'create_page.dart';
-import 'chat_page.dart';
-import 'explore_page.dart';
-import 'apps_page.dart';
+import 'pages/create_page.dart';
+import 'pages/chat_page.dart';
+import 'pages/explore_page.dart';
+import 'pages/apps_page.dart';
 
 void main() {
   runApp(const KabukApp());

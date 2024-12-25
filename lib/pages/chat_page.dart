@@ -31,8 +31,9 @@ class ChatPageState extends State<ChatPage> {
           ),
         ],
       ),
-      body: const Center(
-        child: Text('Chat Page'),
+      body: ListView(
+        padding: const EdgeInsets.all(8.0),
+        children: const [],
       ),
       bottomNavigationBar: const Padding(
         padding: EdgeInsets.all(8.0),
@@ -153,5 +154,14 @@ class InputRowState extends State<InputRow>
         ),
       ],
     );
+  }
+}
+
+class MessageGroup extends StatelessWidget {
+  const MessageGroup({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Placeholder();
   }
 }
