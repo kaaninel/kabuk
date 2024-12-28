@@ -36,10 +36,10 @@ class _CreatePageState extends State<CreatePage> {
           )
       ])),
       appBar: AppBar(
-        title: const Text("Timeline"),
+        title: Text(CreatePage.types.keys.elementAt(page).$3),
         actions: [
-          IconButton(onPressed: () {}, icon: const Icon(Icons.filter_list)),
-          IconButton(onPressed: () {}, icon: const Icon(Icons.search)),
+          IconButton(onPressed: () {}, icon: const Icon(Icons.save)),
+          IconButton(onPressed: () {}, icon: const Icon(Icons.share)),
           const Padding(
             padding: EdgeInsets.only(right: 8),
             child: CircleAvatar(
@@ -92,30 +92,20 @@ class _CreateArticleState extends State<CreateArticle> {
             ),
           ),
         ),
-        Row(mainAxisAlignment: MainAxisAlignment.end, spacing: 8, children: [
-          ElevatedButton.icon(
-              onPressed: () {}, icon: Icon(Icons.save), label: Text("Save")),
-          ElevatedButton.icon(
-              onPressed: () {}, icon: Icon(Icons.share), label: Text("Share")),
-        ]),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              spacing: 8,
-              children: [
-                FilledButton.tonal(onPressed: () {}, child: Icon(Icons.photo)),
-                FilledButton.tonal(
-                    onPressed: () {}, child: Icon(Icons.article)),
-                FilledButton.tonal(
-                    onPressed: () {}, child: Icon(Icons.location_on)),
-                FilledButton.tonal(onPressed: () {}, child: Icon(Icons.person)),
-                FilledButton.tonal(
-                    onPressed: () {}, child: Icon(Icons.list_alt)),
-                FilledButton.tonal(
-                    onPressed: () {}, child: Icon(Icons.headphones)),
-              ]),
-        )
+        Wrap(
+            spacing: 8,
+            alignment: WrapAlignment.end,
+            verticalDirection: VerticalDirection.up,
+            children: [
+              FilledButton.tonal(onPressed: () {}, child: Icon(Icons.photo)),
+              FilledButton.tonal(onPressed: () {}, child: Icon(Icons.article)),
+              FilledButton.tonal(
+                  onPressed: () {}, child: Icon(Icons.location_on)),
+              FilledButton.tonal(onPressed: () {}, child: Icon(Icons.person)),
+              FilledButton.tonal(onPressed: () {}, child: Icon(Icons.list_alt)),
+              FilledButton.tonal(
+                  onPressed: () {}, child: Icon(Icons.headphones)),
+            ])
       ]),
     );
   }
