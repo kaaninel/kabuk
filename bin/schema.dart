@@ -53,7 +53,7 @@ String _buildClass(MapEntry<String, Map<String, dynamic>> cls,
 
   final sb = StringBuffer();
   _writeImports(sb, inheritanceImport, ranges);
-  _writeProperties(sb, cls, properties, props);
+  //_writeProperties(sb, cls, properties, props);
   _writeClassDefinition(sb, cls, inheritance, props, properties);
 
   return sb.toString();
@@ -79,13 +79,18 @@ Set<String> _extractRanges(
       .toSet();
 }
 
+final rangeMapKeys = rangeMap.keys.toList().map(_toSnakeCase).toList();
 void _writeImports(
     StringBuffer sb, Set<String> inheritanceImport, Set<String> ranges) {
   for (final range in inheritanceImport) {
-    sb.writeln('import "package:kabuk/schema/$range.dart";');
+    if (!rangeMapKeys.contains(range)) {
+      sb.writeln('import "package:kabuk/schema/$range.dart";');
+    }
   }
   for (final range in ranges) {
-    sb.writeln('import "package:kabuk/schema/$range.dart";');
+    if (!rangeMapKeys.contains(range)) {
+      sb.writeln('import "package:kabuk/schema/$range.dart";');
+    }
   }
 }
 
@@ -114,6 +119,18 @@ void _writeProperties(
   }
 }
 
+final rangeMap = {
+  "Text": "String",
+  "Boolean": "bool",
+  "Integer": "int",
+  "Float": "double",
+  "DateTime": "DateTime",
+  "Date": "DateTime",
+  "Time": "DateTime",
+  "URL": "Uri",
+  "Number": "num",
+};
+
 void _writeClassDefinition(
     StringBuffer sb,
     MapEntry<String, Map<String, dynamic>> cls,
@@ -122,25 +139,48 @@ void _writeClassDefinition(
     Map<String, dynamic> properties) {
   sb.writeln();
   _extractComment(cls.value).split("\n").forEach((line) {
-    sb.writeln("  /// $line");
+    sb.writeln("/// $line");
   });
-  final inheritenceText =
-      inheritance.isNotEmpty ? "implements ${inheritance.join(", ")}" : "";
 
-  sb.writeln("class ${cls.key.split(":").last} $inheritenceText {");
+  sb.writeln("class ${cls.key.split(":").last} {");
+  for (final parent in inheritance) {
+    sb.writeln("  final $parent ${_toCamelCase(parent)};");
+  }
+
   for (final prop in props) {
     final propDef = properties[prop];
     final range = propDef?["schema:rangeIncludes"];
-    final rangeType = range is Map
-        ? range["@id"].split(":").last
-        : [cls.key.split(":").last, propDef["@id"].split(":").last].join("");
+    String rangeType = "dynamic";
+    if (range is Map) {
+      final rangeTypeBasic = range["@id"].split(":").last;
+      rangeType = rangeMap[rangeTypeBasic] ?? rangeTypeBasic;
+      rangeType += "?";
+    }
 
-    _extractComment(propDef).split("\n").forEach((line) {
-      sb.writeln("  /// $line");
-    });
-    sb.writeln("  $rangeType ${propDef?["@id"].split(":").last};");
+    sb.writeln();
+    _extractComment(propDef)
+      .split("\\n")
+      .where((e) => e != null && e!="")
+      .map((e) => "  /// $e")
+      .forEach(sb.writeln);
+    sb.writeln("  final $rangeType ${propDef?["@id"].split(":").last};");
   }
+  sb.writeln();
+  sb.writeln("  ${cls.key.split(":").last}({");
+  for (final parent in inheritance) {
+    sb.writeln("    required this.${_toCamelCase(parent)},");
+  }
+  for (final prop in props) {
+    sb.writeln("    this.${properties[prop]["@id"].split(":").last},");
+  }
+  sb.writeln("  });");
+
   sb.writeln("}");
+}
+
+String _toCamelCase(String input) {
+  return input.splitMapJoin(RegExp(r'[^a-zA-Z0-9]'),
+      onMatch: (m) => '', onNonMatch: (m) => m.toLowerCase());
 }
 
 String _toSnakeCase(String input) {
@@ -174,6 +214,7 @@ String _extractComment(Map<String, dynamic> propDef) {
           ? comment.entries
               .where((e) => e.key.startsWith("@en"))
               .map((e) => e.value)
+              .where((e) => e != null)
               .join("\n")
           : "No comment found";
 }
