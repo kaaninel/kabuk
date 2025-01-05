@@ -1,16 +1,9 @@
-# kabuk
+## [WIP] Introduction
 
-A new Flutter project.
+Kabuk is an app for interacting your digital life with a consistent and efficient user experience. It aims to mimic a operating system with its user interface, consume resources from host system and provice a unified experience throught apps, services and devices. It behaves as a shell for underlaying operating system, this can be thought as android launchers, or explorer.exe from windows. At its core its an app for consuming RDF data displaying it in pretty widgets. 
 
-## Getting Started
+Kabuk aims to unify user experience throught services, we all use same apps just from different providers. Every little functionality is served as seperate apps and seperate user interface in current app driven world. We want to change that by seperating what providers do and what frontend does. We use RDF for defining schemas and data and bind widgets that can display this data accordingly in our system. 
 
-This project is a starting point for a Flutter application.
+Users are free to bind any compatible widget with type definitions from their schema repository. Widgets are defined in flutter using Remote Flutter Widgets and can be installed through Widget Repositories. These Widgets will be state-free and relay on purely data from knowledge store.  
 
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Providers can expose services for agents to connect. Agents can expand their knowledge store through these services and reflect this extra data on their computations and views.
