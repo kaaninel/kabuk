@@ -1,0 +1,53 @@
+- **Core Concepts**
+    - Declarative OS/Shell (Nixos-like, read-only system)
+    - Data Vaults (encrypted, access-controlled)
+    - Fluent Data (socket/stream-based, subscription-based)
+    - Actor-based architecture (Agents)
+- **User Interface**
+    - 4 Main Views: Create, Chat, Explore, Apps
+    - Explore View (default, timeline, self-arranging dashboard)
+    - Customizable Dashboards (public and private)
+    - Virtual Keyboard (view-specific)
+    - Explore view generates dashboards via information from RDF Knowledge Store
+- **Data Management**
+    - Tag-based file management
+    - RDF Knowledge Store
+    - Schema.org for default types
+    - Metadata extraction and editing
+    - Folders and Smart Folders
+    - Previews and Thumbnails
+- **App Framework**
+    - Widget-based apps (RFW)
+    - Apps exist as widgets, not standalone fullscreen activities
+    - Flutter integration for native development
+    - Embedded development platform (VSCode)
+- **Communication**
+    - gRPC-based communication
+    - Mesh network (Tailscale-like)
+    - Connection-agnostic (Bluetooth, mobile data, WiFi, etc.)
+    - End-to-end encryption
+- **Security and Authentication**
+    - JWT (or alternative binary format) and capabilities
+    - Authentication and authorization built-in
+    - Encryption for all data
+- **Services and Features**
+    - Central Notification System
+    - Central Media Management
+    - Built-in media player
+    - Built-in chat app
+    - Mixers for content (sound, video, text, etc.)
+    - Offline-first and connection-agnostic
+    - Predictable system/UX with minimal per service branding
+- **Infrastructure**
+    - Relay servers and Home servers for heavy lifting
+    - Hypervisor for virtualization
+    - Blob storage (initially SQLite, possibly with small files)
+    - Presentation API for rendering and casting
+    - Profiling enabled by default
+- **Development and Tools**
+    - Embedded development platform
+    - VSCode integration
+    - Flutter integration
+    - SQL/RDF/N3 bridge
+    - Generic metadata editor
+    - Expand/Fetch functionality for data fetching and population

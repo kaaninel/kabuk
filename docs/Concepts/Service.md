@@ -1,0 +1,1 @@
+Services are foreign unknown systems agents can discover and consume through external tools and connectors. 
