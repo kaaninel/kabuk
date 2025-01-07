@@ -30,6 +30,8 @@
     - JWT (or alternative binary format) and capabilities
     - Authentication and authorization built-in
     - Encryption for all data
+    - Backup key sales (optional)
+    - SBC sales for home/relay server (optional)
 - **Services and Features**
     - Central Notification System
     - Central Media Management
