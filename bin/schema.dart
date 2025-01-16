@@ -160,7 +160,7 @@ void _writeClassDefinition(
     sb.writeln();
     _extractComment(propDef)
       .split("\\n")
-      .where((e) => e != null && e!="")
+      .where((e) => e!="")
       .map((e) => "  /// $e")
       .forEach(sb.writeln);
     sb.writeln("  final $rangeType ${propDef?["@id"].split(":").last};");
