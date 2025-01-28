@@ -1,5 +1,5 @@
 name: schema
-description: A starting point for Dart libraries or applications.
+description: Base schema definitions for Kabuk Project
 version: 0.0.1
 
 environment:
@@ -7,7 +7,7 @@ environment:
 resolution: workspace
 
 dependencies:
-  # path: ^1.8.0
+  sqlite3: ^2.7.2
 
 dev_dependencies:
   lints: ^5.0.0

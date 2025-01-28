@@ -3,6 +3,6 @@
 /// More dartdocs go here.
 library;
 
-export 'src/schema_base.dart';
+export 'src/base.dart';
 
 // TODO: Export any libraries intended for clients of this package.

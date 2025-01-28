@@ -17,7 +17,7 @@ dependencies:
   path: ^1.8.0
   http: ^0.13.3
   schema: ^0.0.1
-  kabuk: ^1.0.1
+  kablo: ^1.0.1
 
 dev_dependencies:
   flutter_test:

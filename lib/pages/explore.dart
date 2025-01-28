@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:kabuk/ui/scaffolding.dart';
 
 class ExplorePage extends StatelessWidget {
   const ExplorePage({super.key});
@@ -20,8 +21,11 @@ class ExplorePage extends StatelessWidget {
           ),
         ],
       ),
-      body: const Center(
-        child: Text('Explore Page'),
+      body: ListView.builder(
+        padding: EdgeInsets.all(8),
+        itemBuilder: (context, index) {
+          return KabukWidgetRow.random();
+        },
       ),
     );
   }
