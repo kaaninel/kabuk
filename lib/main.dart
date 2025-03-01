@@ -1,106 +1,113 @@
 import 'package:flutter/material.dart';
-import 'pages/create.dart';
-import 'pages/chat.dart';
-import 'pages/explore.dart';
-import 'pages/apps.dart';
+import 'package:kabuk/views/apps_view.dart';
+import 'package:kabuk/views/chat_view.dart';
+import 'package:kabuk/views/create_view.dart';
+import 'package:kabuk/views/explore_view.dart';
 
 void main() {
   runApp(const KabukApp());
 }
 
-class KabukApp extends StatefulWidget {
+class KabukApp extends StatelessWidget {
   const KabukApp({super.key});
 
   @override
-  KabukAppState createState() => KabukAppState();
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Kabuk',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+      ),
+      home: const MainLayout(),
+    );
+  }
 }
 
-class KabukAppState extends State<KabukApp> {
-  int _selectedIndex = 0;
+class MainLayout extends StatefulWidget {
+  const MainLayout({super.key});
 
-  static const List<Widget> _pages = <Widget>[
-    CreatePage(),
-    ChatPage(),
-    ExplorePage(),
-    AppsPage(),
+  @override
+  State<MainLayout> createState() => _MainLayoutState();
+}
+
+class _MainLayoutState extends State<MainLayout> {
+  int _selectedIndex = 2; // Explore view is default
+
+  static const List<Widget> _views = <Widget>[
+    CreateView(),
+    ChatView(),
+    ExploreView(),
+    AppsView(),
   ];
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isDesktop = MediaQuery.of(context).size.width >= 1240;
+
+    return Scaffold(
+      body: Row(
+        children: [
+          if (isDesktop)
+            NavigationRail(
+              extended: false,
+              destinations: const [
+                NavigationRailDestination(
+                  icon: Icon(Icons.create),
+                  label: Text('Create'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.chat),
+                  label: Text('Chat'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.explore),
+                  label: Text('Explore'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.apps),
+                  label: Text('Apps'),
+                ),
+              ],
+              selectedIndex: _selectedIndex,
+              onDestinationSelected: _onItemTapped,
+            ),
+          Expanded(
+            child: _views[_selectedIndex],
+          ),
+        ],
+      ),
+      bottomNavigationBar: isDesktop
+          ? null
+          : NavigationBar(
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.create),
+                  label: 'Create',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.chat),
+                  label: 'Chat',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.explore),
+                  label: 'Explore',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.apps),
+                  label: 'Apps',
+                ),
+              ],
+              selectedIndex: _selectedIndex,
+              onDestinationSelected: _onItemTapped,
+            ),
+    );
+  }
 
   void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
     });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: "Kabuk",
-      debugShowCheckedModeBanner: false,
-      darkTheme: ThemeData.dark(),
-      home: Scaffold(
-        body: _pages[_selectedIndex],
-        bottomNavigationBar: BottomNavigationBar(
-          type: BottomNavigationBarType.fixed,
-          items: const <BottomNavigationBarItem>[
-            BottomNavigationBarItem(
-              icon: Icon(Icons.add),
-              label: 'Create',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.chat_bubble_outline),
-              label: 'Chat',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.language),
-              label: 'Explore',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.apps),
-              label: 'Apps',
-            ),
-          ],
-          currentIndex: _selectedIndex,
-          onTap: _onItemTapped,
-        ),
-      ),
-    );
-  }
-
-  void onFilter() {}
-
-  void onSearch() {}
-}
-
-class Layout extends StatelessWidget {
-  final int selectedIndex;
-  final Function(int) onItemTapped;
-  final Widget page;
-
-  const Layout({
-    required this.selectedIndex,
-    required this.onItemTapped,
-    required this.page,
-    super.key,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      drawer: const Drawer(),
-      appBar: AppBar(
-        title: const Text("Timeline"),
-        actions: [
-          IconButton(onPressed: () {}, icon: const Icon(Icons.filter_list)),
-          IconButton(onPressed: () {}, icon: const Icon(Icons.search)),
-          const Padding(
-            padding: EdgeInsets.only(right: 8),
-            child: CircleAvatar(
-              backgroundImage: NetworkImage('https://i.pravatar.cc/300'),
-            ),
-          ),
-        ],
-      ),
-      body: page,
-    );
   }
 }
