@@ -1598,8 +1598,8 @@ class SharedNostrService implements NostrService {
   }) async {
     final metadata = <String, String>{
       'name': name,
-      if (about != null) 'about': about!,
-      if (picture != null) 'picture': picture!,
+      'about': ?about,
+      'picture': ?picture,
     };
 
     final event = await signEvent(
@@ -1621,9 +1621,9 @@ class SharedNostrService implements NostrService {
     String? picture,
   }) async {
     final metadata = <String, String>{
-      if (name != null) 'name': name!,
-      if (about != null) 'about': about!,
-      if (picture != null) 'picture': picture!,
+      'name': ?name,
+      'about': ?about,
+      'picture': ?picture,
     };
 
     final event = await signEvent(

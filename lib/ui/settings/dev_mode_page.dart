@@ -834,7 +834,9 @@ class _SummaryCard extends StatelessWidget {
   final VoidCallback onReset;
 
   String _formatDuration(Duration d) {
-    if (d.inHours >= 1) return '${d.inHours}h ${d.inMinutes.remainder(60)}m';
+    if (d.inHours >= 1) {
+      return '${d.inHours}h ${d.inMinutes.remainder(60)}m';
+    }
     if (d.inMinutes >= 1) {
       return '${d.inMinutes}m ${d.inSeconds.remainder(60)}s';
     }

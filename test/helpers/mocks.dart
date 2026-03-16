@@ -60,7 +60,7 @@ class MockKnowledgeStore extends Mock implements KnowledgeStore {
     if (onQuery != null) return onQuery!();
     final qb = MockQueryBuilder();
     when(() => qb.where(any(), equals: any(named: 'equals'))).thenReturn(qb);
-    when(() => qb.execute()).thenAnswer((_) async => []);
+    when(qb.execute).thenAnswer((_) async => []);
     return qb;
   }
 }

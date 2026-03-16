@@ -43,9 +43,9 @@ void main() {
     const filter = PrivacyFilter(localLlm: null);
 
     test('anonymizes email addresses', () async {
-      final request = LlmRequest(
+      final request = const LlmRequest(
         messages: [
-          const LlmMessage.user('Email me at john.doe@example.com please'),
+          LlmMessage.user('Email me at john.doe@example.com please'),
         ],
       );
 
@@ -67,8 +67,8 @@ void main() {
     });
 
     test('anonymizes phone numbers', () async {
-      final request = LlmRequest(
-        messages: [const LlmMessage.user('Call me at 555-123-4567')],
+      final request = const LlmRequest(
+        messages: [LlmMessage.user('Call me at 555-123-4567')],
       );
 
       final result = await filter.anonymizeRequest(
@@ -81,8 +81,8 @@ void main() {
     });
 
     test('anonymizes IP addresses', () async {
-      final request = LlmRequest(
-        messages: [const LlmMessage.user('My server is at 192.168.1.42')],
+      final request = const LlmRequest(
+        messages: [LlmMessage.user('My server is at 192.168.1.42')],
       );
 
       final result = await filter.anonymizeRequest(
@@ -95,8 +95,8 @@ void main() {
     });
 
     test('skips anonymization when privacy level is none', () async {
-      final request = LlmRequest(
-        messages: [const LlmMessage.user('Email me at alice@example.com')],
+      final request = const LlmRequest(
+        messages: [LlmMessage.user('Email me at alice@example.com')],
       );
 
       final result = await filter.anonymizeRequest(request, PrivacyLevel.none);
@@ -106,11 +106,11 @@ void main() {
     });
 
     test('does not modify system or tool result messages', () async {
-      final request = LlmRequest(
+      final request = const LlmRequest(
         messages: [
-          const LlmMessage.system('You are a helpful assistant.'),
-          const LlmMessage.user('nothing to anonymize here'),
-          const LlmMessage.toolResult(
+          LlmMessage.system('You are a helpful assistant.'),
+          LlmMessage.user('nothing to anonymize here'),
+          LlmMessage.toolResult(
             callId: 'tc_1',
             content: 'secret@email.com',
           ),
@@ -138,13 +138,13 @@ void main() {
     const filter = PrivacyFilter(localLlm: null);
 
     test('deAnonymizeResponse restores text response', () {
-      final map = AnonymizationMap(
+      final map = const AnonymizationMap(
         replacements: {'[PERSON_1]': 'Alice'},
         originalPrompt: '',
         anonymizedPrompt: '',
       );
 
-      final response = LlmResponse.text(
+      final response = const LlmResponse.text(
         'I scheduled a meeting with [PERSON_1].',
       );
 
@@ -156,13 +156,13 @@ void main() {
     });
 
     test('deAnonymizeResponse restores tool call arguments', () {
-      final map = AnonymizationMap(
+      final map = const AnonymizationMap(
         replacements: {'[PERSON_1]': 'Bob'},
         originalPrompt: '',
         anonymizedPrompt: '',
       );
 
-      final response = LlmResponse.toolCalls(null, [
+      final response = const LlmResponse.toolCalls(null, [
         LlmToolCall(
           id: 'tc_1',
           name: 'create_contact',
@@ -176,7 +176,7 @@ void main() {
     });
 
     test('deAnonymizeResponse passes through error responses', () {
-      final map = AnonymizationMap(
+      final map = const AnonymizationMap(
         replacements: {'[PERSON_1]': 'Alice'},
         originalPrompt: '',
         anonymizedPrompt: '',
@@ -188,7 +188,7 @@ void main() {
     });
 
     test('deAnonymizeEvent restores text delta', () {
-      final map = AnonymizationMap(
+      final map = const AnonymizationMap(
         replacements: {'[PERSON_1]': 'Charlie'},
         originalPrompt: '',
         anonymizedPrompt: '',

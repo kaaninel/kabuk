@@ -332,7 +332,7 @@ class _NostrChannelDetailState extends ConsumerState<NostrChannelDetail> {
                     isOwn: messages[i].pubkey == _myPubkey,
                     onReply: (ev) => setState(() => _replyToEvent = ev),
                     onDelete: messages[i].pubkey == _myPubkey
-                        ? (ev) => _deleteMessage(ev)
+                        ? _deleteMessage
                         : null,
                   ),
                 );

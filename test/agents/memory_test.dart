@@ -142,7 +142,7 @@ void main() {
         when(
           () => qb.where(any(), equals: any(named: 'equals')),
         ).thenReturn(qb);
-        when(() => qb.execute()).thenAnswer(
+        when(qb.execute).thenAnswer(
           (_) async => [
             const Triple.uri(
               subject: 'kabuk:AgentMemory/test_agent/color',

@@ -101,7 +101,9 @@ class _ContactDetailSheetState extends ConsumerState<ContactDetailSheet> {
       final updated = await _reloadContact(store);
       if (mounted) {
         setState(() {
-          if (updated != null) _currentContact = updated;
+          if (updated != null) {
+            _currentContact = updated;
+          }
           _editing = false;
         });
       }
@@ -118,7 +120,9 @@ class _ContactDetailSheetState extends ConsumerState<ContactDetailSheet> {
     final updated = await _reloadContact(store);
     if (mounted) {
       setState(() {
-        if (updated != null) _currentContact = updated;
+        if (updated != null) {
+          _currentContact = updated;
+        }
       });
     }
   }

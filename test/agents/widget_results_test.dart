@@ -68,22 +68,22 @@ void main() {
       // Mock: getEntity returns existing note (pre-edit check).
       when(() => bundle.knowledge.getEntity('kabuk:Note/test-1')).thenAnswer(
         (_) async => [
-          Triple.uri(
+          const Triple.uri(
             subject: 'kabuk:Note/test-1',
             predicate: NS.rdfType,
             object: NS.schemaNote,
           ),
-          Triple.string(
+          const Triple.string(
             subject: 'kabuk:Note/test-1',
             predicate: NS.schemaName,
             object: 'Updated Title',
           ),
-          Triple.string(
+          const Triple.string(
             subject: 'kabuk:Note/test-1',
             predicate: NS.schemaText,
             object: 'Updated body content',
           ),
-          Triple.string(
+          const Triple.string(
             subject: 'kabuk:Note/test-1',
             predicate: NS.schemaDateCreated,
             object: '2025-01-01T00:00:00.000',
@@ -154,17 +154,17 @@ void main() {
 
       when(() => bundle.knowledge.getEntity('kabuk:Person/test-1')).thenAnswer(
         (_) async => [
-          Triple.uri(
+          const Triple.uri(
             subject: 'kabuk:Person/test-1',
             predicate: NS.rdfType,
             object: NS.schemaPerson,
           ),
-          Triple.string(
+          const Triple.string(
             subject: 'kabuk:Person/test-1',
             predicate: NS.schemaName,
             object: 'Alice Smith',
           ),
-          Triple.string(
+          const Triple.string(
             subject: 'kabuk:Person/test-1',
             predicate: NS.schemaEmail,
             object: 'alice@example.com',
@@ -233,22 +233,22 @@ void main() {
 
       when(() => bundle.knowledge.getEntity('kabuk:Event/test-1')).thenAnswer(
         (_) async => [
-          Triple.uri(
+          const Triple.uri(
             subject: 'kabuk:Event/test-1',
             predicate: NS.rdfType,
             object: NS.schemaEvent,
           ),
-          Triple.string(
+          const Triple.string(
             subject: 'kabuk:Event/test-1',
             predicate: NS.schemaName,
             object: 'Updated Meeting',
           ),
-          Triple.string(
+          const Triple.string(
             subject: 'kabuk:Event/test-1',
             predicate: NS.schemaStartDate,
             object: '2025-03-01T10:00:00.000',
           ),
-          Triple.string(
+          const Triple.string(
             subject: 'kabuk:Event/test-1',
             predicate: NS.schemaLocation,
             object: 'Room 42',
@@ -304,17 +304,17 @@ void main() {
 
       when(() => bundle.knowledge.getEntity('kabuk:Event/test-1')).thenAnswer(
         (_) async => [
-          Triple.uri(
+          const Triple.uri(
             subject: 'kabuk:Event/test-1',
             predicate: NS.rdfType,
             object: NS.schemaEvent,
           ),
-          Triple.string(
+          const Triple.string(
             subject: 'kabuk:Event/test-1',
             predicate: NS.schemaName,
             object: 'Team Standup',
           ),
-          Triple.string(
+          const Triple.string(
             subject: 'kabuk:Event/test-1',
             predicate: NS.schemaStartDate,
             object: '2025-03-01T10:00:00.000',
