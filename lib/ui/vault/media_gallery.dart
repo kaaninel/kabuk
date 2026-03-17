@@ -12,7 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kabuk/knowledge/types/media.dart';
-import 'package:kabuk/ui/create/create_view.dart';
+import 'package:kabuk/ui/vault/vault_view.dart';
 import 'package:kabuk/ui/theme.dart';
 
 // ---------------------------------------------------------------------------

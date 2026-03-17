@@ -45,7 +45,7 @@ Think of it as a shell for your digital life — like Android launchers or Windo
 
 | View | Purpose |
 |---|---|
-| **Explore** | Reddit + Instagram + browser hybrid. Follow Reddit, 4chan, YouTube, RSS, and more. View web content natively. Nostr is the social layer — like/comment on any content using your Nostr identity. Nostr profiles viewable inline. |
+| **Explore** | Reddit + Instagram + browser hybrid. Follow Reddit, 4chan, YouTube, RSS, and more. View web content natively. Nostr is the social layer — like/comment on any content using your Nostr identity. Nostr profiles viewable inline. Unified **ChannelView** displays any author's content natively across all sources. |
 | **Chat** | Primary messaging via Nostr (text, media, contacts). AI chat defaults to the local on-device LLM. External LLM APIs are optional extensions. MCP (Model Context Protocol) connects external tools to the local LLM. |
 | **Vault** | Private data storage with quick capture. Easy camera/recorder/notes access so you can capture anything and let the local LLM sort, organize, and tag it. A private inbox to yourself. |
 | **Apps** | Everything else — app launcher, bookmarks, settings, and anything the other three views don't cover. |
@@ -73,6 +73,8 @@ Think of it as a shell for your digital life — like Android launchers or Windo
 | [docs/CHAT_PROTOCOL.md](docs/CHAT_PROTOCOL.md) | Chat and communication protocol |
 | [docs/MCP.md](docs/MCP.md) | Model Context Protocol integration plan |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Roadmap and master task list |
+| [docs/IMPROVEMENT_ROADMAP.md](docs/IMPROVEMENT_ROADMAP.md) | Improvement workstreams and phases |
+| [docs/UX_AUDIT_REPORT.md](docs/UX_AUDIT_REPORT.md) | UX findings and recommendations |
 
 ## Getting Started
 
@@ -93,9 +95,11 @@ flutter run
 
 Core foundation is complete and the app is running on iOS. Current working features:
 
-- ✅ Explore view — Reddit, RSS, Nostr (#hashtag) feeds with real-time data
+- ✅ Explore view — Reddit, RSS, 4chan, Nostr feeds with real-time data
 - ✅ Nostr social layer — Like/comment/repost any content via Nostr identity
+- ✅ Unified ChannelView — View any author's content natively across all sources
 - ✅ Chat view — Nostr DMs + Kabuk AI (local LLM) as primary assistant
+- ✅ In-app keyboard — Custom keyboard for all text input
 - ✅ Vault view — Notes, camera/audio capture, document library
 - ✅ Apps view — Tools (Notes, Calendar, Contacts, Search, Settings), Developer panel
 - ✅ Identity system — Nostr key management, generate/import nsec
@@ -103,11 +107,12 @@ Core foundation is complete and the app is running on iOS. Current working featu
 - ✅ RFW widget system — 7 widget libraries (core, notes, contacts, dashboard, media, etc.)
 - ✅ Agent system — 11 specialized agents (identity, messaging, feeds, discover, router, etc.)
 - ✅ Settings — LLM config, local models, service providers, encryption at rest
+- ✅ Horizontal swipe navigation between articles
 - 🔄 Local LLM on-device inference (GGUF model support)
 - 🔄 External LLM API integration (OpenAI, Ollama)
 - 🔄 MCP (Model Context Protocol) server support
 - ⏳ App Marketplace
-- ⏳ 4chan / YouTube / Nostr profile feed sources
+- ⏳ YouTube feed source
 
 ## License
 

@@ -290,7 +290,7 @@ Five workstreams, 4 phases, ~16 weeks estimated:
 
 **Files to create:**
 - `lib/knowledge/types/long_form.dart` — model
-- `lib/ui/create/article_composer.dart` — editor UI
+- `lib/ui/vault/article_composer.dart` — editor UI
 - `lib/ui/explore/article_card.dart` — card widget
 - `lib/ui/explore/article_reader.dart` — reader view
 

@@ -248,7 +248,7 @@ class IdentityQuickSwitcher extends ConsumerWidget {
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-            child: const Text('Create'),
+            child: const Text('Add'),
           ),
         ],
       ),

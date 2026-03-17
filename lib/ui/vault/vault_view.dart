@@ -22,13 +22,13 @@ import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/types/collection.dart';
 import 'package:kabuk/knowledge/types/media.dart';
 import 'package:kabuk/knowledge/types/note.dart';
-import 'package:kabuk/ui/create/audio_capture.dart';
-import 'package:kabuk/ui/create/camera_viewfinder.dart';
-import 'package:kabuk/ui/create/capture_preview.dart';
-import 'package:kabuk/ui/create/collection_manager.dart';
-import 'package:kabuk/ui/create/document_editor.dart';
-import 'package:kabuk/ui/create/document_list.dart';
-import 'package:kabuk/ui/create/media_gallery.dart';
+import 'package:kabuk/ui/vault/audio_capture.dart';
+import 'package:kabuk/ui/vault/camera_viewfinder.dart';
+import 'package:kabuk/ui/vault/capture_preview.dart';
+import 'package:kabuk/ui/vault/collection_manager.dart';
+import 'package:kabuk/ui/vault/document_editor.dart';
+import 'package:kabuk/ui/vault/document_list.dart';
+import 'package:kabuk/ui/vault/media_gallery.dart';
 import 'package:kabuk/ui/shared/identity_quick_switcher.dart';
 import 'package:kabuk/ui/theme.dart';
 
@@ -73,15 +73,15 @@ final collectionsListProvider = FutureProvider<List<CollectionData>>((
 ///
 /// Contains three tabs (Documents, Media, Collections) and supports
 /// inline overlays for camera and audio capture.
-class CreateView extends ConsumerStatefulWidget {
-  /// Creates a [CreateView].
-  const CreateView({super.key});
+class VaultView extends ConsumerStatefulWidget {
+  /// Creates a [VaultView].
+  const VaultView({super.key});
 
   @override
-  ConsumerState<CreateView> createState() => _CreateViewState();
+  ConsumerState<VaultView> createState() => _VaultViewState();
 }
 
-class _CreateViewState extends ConsumerState<CreateView> {
+class _VaultViewState extends ConsumerState<VaultView> {
   bool _showOverlay = false;
   Widget? _overlayWidget;
 
