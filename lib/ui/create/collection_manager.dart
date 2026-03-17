@@ -497,30 +497,33 @@ class _CollectionEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    return Center(
       child: Padding(
-        padding: EdgeInsets.all(KabukTheme.spacingXl),
+        padding: const EdgeInsets.all(KabukTheme.spacingXl),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              Icons.folder_outlined,
-              size: 48,
-              color: KabukTheme.textTertiary,
+              Icons.folder_open_rounded,
+              size: 64,
+              color: KabukTheme.textSecondary.withAlpha(128),
             ),
-            SizedBox(height: KabukTheme.spacingMd),
-            Text(
-              'No collections yet',
+            const SizedBox(height: KabukTheme.spacingMd),
+            const Text(
+              'Organize with collections',
               style: TextStyle(
                 color: KabukTheme.textSecondary,
-                fontSize: 16,
+                fontSize: 18,
                 fontWeight: FontWeight.w600,
               ),
             ),
-            SizedBox(height: KabukTheme.spacingSm),
+            const SizedBox(height: KabukTheme.spacingSm),
             Text(
-              'Create folders to organize your documents and media',
-              style: TextStyle(color: KabukTheme.textTertiary, fontSize: 13),
+              'Group your notes and media into folders\nfor easy access',
+              style: TextStyle(
+                color: KabukTheme.textSecondary.withAlpha(180),
+                fontSize: 14,
+              ),
               textAlign: TextAlign.center,
             ),
           ],

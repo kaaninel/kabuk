@@ -416,16 +416,26 @@ class _MediaEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (icon, message) = switch (filter) {
+    final (icon, title, subtitle) = switch (filter) {
       _MediaFilter.all => (
-        Icons.perm_media_outlined,
-        'No media yet\nCapture photos, videos, or audio to get started',
+        Icons.camera_alt_rounded,
+        'No media yet',
+        'Capture photos, videos, or audio to get started',
       ),
-      _MediaFilter.photos => (Icons.image_outlined, 'No photos yet'),
-      _MediaFilter.videos => (Icons.videocam_outlined, 'No videos yet'),
+      _MediaFilter.photos => (
+        Icons.image_outlined,
+        'No photos yet',
+        'Take a photo to see it here',
+      ),
+      _MediaFilter.videos => (
+        Icons.videocam_outlined,
+        'No videos yet',
+        'Record a video to see it here',
+      ),
       _MediaFilter.audio => (
         Icons.audiotrack_outlined,
         'No audio recordings yet',
+        'Record audio to see it here',
       ),
     };
 
@@ -435,12 +445,26 @@ class _MediaEmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 48, color: KabukTheme.textTertiary),
+            Icon(
+              icon,
+              size: 64,
+              color: KabukTheme.textSecondary.withAlpha(128),
+            ),
             const SizedBox(height: KabukTheme.spacingMd),
             Text(
-              message,
+              title,
               style: const TextStyle(
                 color: KabukTheme.textSecondary,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: KabukTheme.spacingSm),
+            Text(
+              subtitle,
+              style: TextStyle(
+                color: KabukTheme.textSecondary.withAlpha(180),
                 fontSize: 14,
               ),
               textAlign: TextAlign.center,

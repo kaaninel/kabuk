@@ -753,7 +753,7 @@ class _ExploreViewState extends ConsumerState<ExploreView>
             )
           else
             SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               sliver: SliverList(
                 delegate: SliverChildBuilderDelegate((context, index) {
                   if (index == 0) return _buildSortBar(context);
@@ -768,7 +768,7 @@ class _ExploreViewState extends ConsumerState<ExploreView>
                   );
                   return Padding(
                     key: itemKey,
-                    padding: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.only(bottom: 12),
                     child: ArticleCard(
                       article: article,
                       onBeforeOpen: () {
@@ -1057,7 +1057,7 @@ class _ExploreViewState extends ConsumerState<ExploreView>
             )
           else
             SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               sliver: SliverList(
                 delegate: SliverChildBuilderDelegate((context, index) {
                   // index 0 = sort bar; subsequent = article cards.
@@ -1298,7 +1298,7 @@ class _ExploreViewState extends ConsumerState<ExploreView>
 
     return Padding(
       key: itemKey,
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: 12),
       child: ArticleCard(
         article: article,
         onBeforeOpen: () {
@@ -1387,10 +1387,10 @@ class _FeedSkeletonState extends State<_FeedSkeleton>
   @override
   Widget build(BuildContext context) {
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
       itemCount: 6,
       itemBuilder: (_, i) => Padding(
-        padding: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.only(bottom: 12),
         child: AnimatedBuilder(
           animation: _anim,
           builder: (_, _) => _SkeletonCard(shimmerValue: _anim.value),

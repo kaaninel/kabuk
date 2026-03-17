@@ -422,128 +422,141 @@ class _DocumentCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(KabukTheme.spacingMd),
         decoration: BoxDecoration(
           color: KabukTheme.surface,
           borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
           border: Border.all(color: KabukTheme.divider, width: 0.5),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Title row.
-            Row(
-              children: [
-                if (icon != null && icon.isNotEmpty) ...[
-                  Text(icon, style: const TextStyle(fontSize: 18)),
-                  const SizedBox(width: 8),
-                ],
-                if (note.pinned)
-                  const Padding(
-                    padding: EdgeInsets.only(right: 6),
-                    child: Icon(
-                      Icons.push_pin_rounded,
-                      size: 14,
-                      color: KabukTheme.warmAccent,
-                    ),
-                  ),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                      color: KabukTheme.textPrimary,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
+          child: Container(
+            padding: const EdgeInsets.all(KabukTheme.spacingMd),
+            decoration: const BoxDecoration(
+              border: Border(
+                left: BorderSide(
+                  color: KabukTheme.accentGreen,
+                  width: 4,
                 ),
-                // Context menu.
-                PopupMenuButton<String>(
-                  onSelected: (action) {
-                    if (action == 'delete') onDelete();
-                  },
-                  color: KabukTheme.surfaceElevated,
-                  icon: const Icon(
-                    Icons.more_horiz_rounded,
-                    size: 18,
-                    color: KabukTheme.textTertiary,
-                  ),
-                  itemBuilder: (_) => [
-                    const PopupMenuItem(
-                      value: 'delete',
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.delete_outline_rounded,
-                            size: 16,
-                            color: KabukTheme.error,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Title row.
+                Row(
+                  children: [
+                    if (icon != null && icon.isNotEmpty) ...[
+                      Text(icon, style: const TextStyle(fontSize: 18)),
+                      const SizedBox(width: 8),
+                    ],
+                    if (note.pinned)
+                      const Padding(
+                        padding: EdgeInsets.only(right: 6),
+                        child: Icon(
+                          Icons.push_pin_rounded,
+                          size: 14,
+                          color: KabukTheme.warmAccent,
+                        ),
+                      ),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: const TextStyle(
+                          color: KabukTheme.textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    // Context menu.
+                    PopupMenuButton<String>(
+                      onSelected: (action) {
+                        if (action == 'delete') onDelete();
+                      },
+                      color: KabukTheme.surfaceElevated,
+                      icon: const Icon(
+                        Icons.more_horiz_rounded,
+                        size: 18,
+                        color: KabukTheme.textTertiary,
+                      ),
+                      itemBuilder: (_) => [
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.delete_outline_rounded,
+                                size: 16,
+                                color: KabukTheme.error,
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                'Delete',
+                                style: TextStyle(
+                                  color: KabukTheme.error,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
                           ),
-                          SizedBox(width: 8),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+
+                // Preview snippet.
+                if (preview.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      preview,
+                      style: const TextStyle(
+                        color: KabukTheme.textSecondary,
+                        fontSize: 13,
+                        height: 1.4,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+
+                // Date + tags.
+                if (dateStr.isNotEmpty || note.tags.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Row(
+                      children: [
+                        if (dateStr.isNotEmpty)
                           Text(
-                            'Delete',
+                            dateStr,
                             style: TextStyle(
-                              color: KabukTheme.error,
-                              fontSize: 13,
+                              color: KabukTheme.textTertiary.withAlpha(180),
+                              fontSize: 11,
+                            ),
+                          ),
+                        if (note.tags.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: note.tags
+                                    .take(3)
+                                    .map((tag) => _TagChip(tag: tag))
+                                    .toList(),
+                              ),
                             ),
                           ),
                         ],
-                      ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
               ],
             ),
-
-            // Preview snippet.
-            if (preview.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  preview,
-                  style: const TextStyle(
-                    color: KabukTheme.textSecondary,
-                    fontSize: 13,
-                    height: 1.4,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-
-            // Date + tags.
-            if (dateStr.isNotEmpty || note.tags.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Row(
-                  children: [
-                    if (dateStr.isNotEmpty)
-                      Text(
-                        dateStr,
-                        style: const TextStyle(
-                          color: KabukTheme.textTertiary,
-                          fontSize: 11,
-                        ),
-                      ),
-                    if (note.tags.isNotEmpty) ...[
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            children: note.tags
-                                .take(3)
-                                .map((tag) => _TagChip(tag: tag))
-                                .toList(),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-          ],
+          ),
         ),
       ),
     );
@@ -640,76 +653,36 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 96,
-              height: 96,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    KabukTheme.warmAccent.withAlpha(30),
-                    KabukTheme.purpleAccent.withAlpha(20),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: Icon(
-                Icons.edit_note_rounded,
-                size: 48,
-                color: KabukTheme.warmAccent.withAlpha(200),
-              ),
+            Icon(
+              Icons.note_add_rounded,
+              size: 64,
+              color: KabukTheme.textSecondary.withAlpha(128),
             ),
-            const SizedBox(height: KabukTheme.spacingLg),
-            Text(
-              'No documents yet',
-              style: Theme.of(context).textTheme.headlineSmall,
+            const SizedBox(height: KabukTheme.spacingMd),
+            const Text(
+              'Start capturing your thoughts',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: KabukTheme.textSecondary,
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: KabukTheme.spacingSm),
-            const Text(
-              'Create notes, journals, and documents\n'
-              'right from your device.',
-              textAlign: TextAlign.center,
+            Text(
+              'Notes, ideas, and reminders — all in one place',
               style: TextStyle(
-                color: KabukTheme.textSecondary,
-                fontSize: 14,
-                height: 1.5,
+                color: KabukTheme.textSecondary.withAlpha(180),
               ),
+              textAlign: TextAlign.center,
             ),
             const SizedBox(height: KabukTheme.spacingLg),
-            GestureDetector(
-              onTap: onNewDocument,
-              child: Semantics(
-                button: true,
-                label: 'Create new document',
-                child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                decoration: BoxDecoration(
-                  color: KabukTheme.warmAccent.withAlpha(20),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: KabukTheme.warmAccent.withAlpha(50)),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.add_rounded,
-                      size: 22,
-                      color: KabukTheme.warmAccent,
-                    ),
-                    SizedBox(width: 12),
-                    Text(
-                      'Tap + to create your first document',
-                      style: TextStyle(
-                        color: KabukTheme.warmAccent,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+            FilledButton.icon(
+              onPressed: onNewDocument,
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('New Note'),
+              style: FilledButton.styleFrom(
+                backgroundColor: KabukTheme.accentGreen,
               ),
             ),
           ],

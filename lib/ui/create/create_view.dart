@@ -477,35 +477,32 @@ class _QuickCaptureButton extends StatelessWidget {
       excludeSemantics: true,
       child: Tooltip(
         message: label,
-        child: GestureDetector(
-          onTap: () {
-            HapticFeedback.lightImpact();
-            onTap();
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: KabukTheme.accentGreen.withAlpha(15),
-              borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
-              border: Border.all(
-                color: KabukTheme.accentGreen.withAlpha(40),
-                width: 0.5,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 16, color: KabukTheme.accentGreen),
-                const SizedBox(width: 5),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    color: KabukTheme.accentGreen,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+        child: Material(
+          color: KabukTheme.accentGreen.withAlpha(38),
+          borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
+            onTap: () {
+              HapticFeedback.lightImpact();
+              onTap();
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 16, color: KabukTheme.accentGreen),
+                  const SizedBox(width: 6),
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: KabukTheme.accentGreen,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

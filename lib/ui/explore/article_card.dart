@@ -47,12 +47,28 @@ class ArticleCard extends ConsumerWidget {
   /// to this article's position in the list).
   final VoidCallback? onReturnFromDetail;
 
+  /// Returns the accent color for this article's source (used for borders).
+  Color _sourceAccentColor() {
+    final source = article.feedSource ?? '';
+    final url = article.url ?? '';
+    if (source.contains('reddit') || url.contains('reddit.com')) {
+      return const Color(0xFFFF4500); // Reddit orange
+    }
+    if (source.startsWith('kabuk:') ||
+        source.isEmpty ||
+        url.startsWith('nostr:')) {
+      return const Color(0xFF9C27B0); // Nostr purple
+    }
+    return KabukTheme.blueAccent; // RSS / generic
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final hasImage = FeedImage.isValidImageUrl(article.image);
     final isVideo = _isVideoContent(article);
     final isGif = _isGif(article);
     final hasGallery = article.galleryImages.length > 1;
+    final hasMedia = hasImage || isVideo || hasGallery;
 
     return GestureDetector(
       onTap: () => _openDetail(context, ref),
@@ -150,15 +166,34 @@ class ArticleCard extends ConsumerWidget {
             border: Border.all(
               color: article.read ? Colors.transparent : KabukTheme.divider,
             ),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black12,
+                blurRadius: 4,
+                offset: Offset(0, 1),
+              ),
+            ],
           ),
           clipBehavior: Clip.antiAlias,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Colored accent bar for text-only cards (no image/video/gallery).
+              if (!hasMedia)
+                Container(
+                  height: 3,
+                  decoration: BoxDecoration(
+                    color: _sourceAccentColor().withAlpha(180),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(16),
+                      topRight: Radius.circular(16),
+                    ),
+                  ),
+                ),
               _SourceHeader(article: article),
               if (article.name != null)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
                   child: Text(
                     _cleanTitle(article.name!),
                     style: TextStyle(
@@ -175,12 +210,12 @@ class ArticleCard extends ConsumerWidget {
                 ),
               if (hasGallery)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
                   child: _GalleryCarousel(images: article.galleryImages),
                 )
               else if (isVideo)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
                   child: VideoThumbnail(
                     videoUrl: article.url ?? '',
                     thumbnailUrl: article.image,
@@ -192,7 +227,7 @@ class ArticleCard extends ConsumerWidget {
                 // Use CachedNetworkImage for GIFs — cached for offline access;
                 // Flutter's codec animates them as usual.
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(12),
                     child: Stack(
@@ -203,6 +238,11 @@ class ArticleCard extends ConsumerWidget {
                           height: 200,
                           width: double.infinity,
                           fit: BoxFit.cover,
+                          fadeInDuration: const Duration(milliseconds: 300),
+                          placeholder: (_, _) => Container(
+                            height: 200,
+                            color: KabukTheme.surfaceVariant,
+                          ),
                           errorWidget: (_, _, _) => const SizedBox.shrink(),
                         ),
                         // GIF badge.
@@ -217,7 +257,7 @@ class ArticleCard extends ConsumerWidget {
                 )
               else if (hasImage)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
                   child: FeedImage(
                     imageUrl: article.image!,
                     height: 200,
@@ -230,7 +270,7 @@ class ArticleCard extends ConsumerWidget {
                     final cleaned = _cleanDescription(article.description!);
                     if (cleaned.isEmpty) return const SizedBox.shrink();
                     return Padding(
-                      padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
                       child: Text(
                         cleaned,
                         style: const TextStyle(
@@ -408,7 +448,7 @@ class _SourceHeader extends StatelessWidget {
     final author = article.author;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 2),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 2),
       child: Row(
         children: [
           Container(
@@ -468,11 +508,14 @@ class _SourceHeader extends StatelessWidget {
             ),
           ),
           if (timeAgo != null)
-            Text(
-              timeAgo,
-              style: const TextStyle(
-                fontSize: 11,
-                color: KabukTheme.textTertiary,
+            Opacity(
+              opacity: 0.7,
+              child: Text(
+                timeAgo,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: KabukTheme.textSecondary,
+                ),
               ),
             ),
           if (!article.read) ...[
@@ -573,7 +616,7 @@ class _ActionBar extends ConsumerWidget {
         : null;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
       child: Row(
         children: [
           _socialButton(
@@ -912,6 +955,10 @@ class _GalleryCarouselState extends State<_GalleryCarousel> {
                   cacheManager: KabukCacheManager.instance,
                   fit: BoxFit.cover,
                   width: double.infinity,
+                  fadeInDuration: const Duration(milliseconds: 300),
+                  placeholder: (_, _) => Container(
+                    color: KabukTheme.surfaceVariant,
+                  ),
                   errorWidget: (_, _, _) => Container(
                     color: KabukTheme.cardColor,
                     child: const Icon(

@@ -81,7 +81,11 @@ class AppsView extends ConsumerWidget {
           ),
           bookmarks.when(
             data: (items) => items.isEmpty
-                ? const SliverToBoxAdapter(child: _EmptyPinnedHint())
+                ? SliverToBoxAdapter(
+                    child: _EmptyPinnedHint(
+                      onAdd: () => _showAddBookmarkSheet(context, ref),
+                    ),
+                  )
                 : SliverPadding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: KabukTheme.spacingMd,
@@ -124,6 +128,14 @@ class AppsView extends ConsumerWidget {
             ),
           ),
 
+          // ─── Section divider ──────────────────────────────────────
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: KabukTheme.spacingLg),
+              child: Divider(height: KabukTheme.spacingLg, color: KabukTheme.divider),
+            ),
+          ),
+
           // ─── Saved AI Views (shown only when views exist) ─────────
           savedViews.when(
             data: (items) => items.isEmpty
@@ -131,15 +143,10 @@ class AppsView extends ConsumerWidget {
                 : SliverMainAxisGroup(
                     slivers: [
                       const SliverToBoxAdapter(
-                        child: Padding(
-                          padding: EdgeInsets.only(
-                            top: KabukTheme.spacingMd,
-                          ),
-                          child: _SectionHeader(
-                            icon: Icons.auto_awesome_rounded,
-                            title: 'Saved Views',
-                            color: KabukTheme.purpleAccent,
-                          ),
+                        child: _SectionHeader(
+                          icon: Icons.auto_awesome_rounded,
+                          title: 'Saved Views',
+                          color: KabukTheme.purpleAccent,
                         ),
                       ),
                       SliverPadding(
@@ -167,6 +174,14 @@ class AppsView extends ConsumerWidget {
                 const SliverToBoxAdapter(child: SizedBox.shrink()),
           ),
 
+          // ─── Section divider ──────────────────────────────────────
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: KabukTheme.spacingLg),
+              child: Divider(height: KabukTheme.spacingLg, color: KabukTheme.divider),
+            ),
+          ),
+
           // ─── Recent Notes ─────────────────────────────────────────
           // Shows the last 5 notes created via the agent or Vault tab.
           recentNotes.when(
@@ -175,22 +190,17 @@ class AppsView extends ConsumerWidget {
                 : SliverMainAxisGroup(
                     slivers: [
                       SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.only(
-                            top: KabukTheme.spacingMd,
-                          ),
-                          child: _SectionHeader(
-                            icon: Icons.sticky_note_2_rounded,
-                            title: 'Recent Notes',
-                            color: KabukTheme.warmAccent,
-                            trailing: TextButton(
-                              onPressed: () => Navigator.of(context).push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) => const _NotesAppView(),
-                                ),
+                        child: _SectionHeader(
+                          icon: Icons.sticky_note_2_rounded,
+                          title: 'Recent Notes',
+                          color: KabukTheme.warmAccent,
+                          trailing: TextButton(
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const _NotesAppView(),
                               ),
-                              child: const Text('See all'),
                             ),
+                            child: const Text('See all'),
                           ),
                         ),
                       ),
@@ -213,15 +223,20 @@ class AppsView extends ConsumerWidget {
                 const SliverToBoxAdapter(child: SizedBox.shrink()),
           ),
 
-          // ─── Built-in Tools ───────────────────────────────────────
+          // ─── Section divider ──────────────────────────────────────
           const SliverToBoxAdapter(
             child: Padding(
-              padding: EdgeInsets.only(top: KabukTheme.spacingLg),
-              child: _SectionHeader(
-                icon: Icons.handyman_rounded,
-                title: 'Tools',
-                color: KabukTheme.accentGreen,
-              ),
+              padding: EdgeInsets.symmetric(horizontal: KabukTheme.spacingLg),
+              child: Divider(height: KabukTheme.spacingLg, color: KabukTheme.divider),
+            ),
+          ),
+
+          // ─── Built-in Tools ───────────────────────────────────────
+          const SliverToBoxAdapter(
+            child: _SectionHeader(
+              icon: Icons.handyman_rounded,
+              title: 'Tools',
+              color: KabukTheme.accentGreen,
             ),
           ),
           SliverToBoxAdapter(
@@ -288,8 +303,9 @@ class AppsView extends ConsumerWidget {
             ),
           ),
 
-          // ─── Developer (hidden by default) ─────────────────────────
-          const SliverToBoxAdapter(child: _DevSection()),
+          // ─── Developer (hidden when dev mode is off) ────────────────
+          if (ref.watch(devModeProvider))
+            const SliverToBoxAdapter(child: _DevSection()),
 
           // ─── Marketplace ──────────────────────────────────────────
           const SliverToBoxAdapter(
@@ -752,7 +768,9 @@ class _BookmarkTile extends StatelessWidget {
 
 /// Shown when no bookmarks are pinned.
 class _EmptyPinnedHint extends StatelessWidget {
-  const _EmptyPinnedHint();
+  const _EmptyPinnedHint({this.onAdd});
+
+  final VoidCallback? onAdd;
 
   @override
   Widget build(BuildContext context) {
@@ -761,32 +779,57 @@ class _EmptyPinnedHint extends StatelessWidget {
         horizontal: KabukTheme.spacingLg,
         vertical: KabukTheme.spacingMd,
       ),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(KabukTheme.spacingMd),
-        decoration: BoxDecoration(
-          color: KabukTheme.warmAccent.withAlpha(8),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
           borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
-          border: Border.all(color: KabukTheme.warmAccent.withAlpha(25)),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              Icons.push_pin_outlined,
-              size: 20,
-              color: KabukTheme.warmAccent.withAlpha(160),
+          onTap: onAdd,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(
+              horizontal: KabukTheme.spacingMd,
+              vertical: KabukTheme.spacingLg,
             ),
-            const SizedBox(width: KabukTheme.spacingSm),
-            Expanded(
-              child: Text(
-                'Pin your favorite web apps and sites here for quick access.',
-                style: TextStyle(
-                  color: KabukTheme.warmAccent.withAlpha(180),
-                  fontSize: 12,
+            decoration: BoxDecoration(
+              color: KabukTheme.warmAccent.withAlpha(8),
+              borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
+              border: Border.all(color: KabukTheme.warmAccent.withAlpha(40)),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: KabukTheme.warmAccent.withAlpha(25),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(
+                    Icons.add_rounded,
+                    size: 28,
+                    color: KabukTheme.warmAccent.withAlpha(200),
+                  ),
                 ),
-              ),
+                const SizedBox(height: KabukTheme.spacingSm),
+                Text(
+                  'Pin a Bookmark',
+                  style: TextStyle(
+                    color: KabukTheme.warmAccent.withAlpha(220),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: KabukTheme.spacingXs),
+                Text(
+                  'Add your favorite web apps and sites for quick access.',
+                  style: TextStyle(
+                    color: KabukTheme.warmAccent.withAlpha(140),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -949,10 +992,10 @@ class _ToolChip extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
-                  width: 42,
-                  height: 42,
+                  width: 48,
+                  height: 48,
                   decoration: BoxDecoration(
-                    color: color.withAlpha(18),
+                    color: color.withAlpha(38),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(icon, size: 22, color: color),
@@ -1175,12 +1218,19 @@ class _NoteListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: KabukTheme.cardColor,
         borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
         border: Border.all(color: KabukTheme.divider, width: 0.5),
       ),
-      child: ListTile(
+      child: Container(
+        decoration: const BoxDecoration(
+          border: Border(
+            left: BorderSide(color: KabukTheme.warmAccent, width: 4),
+          ),
+        ),
+        child: ListTile(
         contentPadding: const EdgeInsets.symmetric(
           horizontal: KabukTheme.spacingMd,
           vertical: KabukTheme.spacingSm,
@@ -1219,6 +1269,7 @@ class _NoteListTile extends StatelessWidget {
                 ),
               )
             : null,
+        ),
       ),
     );
   }
