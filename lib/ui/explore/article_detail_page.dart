@@ -5,6 +5,7 @@
 /// to the feed.
 library;
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -14,6 +15,7 @@ import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/knowledge/types/nostr_social.dart';
 import 'package:kabuk/services/feed.dart';
+import 'package:kabuk/services/media_cache.dart';
 import 'package:kabuk/ui/explore/browse_session.dart';
 import 'package:kabuk/ui/explore/explore_view.dart' show friendlyError;
 import 'package:kabuk/ui/explore/fourchan_comments.dart';
@@ -240,18 +242,27 @@ class _ArticleDetailContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final hasImage = FeedImage.isValidImageUrl(article.image);
-    final isVideo = _isVideoUrl(article.url);
+    final isVideo = _hasVideo(article);
+    final hasGallery = article.galleryImages.length > 1;
 
     return ListView(
       controller: scrollController,
       padding: EdgeInsets.zero,
       children: [
         // ── Media ──────────────────────────────────────────────────────────
-        if (isVideo)
+        if (hasGallery)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+            child: _DetailGalleryCarousel(
+              images: article.galleryImages,
+              articleUri: article.uri,
+            ),
+          )
+        else if (isVideo)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
             child: VideoThumbnail(
-              videoUrl: article.url ?? '',
+              videoUrl: _videoUrl(article),
               thumbnailUrl: article.image,
               height: 240,
               borderRadius: BorderRadius.circular(12),
@@ -504,13 +515,25 @@ class _ArticleDetailContent extends ConsumerWidget {
   }
 
   bool _isVideoUrl(String? url) {
-    if (url == null) return false;
+    if (url == null || url.isEmpty) return false;
     final lower = url.toLowerCase();
     return lower.contains('v.redd.it') ||
         lower.contains('youtube.com') ||
         lower.contains('youtu.be') ||
         lower.endsWith('.mp4') ||
-        lower.endsWith('.webm');
+        lower.endsWith('.webm') ||
+        lower.endsWith('.gifv');
+  }
+
+  /// Whether this article has playable video content.
+  bool _hasVideo(ArticleData article) {
+    if (article.videoUrl != null && article.videoUrl!.isNotEmpty) return true;
+    return _isVideoUrl(article.url);
+  }
+
+  /// The best video URL for playback.
+  String _videoUrl(ArticleData article) {
+    return article.videoUrl ?? article.url ?? '';
   }
 
   /// Returns true for Nostr or other internal URLs that have no external web page.
@@ -1739,6 +1762,154 @@ class _CommentInputState extends ConsumerState<_CommentInput> {
       hintText: 'Write a comment\u2026',
       onSend: _submit,
       onSubmitted: (_) => _submit(),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Gallery Carousel for Article Detail
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Swipeable gallery carousel for the article detail page.
+///
+/// Shows all images with a page counter and dot indicators.
+/// Tapping an image opens it in the fullscreen viewer.
+class _DetailGalleryCarousel extends StatefulWidget {
+  const _DetailGalleryCarousel({
+    required this.images,
+    required this.articleUri,
+  });
+
+  final List<String> images;
+  final String articleUri;
+
+  @override
+  State<_DetailGalleryCarousel> createState() => _DetailGalleryCarouselState();
+}
+
+class _DetailGalleryCarouselState extends State<_DetailGalleryCarousel> {
+  final _controller = PageController();
+  int _current = 0;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 300,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Stack(
+          children: [
+            PageView.builder(
+              controller: _controller,
+              itemCount: widget.images.length,
+              onPageChanged: (i) => setState(() => _current = i),
+              itemBuilder: (context, i) {
+                return GestureDetector(
+                  onTap: () => FullscreenImageViewer.show(
+                    context,
+                    imageUrl: widget.images[i],
+                    tag: 'gallery_${widget.articleUri}_$i',
+                  ),
+                  child: Hero(
+                    tag: 'gallery_${widget.articleUri}_$i',
+                    child: CachedNetworkImage(
+                      imageUrl: widget.images[i],
+                      cacheManager: KabukCacheManager.instance,
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      fadeInDuration: const Duration(milliseconds: 300),
+                      placeholder: (_, _) => Container(
+                        color: KabukTheme.surfaceVariant,
+                        child: const Center(
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: KabukTheme.textTertiary,
+                          ),
+                        ),
+                      ),
+                      errorWidget: (_, _, _) => Container(
+                        color: KabukTheme.cardColor,
+                        child: const Icon(
+                          Icons.broken_image_outlined,
+                          color: KabukTheme.textTertiary,
+                          size: 32,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+            // Page counter pill.
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.black.withAlpha(160),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${_current + 1} / ${widget.images.length}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+            // Fullscreen hint icon.
+            Positioned(
+              top: 8,
+              left: 8,
+              child: Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: Colors.black.withAlpha(130),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.zoom_in_rounded,
+                  color: Colors.white70,
+                  size: 14,
+                ),
+              ),
+            ),
+            // Dot indicator row.
+            if (widget.images.length <= 12)
+              Positioned(
+                bottom: 8,
+                left: 0,
+                right: 0,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(widget.images.length, (i) {
+                    return AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      margin: const EdgeInsets.symmetric(horizontal: 2),
+                      width: i == _current ? 16 : 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: i == _current
+                            ? Colors.white
+                            : Colors.white.withAlpha(100),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    );
+                  }),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

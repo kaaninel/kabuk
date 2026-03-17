@@ -174,6 +174,33 @@ class RedditFeedSource implements FeedSource {
       imageUrl = galleryImages.first;
     }
 
+    // Extract video URL for video posts.
+    // Reddit hosted videos have `is_video: true` with a
+    // `media.reddit_video.fallback_url` pointing to the MP4.
+    // External video links (YouTube, v.redd.it crosspost) appear in `post['url']`.
+    String? videoUrl;
+    final isVideo = post['is_video'] as bool? ?? false;
+    if (isVideo) {
+      final media = post['media'] as Map<String, dynamic>?;
+      final redditVideo = media?['reddit_video'] as Map<String, dynamic>?;
+      final fallback = redditVideo?['fallback_url'] as String?;
+      if (fallback != null) {
+        videoUrl = fallback.replaceAll('&amp;', '&');
+      }
+    }
+    // Also check `post['url']` for external video hosts.
+    if (videoUrl == null) {
+      final postUrl = (post['url'] as String? ?? '').toLowerCase();
+      if (postUrl.contains('v.redd.it') ||
+          postUrl.contains('youtube.com') ||
+          postUrl.contains('youtu.be') ||
+          postUrl.endsWith('.mp4') ||
+          postUrl.endsWith('.webm') ||
+          postUrl.endsWith('.gifv')) {
+        videoUrl = post['url'] as String?;
+      }
+    }
+
     final categories = <String>[];
     if (subreddit != null) categories.add('r/$subreddit');
     if (linkFlair != null) categories.add(linkFlair);
@@ -184,6 +211,7 @@ class RedditFeedSource implements FeedSource {
       description: description,
       author: author,
       imageUrl: imageUrl,
+      videoUrl: videoUrl,
       datePublished: createdUtc != null
           ? DateTime.fromMillisecondsSinceEpoch(
               (createdUtc * 1000).toInt(),

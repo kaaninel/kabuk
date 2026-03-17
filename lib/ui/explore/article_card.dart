@@ -228,7 +228,7 @@ class ArticleCard extends ConsumerWidget {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
                   child: VideoThumbnail(
-                    videoUrl: article.url ?? '',
+                    videoUrl: article.videoUrl ?? article.url ?? '',
                     thumbnailUrl: article.image,
                     height: 200,
                     borderRadius: BorderRadius.circular(12),
@@ -305,6 +305,8 @@ class ArticleCard extends ConsumerWidget {
   }
 
   bool _isVideoContent(ArticleData article) {
+    // Prefer the dedicated videoUrl field (parsed from Reddit API etc.).
+    if (article.videoUrl != null && article.videoUrl!.isNotEmpty) return true;
     final url = (article.url ?? '').toLowerCase();
     return url.contains('v.redd.it') ||
         url.contains('youtube.com') ||

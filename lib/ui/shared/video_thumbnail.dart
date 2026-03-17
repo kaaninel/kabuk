@@ -5,6 +5,7 @@
 /// depending on the video URL type.
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:kabuk/ui/explore/quick_peek_sheet.dart';
@@ -12,6 +13,7 @@ import 'package:kabuk/ui/shared/feed_image.dart';
 import 'package:kabuk/ui/theme.dart';
 import 'package:video_player/video_player.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
 /// Whether a URL points to a directly playable video file.
 bool isDirectVideoUrl(String url) {
@@ -332,10 +334,11 @@ class _VideoControlsOverlay extends StatelessWidget {
   }
 }
 
-/// Full-screen YouTube video player using the YouTube Embed iframe API.
+/// Full-screen YouTube video player using the mobile YouTube website.
 ///
-/// Uses [WebViewWidget] to load the YouTube embed URL so the user can watch
-/// YouTube videos without leaving the app.
+/// Loads the YouTube mobile watch page in a [WebViewWidget] so the user
+/// can watch videos without leaving the app. Uses the full mobile site
+/// instead of the embed API to avoid Error 153 issues with WebView.
 class _YoutubePlayerPage extends StatefulWidget {
   const _YoutubePlayerPage({required this.videoId});
 
@@ -351,13 +354,23 @@ class _YoutubePlayerPageState extends State<_YoutubePlayerPage> {
   @override
   void initState() {
     super.initState();
-    final embedUrl =
-        'https://www.youtube.com/embed/${widget.videoId}'
-        '?autoplay=1&rel=0&modestbranding=1&playsinline=1';
-    _webController = WebViewController()
+
+    // Use WebKit-specific params on iOS for inline media playback.
+    late final PlatformWebViewControllerCreationParams params;
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      params = WebKitWebViewControllerCreationParams(
+        allowsInlineMediaPlayback: true,
+        mediaTypesRequiringUserAction: const <PlaybackMediaTypes>{},
+      );
+    } else {
+      params = const PlatformWebViewControllerCreationParams();
+    }
+
+    final watchUrl = 'https://m.youtube.com/watch?v=${widget.videoId}';
+    _webController = WebViewController.fromPlatformCreationParams(params)
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.black)
-      ..loadRequest(Uri.parse(embedUrl));
+      ..loadRequest(Uri.parse(watchUrl));
   }
 
   @override

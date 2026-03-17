@@ -670,6 +670,7 @@ discover agent instead
         title: item.title,
         description: item.description,
         url: item.url,
+        videoUrl: item.videoUrl,
         author: item.author,
         image: item.imageUrl,
         feedSource: feedUri,

@@ -94,6 +94,7 @@ ArticleData browseItemToArticle(FeedItem item, String feedSource) =>
       name: item.title,
       description: item.description,
       url: item.url,
+      videoUrl: item.videoUrl,
       author: item.author,
       image: item.imageUrl,
       feedSource: feedSource,

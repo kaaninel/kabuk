@@ -25,6 +25,7 @@ class ArticleData {
     this.name,
     this.description,
     this.url,
+    this.videoUrl,
     this.datePublished,
     this.author,
     this.image,
@@ -51,6 +52,10 @@ class ArticleData {
           ?.objectValue,
       url: triples
           .where((t) => t.predicate == NS.schemaUrl)
+          .firstOrNull
+          ?.objectValue,
+      videoUrl: triples
+          .where((t) => t.predicate == NS.kabukVideoUrl)
           .firstOrNull
           ?.objectValue,
       datePublished: _tryParseDateTime(
@@ -152,6 +157,13 @@ class ArticleData {
 
   /// The canonical URL of the article (`schema:url`).
   final String? url;
+
+  /// Direct video URL for video posts (`kabuk:videoUrl`).
+  ///
+  /// For Reddit hosted videos this is the `v.redd.it` fallback URL.
+  /// For YouTube links this is the YouTube URL.
+  /// `null` for non-video posts.
+  final String? videoUrl;
 
   /// When the article was published (`schema:datePublished`).
   final DateTime? datePublished;
@@ -299,6 +311,7 @@ extension KnowledgeStoreArticleExtension on KnowledgeStore {
     required String title,
     String? description,
     String? url,
+    String? videoUrl,
     String? author,
     String? image,
     String? feedSource,
@@ -326,6 +339,9 @@ extension KnowledgeStoreArticleExtension on KnowledgeStore {
       }
       if (image != null) {
         await ctx.set(uri, NS.schemaImage, image);
+      }
+      if (videoUrl != null) {
+        await ctx.set(uri, NS.kabukVideoUrl, videoUrl);
       }
       if (feedSource != null) {
         await ctx.set(

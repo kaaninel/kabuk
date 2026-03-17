@@ -260,6 +260,9 @@ abstract final class NS {
   /// `kabuk:galleryImages` — JSON-encoded list of image URLs (gallery posts).
   static const String kabukGalleryImages = '${kabuk}galleryImages';
 
+  /// `kabuk:videoUrl` — direct video URL for video posts.
+  static const String kabukVideoUrl = '${kabuk}videoUrl';
+
   /// `kabuk:nostrEventId` — Nostr event ID associated with an entity.
   static const String kabukNostrEventId = '${kabuk}nostrEventId';
 

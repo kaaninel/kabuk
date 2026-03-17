@@ -20,6 +20,7 @@ class FeedItem {
     this.description,
     this.author,
     this.imageUrl,
+    this.videoUrl,
     this.datePublished,
     this.identifier,
     this.categories = const [],
@@ -40,6 +41,13 @@ class FeedItem {
 
   /// An image URL (thumbnail, preview, etc.).
   final String? imageUrl;
+
+  /// A direct video URL when the post contains playable video content.
+  ///
+  /// For Reddit hosted videos this is the `v.redd.it` fallback URL.
+  /// For YouTube links this is the `youtube.com` / `youtu.be` URL.
+  /// `null` for non-video posts.
+  final String? videoUrl;
 
   /// When the item was published.
   final DateTime? datePublished;
