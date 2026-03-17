@@ -13,9 +13,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/knowledge/types/nostr_social.dart';
+import 'package:kabuk/services/feed.dart';
 import 'package:kabuk/ui/explore/browse_session.dart';
 import 'package:kabuk/ui/explore/explore_view.dart' show friendlyError;
 import 'package:kabuk/ui/explore/fourchan_comments.dart';
+import 'package:kabuk/ui/explore/channel_view.dart';
 import 'package:kabuk/ui/explore/nostr_providers.dart';
 import 'package:kabuk/ui/explore/profile_view.dart';
 import 'package:kabuk/ui/explore/quick_peek_sheet.dart';
@@ -173,21 +175,6 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
           tooltip: 'Back to feed',
           onPressed: () => Navigator.of(context).pop(),
         ),
-        actions: [
-          if (widget.articles != null)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.only(right: 16),
-                child: Text(
-                  '${_currentIndex + 1} / ${widget.articles!.length}',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: KabukTheme.textTertiary,
-                  ),
-                ),
-              ),
-            ),
-        ],
       ),
       body: GestureDetector(
         onHorizontalDragEnd: _onHorizontalDragEnd,
@@ -479,10 +466,13 @@ class _ArticleDetailContent extends ConsumerWidget {
                       );
                     },
                     onUserTap: (user) {
-                      QuickPeekSheet.show(
-                        context,
-                        url: 'https://www.reddit.com/user/$user',
-                        title: 'u/$user',
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => ChannelView(
+                            author: user,
+                            sourceType: FeedSourceType.reddit,
+                          ),
+                        ),
                       );
                     },
                   ),
@@ -717,10 +707,13 @@ class _ArticleDetailContent extends ConsumerWidget {
 
   void _openUserProfile(BuildContext context, String author) {
     final name = author.startsWith('u/') ? author.substring(2) : author;
-    QuickPeekSheet.show(
-      context,
-      url: 'https://www.reddit.com/user/$name',
-      title: 'u/$name',
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ChannelView(
+          author: name,
+          sourceType: FeedSourceType.reddit,
+        ),
+      ),
     );
   }
 }

@@ -386,6 +386,7 @@ extension KnowledgeStoreArticleExtension on KnowledgeStore {
   Future<List<ArticleData>> listArticles({
     int limit = 50,
     String? feedSource,
+    String? author,
     bool? unreadOnly,
   }) async {
     var q = query()
@@ -395,6 +396,9 @@ extension KnowledgeStoreArticleExtension on KnowledgeStore {
 
     if (feedSource != null) {
       q = q.where(NS.kabukFeedSource, equals: feedSource);
+    }
+    if (author != null) {
+      q = q.where(NS.schemaAuthor, equals: author);
     }
 
     final typeTriples = await q.execute();
