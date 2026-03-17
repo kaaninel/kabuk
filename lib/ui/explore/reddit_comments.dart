@@ -204,14 +204,14 @@ class RedditCommentThread extends ConsumerWidget {
           padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
           child: Row(
             children: [
-              const Icon(Icons.reddit, size: 18, color: Color(0xFFFF4500)),
+              const Icon(Icons.reddit, size: 18, color: KabukTheme.redditOrange),
               const SizedBox(width: 8),
               const Text(
                 'Reddit Comments',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFFFF4500),
+                  color: KabukTheme.redditOrange,
                 ),
               ),
               const Spacer(),
@@ -260,7 +260,7 @@ class RedditCommentThread extends ConsumerWidget {
                 height: 20,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  color: Color(0xFFFF4500),
+                  color: KabukTheme.redditOrange,
                 ),
               ),
             ),
@@ -335,7 +335,7 @@ class _CommentTileState extends State<_CommentTile> {
                   const Icon(
                     Icons.arrow_upward_rounded,
                     size: 11,
-                    color: Color(0xFFFF4500),
+                    color: KabukTheme.redditOrange,
                   ),
                   const SizedBox(width: 2),
                   Text(

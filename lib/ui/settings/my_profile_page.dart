@@ -364,11 +364,11 @@ class _QrCard extends StatelessWidget {
                 padding: const EdgeInsets.all(12),
                 eyeStyle: const QrEyeStyle(
                   eyeShape: QrEyeShape.square,
-                  color: Color(0xFF0F0F0F),
+                  color: KabukTheme.background,
                 ),
                 dataModuleStyle: const QrDataModuleStyle(
                   dataModuleShape: QrDataModuleShape.square,
-                  color: Color(0xFF0F0F0F),
+                  color: KabukTheme.background,
                 ),
               ),
             ),
@@ -476,11 +476,11 @@ class _QrFullScreen extends StatelessWidget {
                 backgroundColor: Colors.white,
                 eyeStyle: const QrEyeStyle(
                   eyeShape: QrEyeShape.square,
-                  color: Color(0xFF0F0F0F),
+                  color: KabukTheme.background,
                 ),
                 dataModuleStyle: const QrDataModuleStyle(
                   dataModuleShape: QrDataModuleShape.square,
-                  color: Color(0xFF0F0F0F),
+                  color: KabukTheme.background,
                 ),
               ),
             ),

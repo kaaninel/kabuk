@@ -544,14 +544,7 @@ class _EmptyNotes extends StatelessWidget {
 
 /// Deterministic color from pubkey hash.
 Color _pubkeyColor(String pubkey) {
-  const palette = [
-    Color(0xFF5C6BC0),
-    Color(0xFF26A69A),
-    Color(0xFFEF5350),
-    Color(0xFFAB47BC),
-    Color(0xFF42A5F5),
-    Color(0xFF66BB6A),
-  ];
+  const palette = KabukTheme.avatarColors;
   if (pubkey.isEmpty) return palette[0];
   final hash = pubkey.codeUnits.fold<int>(0, (h, c) => h + c);
   return palette[hash % palette.length];

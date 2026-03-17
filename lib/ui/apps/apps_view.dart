@@ -338,7 +338,7 @@ class AppsView extends ConsumerWidget {
 
     const colorOptions = <String, Color>{
       'FF6D00': Color(0xFFFF6D00),
-      'FF4500': Color(0xFFFF4500),
+      'FF4500': KabukTheme.redditOrange,
       'E91E63': Color(0xFFE91E63),
       'AB47BC': Color(0xFFAB47BC),
       '42A5F5': Color(0xFF42A5F5),

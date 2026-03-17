@@ -242,7 +242,7 @@ class OmniBar extends StatelessWidget {
 
   Color _scopeChipColor(bool isNostr) {
     if (isNostr) return KabukTheme.purpleAccent;
-    if (selectedFeedType == 'reddit') return const Color(0xFFFF4500);
+    if (selectedFeedType == 'reddit') return KabukTheme.redditOrange;
     return KabukTheme.blueAccent;
   }
 
@@ -648,7 +648,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
   /// Shows a quick action sheet for a single feed subscription.
   void _showFeedActions(BuildContext context, FeedSubscriptionData sub) {
     final isReddit = sub.feedType == 'reddit';
-    final color = isReddit ? const Color(0xFFFF4500) : KabukTheme.blueAccent;
+    final color = isReddit ? KabukTheme.redditOrange : KabukTheme.blueAccent;
 
     showModalBottomSheet<void>(
       context: context,
@@ -959,7 +959,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
                             ? Icons.reddit
                             : Icons.rss_feed_rounded,
                         color: sub.feedType == 'reddit'
-                            ? const Color(0xFFFF4500)
+                            ? KabukTheme.redditOrange
                             : KabukTheme.blueAccent,
                         isSelected: _scope == sub.uri,
                         onTap: () => _setScope(sub.uri, sub.name),
@@ -1079,13 +1079,13 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
               _quickSubscribeChip(
                 label: 'r/all',
                 icon: Icons.reddit,
-                color: const Color(0xFFFF4500),
+                color: KabukTheme.redditOrange,
                 onTap: () => _subscribeToSubreddit('r/all'),
               ),
               _quickSubscribeChip(
                 label: 'r/technology',
                 icon: Icons.reddit,
-                color: const Color(0xFFFF4500),
+                color: KabukTheme.redditOrange,
                 onTap: () => _subscribeToSubreddit('r/technology'),
               ),
               _quickSubscribeChip(
@@ -1211,7 +1211,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
                 final sub = subs[index];
                 final isReddit = sub.feedType == 'reddit';
                 final color = isReddit
-                    ? const Color(0xFFFF4500)
+                    ? KabukTheme.redditOrange
                     : KabukTheme.blueAccent;
                 return GestureDetector(
                   onTap: () => _selectFeedAndPop(sub.uri),
@@ -1433,7 +1433,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
             'r/subreddit',
             'Subscribe to a Reddit community',
             Icons.reddit,
-            const Color(0xFFFF4500),
+            KabukTheme.redditOrange,
           ),
           const SizedBox(height: 8),
           _tipRow(
@@ -1507,7 +1507,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
         actions.add(
           _actionTile(
             icon: Icons.add_circle_outline_rounded,
-            iconColor: const Color(0xFFFF4500),
+            iconColor: KabukTheme.redditOrange,
             title: 'Subscribe to $name',
             subtitle: 'Add this subreddit to your feed',
             onTap: () => _subscribeToSubreddit(name),

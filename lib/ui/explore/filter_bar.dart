@@ -69,7 +69,7 @@ class FilterBar extends StatelessWidget {
               color: isNostr
                   ? KabukTheme.purpleAccent
                   : isReddit
-                  ? const Color(0xFFFF4500)
+                  ? KabukTheme.redditOrange
                   : KabukTheme.blueAccent,
               isSelected: selected == sub.uri,
               onTap: () => onSelected(sub.uri),
@@ -130,7 +130,7 @@ class FilterBar extends StatelessWidget {
   /// Shows a context menu for the given feed subscription.
   void _showFeedContextMenu(BuildContext context, FeedSubscriptionData sub) {
     final isReddit = sub.feedType == 'reddit';
-    final color = isReddit ? const Color(0xFFFF4500) : KabukTheme.blueAccent;
+    final color = isReddit ? KabukTheme.redditOrange : KabukTheme.blueAccent;
 
     showModalBottomSheet<void>(
       context: context,

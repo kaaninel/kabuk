@@ -81,7 +81,7 @@ final defaultProviders = <ServiceProviderConfig>[
     id: 'reddit',
     name: 'Reddit',
     icon: Icons.forum_rounded,
-    color: Color(0xFFFF4500),
+    color: KabukTheme.redditOrange,
     description: 'Reddit API for browsing feeds, saving posts, and searching.',
     baseUrl: 'https://oauth.reddit.com',
   ),

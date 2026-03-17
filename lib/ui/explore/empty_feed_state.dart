@@ -140,7 +140,7 @@ class EmptyFeedState extends StatelessWidget {
                   const SizedBox(height: 16),
                   const _HintRow(
                     icon: Icons.reddit,
-                    color: Color(0xFFFF4500),
+                    color: KabukTheme.redditOrange,
                     title: 'Type  r/subreddit',
                     subtitle: 'Subscribe to any Reddit community',
                   ),

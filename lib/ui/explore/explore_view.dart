@@ -823,7 +823,7 @@ class _ExploreViewState extends ConsumerState<ExploreView>
     Color bannerColor;
     IconData bannerIcon;
     if (isReddit) {
-      bannerColor = const Color(0xFFFF4500);
+      bannerColor = KabukTheme.redditOrange;
       bannerIcon = Icons.reddit;
     } else if (isNostrProfile) {
       bannerColor = KabukTheme.purpleAccent;

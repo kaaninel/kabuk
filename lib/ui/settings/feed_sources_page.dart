@@ -206,7 +206,7 @@ class _FeedSourceTile extends StatelessWidget {
     final color = isNostr
         ? KabukTheme.purpleAccent
         : isReddit
-            ? const Color(0xFFFF4500)
+            ? KabukTheme.redditOrange
             : isFourchan
                 ? const Color(0xFF648034)
                 : KabukTheme.blueAccent;
@@ -494,7 +494,7 @@ class _AddFeedDialogState extends ConsumerState<_AddFeedDialog> {
 
   Widget _buildTypeSelector() {
     const types = [
-      (FeedSourceType.reddit, Icons.reddit, 'Reddit', Color(0xFFFF4500)),
+      (FeedSourceType.reddit, Icons.reddit, 'Reddit', KabukTheme.redditOrange),
       (FeedSourceType.rss, Icons.rss_feed_rounded, 'RSS', KabukTheme.blueAccent),
       (FeedSourceType.nostr, Icons.bolt_rounded, 'Nostr', KabukTheme.purpleAccent),
       (FeedSourceType.fourchan, Icons.image_rounded, '4chan', Color(0xFF648034)),

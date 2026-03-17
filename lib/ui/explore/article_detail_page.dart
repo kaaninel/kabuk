@@ -361,12 +361,12 @@ class _ArticleDetailContent extends ConsumerWidget {
                     ),
                     decoration: BoxDecoration(
                       color: isSubreddit
-                          ? const Color(0xFFFF4500).withAlpha(20)
+                          ? KabukTheme.redditOrange.withAlpha(20)
                           : KabukTheme.accentGreen.withAlpha(25),
                       borderRadius: BorderRadius.circular(12),
                       border: isSubreddit
                           ? Border.all(
-                              color: const Color(0xFFFF4500).withAlpha(60),
+                              color: KabukTheme.redditOrange.withAlpha(60),
                             )
                           : null,
                     ),
@@ -375,7 +375,7 @@ class _ArticleDetailContent extends ConsumerWidget {
                       style: TextStyle(
                         fontSize: 12,
                         color: isSubreddit
-                            ? const Color(0xFFFF4500)
+                            ? KabukTheme.redditOrange
                             : KabukTheme.accentGreen,
                       ),
                     ),
@@ -576,7 +576,7 @@ class _RedditLinkText extends StatelessWidget {
       final name = match.group(2)!;
       final label = '${type == 'r' ? 'r' : 'u'}/$name';
       final color = type == 'r'
-          ? const Color(0xFFFF4500)
+          ? KabukTheme.redditOrange
           : KabukTheme.blueAccent;
 
       spans.add(
@@ -1042,7 +1042,7 @@ class _SourceBadge extends StatelessWidget {
       ),
       _CommentSource.reddit => (
         Icons.reddit,
-        const Color(0xFFFF4500),
+        KabukTheme.redditOrange,
         'Reddit',
       ),
       _CommentSource.fourchan => (
@@ -1230,7 +1230,7 @@ class _UnifiedCommentTileState extends State<_UnifiedCommentTile> {
 
   static Color _sourceColor(_CommentSource source) => switch (source) {
     _CommentSource.nostr => KabukTheme.purpleAccent,
-    _CommentSource.reddit => const Color(0xFFFF4500),
+    _CommentSource.reddit => KabukTheme.redditOrange,
     _CommentSource.fourchan => const Color(0xFF00B300),
   };
 

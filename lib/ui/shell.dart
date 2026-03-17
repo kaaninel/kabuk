@@ -218,15 +218,20 @@ class _KabukShellState extends ConsumerState<KabukShell>
         ],
       ),
       floatingActionButton: selectedTab != 1 && !showChatSheet
-          ? FloatingActionButton.small(
-              tooltip: 'Quick chat',
-              onPressed: () {
-                ref.read(chatSheetVisibleProvider.notifier).state = true;
-              },
-              backgroundColor: KabukTheme.primaryGreen,
-              child: const Icon(Icons.chat, color: Colors.white),
+          ? Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: FloatingActionButton.small(
+                heroTag: null,
+                tooltip: 'Quick chat',
+                onPressed: () {
+                  ref.read(chatSheetVisibleProvider.notifier).state = true;
+                },
+                backgroundColor: KabukTheme.primaryGreen,
+                child: const Icon(Icons.chat, color: Colors.white),
+              ),
             )
           : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 }

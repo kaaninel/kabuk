@@ -52,7 +52,7 @@ class ArticleCard extends ConsumerWidget {
     final source = article.feedSource ?? '';
     final url = article.url ?? '';
     if (source.contains('reddit') || url.contains('reddit.com')) {
-      return const Color(0xFFFF4500); // Reddit orange
+      return KabukTheme.redditOrange; // Reddit orange
     }
     if (source.startsWith('kabuk:') ||
         source.isEmpty ||
@@ -437,7 +437,7 @@ class _SourceHeader extends StatelessWidget {
     final Color iconColor;
     final IconData iconData;
     if (isReddit) {
-      iconColor = const Color(0xFFFF4500);
+      iconColor = KabukTheme.redditOrange;
       iconData = Icons.reddit;
     } else {
       iconColor = KabukTheme.blueAccent;
@@ -476,7 +476,7 @@ class _SourceHeader extends StatelessWidget {
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                       color: isReddit && subreddit.startsWith('r/')
-                          ? const Color(0xFFFF4500)
+                          ? KabukTheme.redditOrange
                           : KabukTheme.textSecondary,
                       decoration: isReddit && subreddit.startsWith('r/')
                           ? TextDecoration.none

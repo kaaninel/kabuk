@@ -975,16 +975,7 @@ class _ContactAvatar extends ConsumerWidget {
 
   /// Deterministic avatar color from name hash.
   Color _avatarColor(String name) {
-    const palette = [
-      Color(0xFF5C6BC0), // indigo
-      Color(0xFF26A69A), // teal
-      Color(0xFFEF5350), // red
-      Color(0xFFAB47BC), // purple
-      Color(0xFF42A5F5), // blue
-      Color(0xFFFF7043), // deep orange
-      Color(0xFF66BB6A), // green
-      Color(0xFFFFCA28), // amber
-    ];
+    const palette = KabukTheme.avatarColors;
     if (name.isEmpty) return palette[0];
     final hash = name.codeUnits.fold<int>(0, (h, c) => h + c);
     return palette[hash % palette.length];
@@ -1450,14 +1441,7 @@ class _NostrDmAvatar extends ConsumerWidget {
     final pictureUrl = profile?.picture;
     final name = profile?.displayName ?? displayName;
 
-    const palette = [
-      Color(0xFF5C6BC0),
-      Color(0xFF26A69A),
-      Color(0xFFEF5350),
-      Color(0xFFAB47BC),
-      Color(0xFF42A5F5),
-      Color(0xFF66BB6A),
-    ];
+    const palette = KabukTheme.avatarColors;
     final hash = pubkeyHex.codeUnits.fold<int>(0, (h, c) => h + c);
     final bg = palette[hash % palette.length];
 

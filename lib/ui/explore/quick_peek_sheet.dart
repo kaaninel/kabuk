@@ -345,7 +345,7 @@ class _SubredditPeekSheetState extends ConsumerState<SubredditPeekSheet> {
               _PeekHeader(
                 title: widget.subredditName,
                 icon: Icons.reddit,
-                iconColor: const Color(0xFFFF4500),
+                iconColor: KabukTheme.redditOrange,
                 onClose: () => Navigator.of(context).pop(),
                 onRefresh: _fetchPosts,
                 onOpenExternal: () => _openExternal(

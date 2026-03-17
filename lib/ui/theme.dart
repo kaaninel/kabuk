@@ -62,6 +62,24 @@ abstract final class KabukTheme {
   /// Success color.
   static const Color success = Color(0xFF66BB6A);
 
+  /// Reddit brand orange.
+  static const redditOrange = Color(0xFFFF4500);
+
+  /// Nostr/relay purple accent.
+  static const nostrPurple = Color(0xFF9B6DFF);
+
+  /// Default avatar color palette for contacts and profiles.
+  static const avatarColors = [
+    Color(0xFF5C6BC0),
+    Color(0xFF26A69A),
+    Color(0xFFEF5350),
+    Color(0xFFAB47BC),
+    Color(0xFF42A5F5),
+    Color(0xFF66BB6A),
+    Color(0xFFFF7043),
+    Color(0xFFFFCA28),
+  ];
+
   // ---------------------------------------------------------------------------
   // Spacing
   // ---------------------------------------------------------------------------

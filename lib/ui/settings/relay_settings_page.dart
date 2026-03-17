@@ -265,7 +265,7 @@ class _RelaySettingsPageState extends ConsumerState<RelaySettingsPage> {
           const _SectionHeader(
             icon: Icons.mark_email_unread_rounded,
             label: 'DM — Messaging Relays',
-            color: Color(0xFF9B6DFF),
+            color: KabukTheme.nostrPurple,
           ),
           const SizedBox(height: KabukTheme.spacingXs),
           const Padding(
@@ -289,7 +289,7 @@ class _RelaySettingsPageState extends ConsumerState<RelaySettingsPage> {
                 isConnected: connected.contains(relay.url),
                 label: _labelFor(relay.url),
                 note: _noteFor(relay.url),
-                badgeColor: const Color(0xFF9B6DFF),
+                badgeColor: KabukTheme.nostrPurple,
                 onReconnect: () => _reconnectRelay(relay.url),
                 onRemove: () => _removeRelay(relay.url),
               ),
@@ -306,7 +306,7 @@ class _RelaySettingsPageState extends ConsumerState<RelaySettingsPage> {
                   avatar: const Icon(
                     Icons.add,
                     size: 14,
-                    color: Color(0xFF9B6DFF),
+                    color: KabukTheme.nostrPurple,
                   ),
                   label: Text(
                     entry.label,
@@ -513,10 +513,10 @@ class _DmRelayBanner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(KabukTheme.spacingMd),
       decoration: BoxDecoration(
-        color: const Color(0xFF9B6DFF).withAlpha(20),
+        color: KabukTheme.nostrPurple.withAlpha(20),
         borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
         border: Border.all(
-          color: const Color(0xFF9B6DFF).withAlpha(80),
+          color: KabukTheme.nostrPurple.withAlpha(80),
           width: 1,
         ),
       ),
@@ -525,7 +525,7 @@ class _DmRelayBanner extends StatelessWidget {
         children: [
           const Icon(
             Icons.warning_amber_rounded,
-            color: Color(0xFF9B6DFF),
+            color: KabukTheme.nostrPurple,
             size: 20,
           ),
           const SizedBox(width: KabukTheme.spacingSm),
@@ -536,7 +536,7 @@ class _DmRelayBanner extends StatelessWidget {
                 const Text(
                   'DM relays missing',
                   style: TextStyle(
-                    color: Color(0xFF9B6DFF),
+                    color: KabukTheme.nostrPurple,
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
                   ),
@@ -558,7 +558,7 @@ class _DmRelayBanner extends StatelessWidget {
                   icon: const Icon(Icons.add, size: 16),
                   label: const Text('Add All DM Relays'),
                   style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF9B6DFF),
+                    backgroundColor: KabukTheme.nostrPurple,
                     foregroundColor: Colors.white,
                     visualDensity: VisualDensity.compact,
                     textStyle: const TextStyle(fontSize: 12),
