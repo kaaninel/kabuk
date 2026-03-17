@@ -39,14 +39,17 @@ import 'package:kabuk/ui/theme.dart';
 ///
 /// When [articles] and [initialIndex] are provided, the detail page supports
 /// Reddit-style swipe-to-next-article navigation via overscroll detection.
-Future<void> pushArticleDetail(
+///
+/// Returns the final article index the user was viewing when they popped back,
+/// or `null` if no article list was provided.
+Future<int?> pushArticleDetail(
   BuildContext context, {
   required ArticleData article,
   List<ArticleData>? articles,
   int initialIndex = 0,
 }) {
-  return Navigator.of(context).push(
-    PageRouteBuilder<void>(
+  return Navigator.of(context).push<int>(
+    PageRouteBuilder<int>(
       pageBuilder: (context, animation, secondaryAnimation) =>
           ArticleDetailPage(
         article: article,
@@ -164,11 +167,16 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) Navigator.of(context).pop(_currentIndex);
+      },
+      child: Scaffold(
       backgroundColor: KabukTheme.background,
       appBar: _ArticleOmniBar(
         article: _currentArticle,
-        onBack: () => Navigator.of(context).pop(),
+        onBack: () => Navigator.of(context).pop(_currentIndex),
       ),
       body: GestureDetector(
         onHorizontalDragEnd: _onHorizontalDragEnd,
@@ -203,6 +211,7 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
             },
           ),
         ),
+      ),
       ),
     );
   }

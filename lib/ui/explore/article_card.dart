@@ -48,9 +48,9 @@ class ArticleCard extends ConsumerWidget {
   /// record which article was opened for scroll-restoration on return).
   final VoidCallback? onBeforeOpen;
 
-  /// Called after the detail page pops (used by the feed to scroll back
-  /// to this article's position in the list).
-  final VoidCallback? onReturnFromDetail;
+  /// Called after the detail page pops with the final article index the user
+  /// was viewing (used by the feed to scroll to the correct position).
+  final ValueChanged<int>? onReturnFromDetail;
 
   /// Optional list of feed articles for swipe-to-next navigation.
   final List<ArticleData>? articles;
@@ -413,7 +413,9 @@ class ArticleCard extends ConsumerWidget {
       article: article,
       articles: articles,
       initialIndex: index ?? 0,
-    ).then((_) => onReturnFromDetail?.call());
+    ).then((finalIndex) {
+      onReturnFromDetail?.call(finalIndex ?? index ?? 0);
+    });
   }
 
   void _quickPeek(BuildContext context, WidgetRef ref) {

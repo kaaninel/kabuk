@@ -278,6 +278,12 @@ class _ExploreViewState extends ConsumerState<ExploreView>
   /// URI of the article the user last opened; used to scroll back on return.
   String? _lastOpenedUri;
 
+  /// Scroll offset saved when the user opens an article detail view.
+  double _savedScrollOffset = 0;
+
+  /// Index the user originally tapped to open article detail.
+  int _openedAtIndex = 0;
+
   /// When the last successful refresh completed.
   DateTime? _lastRefreshedAt;
 
@@ -438,22 +444,57 @@ class _ExploreViewState extends ConsumerState<ExploreView>
     }
   }
 
-  /// Scrolls to the article that was last opened, if it is still in the list.
-  void _scrollToLastOpened() {
+  /// Scrolls to the article that was last viewed, if it is still in the list.
+  ///
+  /// Uses the saved scroll offset and index delta to calculate a target
+  /// position, then fine-tunes with [Scrollable.ensureVisible] once the
+  /// item's [GlobalKey] has a render context.
+  void _scrollToLastOpened([int? finalIndex]) {
     final uri = _lastOpenedUri;
     if (uri == null) return;
 
-    // Give the list a frame to settle before measuring.
+    // Calculate scroll target from saved offset + delta.
+    final indexDelta = (finalIndex ?? _openedAtIndex) - _openedAtIndex;
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final key = _itemKeys[uri];
-      final ctx = key?.currentContext;
-      if (ctx == null) return;
-      Scrollable.ensureVisible(
-        ctx,
-        duration: const Duration(milliseconds: 350),
-        curve: Curves.easeOutCubic,
-        alignment: 0.3, // position the item ~30% from the top for context
-      );
+      if (!mounted || !_scrollController.hasClients) return;
+
+      if (indexDelta == 0) {
+        // User didn't swipe — restore exact saved position.
+        _scrollController.jumpTo(_savedScrollOffset.clamp(
+          0.0,
+          _scrollController.position.maxScrollExtent,
+        ));
+        // Fine-tune with GlobalKey if available.
+        _ensureVisibleNextFrame(uri);
+        return;
+      }
+
+      // User swiped to a different article. Jump to estimated position
+      // based on saved offset + delta, then fine-tune.
+      // Estimate ~380px per card (image cards are tall, text-only shorter).
+      final targetOffset = _savedScrollOffset + indexDelta * 380.0;
+      final maxScroll = _scrollController.position.maxScrollExtent;
+      _scrollController.jumpTo(targetOffset.clamp(0.0, maxScroll));
+
+      // Fine-tune with ensureVisible once the item is rendered.
+      _ensureVisibleNextFrame(uri);
+    });
+  }
+
+  /// Tries to scroll the item with [uri] into view on the next frame.
+  void _ensureVisibleNextFrame(String uri) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctx = _itemKeys[uri]?.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOutCubic,
+          alignment: 0.3,
+        );
+      }
     });
   }
 
@@ -533,6 +574,7 @@ class _ExploreViewState extends ConsumerState<ExploreView>
 
     return Scaffold(
       body: NestedScrollView(
+        key: const PageStorageKey('explore-scroll'),
         controller: _scrollController,
         headerSliverBuilder: (context, innerBoxScrolled) => [
           SliverAppBar(
@@ -574,6 +616,7 @@ class _ExploreViewState extends ConsumerState<ExploreView>
             : AnimatedSwitcher(
                 duration: const Duration(milliseconds: 300),
                 child: articlesAsync.when(
+                  skipLoadingOnRefresh: true,
                   data: (articles) {
                     if (articles.isEmpty) {
                       return RefreshIndicator(
@@ -775,8 +818,17 @@ class _ExploreViewState extends ConsumerState<ExploreView>
                       index: i,
                       onBeforeOpen: () {
                         _lastOpenedUri = article.uri;
+                        _savedScrollOffset = _scrollController.hasClients
+                            ? _scrollController.offset
+                            : 0;
+                        _openedAtIndex = i;
                       },
-                      onReturnFromDetail: _scrollToLastOpened,
+                      onReturnFromDetail: (finalIndex) {
+                        if (finalIndex < session.articles.length) {
+                          _lastOpenedUri = session.articles[finalIndex].uri;
+                        }
+                        _scrollToLastOpened(finalIndex);
+                      },
                     ),
                   );
                 }, childCount: session.articles.length + 1),
@@ -1307,8 +1359,17 @@ class _ExploreViewState extends ConsumerState<ExploreView>
         index: index,
         onBeforeOpen: () {
           _lastOpenedUri = article.uri;
+          _savedScrollOffset = _scrollController.hasClients
+              ? _scrollController.offset
+              : 0;
+          _openedAtIndex = index;
         },
-        onReturnFromDetail: _scrollToLastOpened,
+        onReturnFromDetail: (finalIndex) {
+          if (finalIndex < _displayedArticles.length) {
+            _lastOpenedUri = _displayedArticles[finalIndex].uri;
+          }
+          _scrollToLastOpened(finalIndex);
+        },
       ),
     );
   }
