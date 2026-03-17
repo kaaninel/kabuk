@@ -11,6 +11,7 @@ import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/services/feed.dart';
 import 'package:kabuk/services/nostr.dart';
 import 'package:kabuk/services/nostr_utils.dart';
+import 'package:kabuk/ui/explore/explore_view.dart' show ExploreView;
 
 // =============================================================================
 // Data classes
@@ -39,7 +40,7 @@ class BrowseSession {
   /// Human-readable display name shown in the UI (e.g. `r/nostr`, `/g/`).
   final String displayName;
 
-  /// Source type string matching [FeedSourceType.name], or `'nostr_profile'`.
+  /// Source type string matching FeedSourceType.name, or `'nostr_profile'`.
   final String sourceType;
 
   /// Articles fetched from the source (in-memory, not persisted to the store).
@@ -115,7 +116,7 @@ class BrowseNotifier extends StateNotifier<BrowseSession?> {
   /// Starts browsing [url].
   ///
   /// If the same URL is already loaded, re-uses the cached articles.
-  /// [sourceType] must match [FeedSourceType.name] or be `'nostr_profile'`.
+  /// [sourceType] must match FeedSourceType.name or be `'nostr_profile'`.
   Future<void> browse(String url, String displayName, String sourceType) async {
     // Cache hit — same URL already loaded successfully.
     final s = state;

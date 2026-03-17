@@ -11,6 +11,7 @@ import 'dart:developer' as dev;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kabuk/config/providers.dart';
+import 'package:kabuk/ui/explore/article_detail_page.dart' show ArticleDetailPage;
 import 'package:kabuk/ui/theme.dart';
 
 // =============================================================================

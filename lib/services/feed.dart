@@ -113,7 +113,7 @@ abstract interface class FeedService {
 
   /// Fetches a paginated page of items, returning items and an optional cursor.
   ///
-  /// Pass the returned [nextCursor] as [cursor] in subsequent calls to load
+  /// Pass the returned nextCursor as [cursor] in subsequent calls to load
   /// more items. For non-paginated sources (RSS, Atom) the cursor is always
   /// `null`. Currently only Reddit sources support cursors.
   ///

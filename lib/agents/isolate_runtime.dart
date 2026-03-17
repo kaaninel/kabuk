@@ -414,8 +414,8 @@ class _IsolateBootstrap {
 /// execution back to the main isolate.
 ///
 /// Tool `execute` closures are created locally within the isolate —
-/// they send [_ToolExecuteRequest] messages via [requestPort] and
-/// await [_ToolExecuteResponse] from [responseStream]. This avoids
+/// they send _ToolExecuteRequest messages via requestPort and
+/// await _ToolExecuteResponse from responseStream. This avoids
 /// the core serialization problem: closures never cross isolate boundaries.
 class _IsolateShimAgent extends BaseAgent {
   _IsolateShimAgent({
@@ -711,7 +711,7 @@ class _RecordingMutationContext implements MutationContext {
   @override
   Future<Result<List<int>>> retrieveBlob(String hash) async {
     return const Result.failure(
-      const NotFoundError('Blob retrieval not supported in isolate proxy'),
+      NotFoundError('Blob retrieval not supported in isolate proxy'),
     );
   }
 }
@@ -817,12 +817,12 @@ class _StubVaultService implements VaultService {
 
   @override
   Future<Result<Uint8List>> retrieve(String hash) async => const Result.failure(
-    const NotFoundError('VaultService not available in isolate'),
+    NotFoundError('VaultService not available in isolate'),
   );
 
   @override
   Future<Result<void>> delete(String hash) async => const Result.failure(
-    const NotFoundError('VaultService not available in isolate'),
+    NotFoundError('VaultService not available in isolate'),
   );
 
   @override
@@ -842,7 +842,7 @@ class _StubVaultService implements VaultService {
   @override
   Future<Result<VaultEntry>> updateTags(String hash, List<String> tags) async =>
       const Result.failure(
-        const NotFoundError('VaultService not available in isolate'),
+        NotFoundError('VaultService not available in isolate'),
       );
 
   @override
@@ -922,7 +922,7 @@ class _StubAuthService implements AuthService {
   @override
   Future<Result<UserIdentity>> importFromNsec(String nsec) async =>
       const Result.failure(
-        const NotFoundError('AuthService not available in isolate'),
+        NotFoundError('AuthService not available in isolate'),
       );
   @override
   Future<String?> exportNsec() async => null;
@@ -938,11 +938,11 @@ class _StubAuthService implements AuthService {
   Future<Uint8List?> getPrivateKeyBytes() async => null;
   @override
   Future<Result<Uint8List>> sign(List<int> data) async => const Result.failure(
-    const NotFoundError('AuthService not available in isolate'),
+    NotFoundError('AuthService not available in isolate'),
   );
   @override
   Future<Result<Uint8List>> signHash(Uint8List hash) async => const Result.failure(
-    const NotFoundError('AuthService not available in isolate'),
+    NotFoundError('AuthService not available in isolate'),
   );
   @override
   Future<bool> verify(
@@ -961,12 +961,12 @@ class _StubAuthService implements AuthService {
   @override
   Future<Result<UserIdentity>> switchIdentity(String publicKeyHex) async =>
       const Result.failure(
-        const NotFoundError('AuthService not available in isolate'),
+        NotFoundError('AuthService not available in isolate'),
       );
   @override
   Future<Result<void>> removeIdentity(String publicKeyHex) async =>
       const Result.failure(
-        const NotFoundError('AuthService not available in isolate'),
+        NotFoundError('AuthService not available in isolate'),
       );
   @override
   Future<String?> exportNsecFor(String publicKeyHex) async => null;
@@ -1177,7 +1177,7 @@ class IsolateAgentRuntime implements AgentRuntime {
               sendPort.send(_LlmStreamEventResponse(req.id, event));
             }
             sendPort.send(_LlmStreamEndResponse(req.id));
-          } on Object catch (e, st) {
+          } on Object catch (e) {
             sendPort.send(
               _IsolateErrorResponse(
                 req.id,

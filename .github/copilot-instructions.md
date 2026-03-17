@@ -40,7 +40,7 @@ Kabuk follows a strict layered architecture. Dependencies flow downward only.
 └─────────────────────────────────────────────┘
 ```
 
-- **Presentation Layer** — Flutter widgets and RFW runtime. Four main views: Explore (discovery feed), Chat (agent conversations), Create (content authoring), Apps (installed micro-apps). RFW allows agents to generate UI dynamically without app updates.
+- **Presentation Layer** — Flutter widgets and RFW runtime. Four main views: Explore (discovery feed), Chat (agent conversations), Vault (private data storage with quick capture), Apps (installed micro-apps). RFW allows agents to generate UI dynamically without app updates.
 - **Agent Layer** — A router agent dispatches user messages to domain-specific agents. Each agent declares typed tools. Agents run in Dart isolates for sandboxing. LLM integration is abstracted behind `LlmService` so the provider can be swapped.
 - **Knowledge Layer** — All persistent data lives as RDF triples (subject, predicate, object) using Schema.org as the default vocabulary. Backed by SQLite via Drift. Queries use a builder pattern. Mutations emit change events that Riverpod providers watch for reactive UI.
 - **Virtual OS Layer** — Abstract service interfaces (Vault for secrets/encryption, Mesh for networking/sync, Media for camera/files/audio, Auth for identity, Notification for alerts, Presentation for display/haptics). Agents access these only through `AgentContext`.
@@ -100,7 +100,7 @@ lib/
     shell.dart                 # App shell — navigation, bottom bar, scaffold
     explore/                   # Explore view (discovery feed)
     chat/                      # Chat view (agent conversations)
-    create/                    # Create view (content authoring)
+    create/                    # Vault view (directory retains legacy name)
     apps/                      # Apps view (micro-app launcher)
     shared/                    # Shared widgets, themes, design tokens
   config/                      # App configuration, constants, feature flags

@@ -5,6 +5,8 @@
 /// [EmptyFeedState], and [SearchDialog].
 library;
 
+import 'package:kabuk/ui/explore/explore_widgets.dart' show FilterBar, ArticleCard, ArticleDetailSheet, EmptyFeedState, SearchDialog;
+
 export 'article_card.dart';
 export 'article_detail_sheet.dart';
 export 'empty_feed_state.dart';

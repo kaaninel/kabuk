@@ -40,7 +40,7 @@ class RedditFeedSource implements FeedSource {
 
   /// Fetches a page of posts, optionally starting after [afterCursor].
   ///
-  /// Returns the parsed feed items and an optional [nextCursor] to pass
+  /// Returns the parsed feed items and an optional nextCursor to pass
   /// on subsequent calls for incremental pagination.
   Future<({List<FeedItem> items, String? nextCursor})> fetchPage(
     String url, {

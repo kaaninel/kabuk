@@ -185,8 +185,8 @@ class _KnowledgeStoreTabState extends ConsumerState<_KnowledgeStoreTab> {
                     size: 48,
                     color: KabukTheme.textTertiary,
                   ),
-                  const SizedBox(height: KabukTheme.spacingSm),
-                  const Text(
+                  SizedBox(height: KabukTheme.spacingSm),
+                  Text(
                     'Enter filters and tap Search\nto inspect triples.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
@@ -774,8 +774,8 @@ class _LlmCostTab extends ConsumerWidget {
               size: 48,
               color: KabukTheme.textTertiary,
             ),
-            const SizedBox(height: KabukTheme.spacingSm),
-            const Text(
+            SizedBox(height: KabukTheme.spacingSm),
+            Text(
               'No LLM calls recorded yet.\nStart a conversation to track usage.',
               textAlign: TextAlign.center,
               style: TextStyle(color: KabukTheme.textSecondary, fontSize: 13),

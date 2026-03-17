@@ -372,7 +372,7 @@ abstract class BaseAgent {
     }
   }
 
-  /// Wraps [context.llm.stream] with automatic tool-call handling.
+  /// Wraps context.llm.stream with automatic tool-call handling.
   ///
   /// Text deltas are yielded immediately for real-time UI. Tool-call
   /// events are collected; after the stream ends, the tools are executed,

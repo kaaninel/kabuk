@@ -1,6 +1,6 @@
 /// Topic following — providers and UI for following Nostr hashtags.
 ///
-/// Leverages the existing [SavedSearch] knowledge type with
+/// Leverages the existing SavedSearch knowledge type with
 /// `source: 'nostr_hashtag'` to persist followed topics. Provides
 /// Riverpod providers for listing/toggling followed topics and
 /// a feed filtered by followed hashtags.
@@ -72,8 +72,8 @@ final topicFeedProvider = FutureProvider<List<NostrEvent>>((ref) async {
 
 /// Follows a hashtag topic.
 ///
-/// Creates a [SavedSearch] with `source: 'nostr_hashtag'` and a
-/// [FeedSubscription] with `feedType: 'nostr'` so that [refreshAllFeeds]
+/// Creates a SavedSearch with `source: 'nostr_hashtag'` and a
+/// FeedSubscription with `feedType: 'nostr'` so that refreshAllFeeds
 /// can fetch Nostr notes for the hashtag and display them in the feed.
 Future<void> followTopic(WidgetRef ref, String hashtag) async {
   final store = ref.read(knowledgeStoreProvider);
@@ -112,7 +112,7 @@ Future<void> followTopic(WidgetRef ref, String hashtag) async {
 
 /// Unfollows a hashtag topic.
 ///
-/// Deletes both the [SavedSearch] and the [FeedSubscription] for the
+/// Deletes both the SavedSearch and the FeedSubscription for the
 /// hashtag from the knowledge store. Returns silently if not found.
 Future<void> unfollowTopic(WidgetRef ref, String hashtag) async {
   final store = ref.read(knowledgeStoreProvider);

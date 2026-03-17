@@ -5,7 +5,10 @@
 /// for desktop — the app is rarely used in a "closed" background state.
 library;
 
+import 'dart:async' show Timer;
+
 import 'package:kabuk/services/background_refresh.dart';
+import 'package:kabuk/ui/explore/explore_view.dart' show ExploreView;
 
 /// Desktop no-op implementation of [BackgroundRefreshService].
 class DesktopBackgroundRefreshService implements BackgroundRefreshService {

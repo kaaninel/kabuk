@@ -20,8 +20,11 @@ import 'package:kabuk/knowledge/drift_store.dart';
 import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/platform/shared/feed_service_impl.dart';
 import 'package:kabuk/platform/shared/mesh_service_impl.dart';
+import 'package:kabuk/platform/shared/nostr_service_impl.dart' show SharedNostrService;
 import 'package:kabuk/services/background_refresh.dart';
+import 'package:kabuk/services/exports.dart' show NostrService;
 import 'package:kabuk/services/feed.dart';
+import 'package:kabuk/services/nostr.dart' show NostrService;
 import 'package:workmanager/workmanager.dart';
 
 /// Top-level WorkManager callback — runs in a separate isolate when the OS
@@ -117,7 +120,7 @@ Future<void> _runFeedRefresh() async {
         for (final item in items) {
           final cached = existingByUrl[item.url];
           if (cached != null) {
-            final isNostr = item.url?.startsWith('nostr:') ?? false;
+            final isNostr = item.url.startsWith('nostr:');
             if (isNostr && cached.name != item.title && item.title.isNotEmpty) {
               await store.updateArticleTitleAndDescription(
                 cached.uri,
@@ -177,12 +180,12 @@ const int _kDmNotificationId = 1002;
 /// Opens the local database and reads the most-recent unread DM count.
 /// Because the background isolate cannot reconstruct the full auth context
 /// needed to decrypt NIP-17 sealed events, this task queries the locally
-/// persisted [Messages] table for rows whose [status] is `received` and
+/// persisted [Messages] table for rows whose status is `received` and
 /// whose timestamp is newer than 15 minutes ago. When any are found a local
 /// notification is shown so the user can tap back into the app.
 ///
 /// NOTE: To count *truly new* DMs that arrived since the last foreground
-/// session the task reads [conversations.unreadCount] from the database.
+/// session the task reads conversations.unreadCount from the database.
 /// The Nostr relay subscription in [SharedNostrService] persists incoming
 /// DMs in real-time whenever the app is in the foreground; the background
 /// task surfaces the count when the app is closed.

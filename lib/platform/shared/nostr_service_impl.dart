@@ -1,6 +1,6 @@
 /// Nostr service implementation — event signing and relay communication.
 ///
-/// Uses [AuthService] for secp256k1 signing and [web_socket_channel]
+/// Uses [AuthService] for secp256k1 signing and web_socket_channel
 /// for WebSocket relay connections. Events are signed per NIP-01 and
 /// published to all configured write relays.
 library;

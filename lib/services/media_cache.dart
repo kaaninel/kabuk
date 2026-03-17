@@ -10,9 +10,11 @@
 /// changes (WiFi → allow pre-fetch; none → show offline banner).
 library;
 
+import 'package:cached_network_image/cached_network_image.dart' show CachedNetworkImage;
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:kabuk/ui/shared/feed_image.dart' show FeedImage;
 
 // ---------------------------------------------------------------------------
 // Custom cache manager
@@ -25,7 +27,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// - **Max age:** 7 days — balances offline usability with storage hygiene
 /// - **Max objects:** 500 — enough for a large scroll session without eating too
 ///   much disk space; oldest entries are evicted automatically by the LRU logic
-///   inside [flutter_cache_manager].
+///   inside flutter_cache_manager.
 class KabukCacheManager extends CacheManager with ImageCacheManager {
   /// The singleton instance shared across the whole app.
   static final KabukCacheManager instance = KabukCacheManager._();

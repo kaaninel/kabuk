@@ -80,7 +80,7 @@ class QueryOrdering {
 class QueryBuilder {
   /// Creates a new empty query builder.
   ///
-  /// When [executor] is provided, terminal operations ([execute],
+  /// When executor is provided, terminal operations (execute,
   /// [first], [count], [stream]) delegate to it. Without an executor,
   /// those methods throw [UnimplementedError].
   QueryBuilder([this._executor]);

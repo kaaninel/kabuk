@@ -175,7 +175,7 @@ abstract interface class ModelManager {
   /// Returns a curated list of recommended small models for download.
   List<RemoteModelInfo> get recommendedModels;
 
-  /// Downloads a model from [url] and saves it to the models directory.
+  /// Downloads a model from url and saves it to the models directory.
   ///
   /// Yields [ModelDownloadProgress] events. The returned stream completes
   /// when the download finishes.

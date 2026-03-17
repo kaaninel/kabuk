@@ -1,6 +1,6 @@
 /// Tests for the LLM tier selection feature in [BaseAgent.processLlmRequest].
 ///
-/// Verifies that the [tier] parameter correctly sets the model hint
+/// Verifies that the tier parameter correctly sets the model hint
 /// on [LlmRequest] so that [TieredLlmService] can route to the
 /// appropriate backend.
 library;

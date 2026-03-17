@@ -503,13 +503,13 @@ class _CollectionEmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
+            Icon(
               Icons.folder_outlined,
               size: 48,
               color: KabukTheme.textTertiary,
             ),
-            const SizedBox(height: KabukTheme.spacingMd),
-            const Text(
+            SizedBox(height: KabukTheme.spacingMd),
+            Text(
               'No collections yet',
               style: TextStyle(
                 color: KabukTheme.textSecondary,
@@ -517,8 +517,8 @@ class _CollectionEmptyState extends StatelessWidget {
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: KabukTheme.spacingSm),
-            const Text(
+            SizedBox(height: KabukTheme.spacingSm),
+            Text(
               'Create folders to organize your documents and media',
               style: TextStyle(color: KabukTheme.textTertiary, fontSize: 13),
               textAlign: TextAlign.center,

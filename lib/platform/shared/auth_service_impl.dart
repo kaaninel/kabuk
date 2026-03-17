@@ -458,14 +458,14 @@ class SharedAuthService implements AuthService {
     await _ensureLoaded();
     if (!nsec.startsWith('nsec1')) {
       return const Result.failure(
-        const ServiceError.validation('Invalid nsec — must start with "nsec1"'),
+        ServiceError.validation('Invalid nsec — must start with "nsec1"'),
       );
     }
     try {
       final bytes = _bech32Decode(nsec);
       if (bytes.length != 32) {
         return const Result.failure(
-          const ServiceError.validation(
+          ServiceError.validation(
             'Invalid nsec — decoded key must be 32 bytes',
           ),
         );
@@ -557,7 +557,7 @@ class SharedAuthService implements AuthService {
     final entry = _activeEntry;
     if (entry == null) {
       return const Result.failure(
-        const ServiceError.notFound(
+        ServiceError.notFound(
           'No keypair — generate or import one first',
         ),
       );
@@ -574,14 +574,14 @@ class SharedAuthService implements AuthService {
     final entry = _activeEntry;
     if (entry == null) {
       return const Result.failure(
-        const ServiceError.notFound(
+        ServiceError.notFound(
           'No keypair — generate or import one first',
         ),
       );
     }
     if (hash.length != 32) {
       return const Result.failure(
-        const ServiceError.validation('Hash must be exactly 32 bytes'),
+        ServiceError.validation('Hash must be exactly 32 bytes'),
       );
     }
     return Result.success(_schnorrSignWith(hash, entry.privateKey));
@@ -650,7 +650,7 @@ class SharedAuthService implements AuthService {
       (e) => _entryPubKeyHex(e.publicKey) == publicKeyHex,
     );
     if (idx < 0) {
-      return const Result.failure(const ServiceError.notFound('Identity not found'));
+      return const Result.failure(ServiceError.notFound('Identity not found'));
     }
     _activeIndex = idx;
     await _persist();
@@ -662,14 +662,14 @@ class SharedAuthService implements AuthService {
     await _ensureLoaded();
     if (_identities.length <= 1) {
       return const Result.failure(
-        const ServiceError.validation('Cannot remove the last identity'),
+        ServiceError.validation('Cannot remove the last identity'),
       );
     }
     final idx = _identities.indexWhere(
       (e) => _entryPubKeyHex(e.publicKey) == publicKeyHex,
     );
     if (idx < 0) {
-      return const Result.failure(const ServiceError.notFound('Identity not found'));
+      return const Result.failure(ServiceError.notFound('Identity not found'));
     }
     _identities.removeAt(idx);
     if (_activeIndex >= _identities.length) {

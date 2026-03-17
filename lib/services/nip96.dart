@@ -12,6 +12,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:kabuk/services/exports.dart' show NostrEvent;
+import 'package:kabuk/services/nostr.dart' show NostrEvent;
 import 'package:pointycastle/export.dart';
 
 // ---------------------------------------------------------------------------

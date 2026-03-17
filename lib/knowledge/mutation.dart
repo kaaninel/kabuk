@@ -1,6 +1,8 @@
 /// Mutation context for transactional writes to the knowledge store.
 library;
 
+import 'package:kabuk/config/errors.dart' show NotFoundError;
+import 'package:kabuk/config/exports.dart' show NotFoundError;
 import 'package:kabuk/config/result.dart';
 import 'package:kabuk/knowledge/triple.dart';
 

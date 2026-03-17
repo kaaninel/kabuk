@@ -64,7 +64,7 @@ class FollowedUserData {
 
 /// Extension methods for managing followed users in [KnowledgeStore].
 extension KnowledgeStoreFollowExtension on KnowledgeStore {
-  /// Creates a new [FollowedUser] entity and returns its URI.
+  /// Creates a new FollowedUser entity and returns its URI.
   Future<String> createFollowedUser({
     required String name,
     String? profileUrl,

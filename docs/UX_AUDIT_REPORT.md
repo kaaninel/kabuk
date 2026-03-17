@@ -96,9 +96,9 @@ Kabuk is an ambitious agent-centric OS shell that tries to do too many things in
 
 ---
 
-### 3. Vault Tab (formerly Create — Private Data Storage)
+### 3. Vault Tab — Private Data Storage
 
-> **Note:** This tab is being renamed from **Create** to **Vault**. Its purpose is shifting from camera-first content creation to a **private data inbox**: the user's personal capture and storage space, organized by the local LLM. Camera, audio recorder, and notes remain as capture modalities, but the primary framing is "capture anything and let AI organize it" rather than "create content to publish."
+> This tab is the user's **private data inbox**: a personal capture and storage space, organized by the local LLM. Camera, audio recorder, and notes are the capture modalities; the primary framing is "capture anything and let AI organize it."
 
 **What it does**: Quick-capture interface (photo, audio, notes) feeding directly into the user's private, AI-organized vault. The local LLM auto-tags and categorizes captured content.
 
@@ -233,7 +233,7 @@ Kabuk is an ambitious agent-centric OS shell that tries to do too many things in
 | 7.1 | **Quick Chat FAB appears on every tab** including Chat tab — redundant on its own tab. | P3 |
 | 7.2 | **Settings accessible from 2 different tabs** (Explore + Apps) — inconsistent. | P3 |
 | 7.3 | **Feed subscriptions live in Chat tab** instead of Explore — cross-tab confusion. | P1 |
-| 7.4 | **4-tab structure tries to serve too many purposes** — Explore (social feed), Chat (AI + messaging), Create (camera + notes + audio), Apps (bookmarks + tools + dev console + settings). Each tab is overloaded. | P2 |
+| 7.4 | **4-tab structure tries to serve too many purposes** — Explore (social feed), Chat (AI + messaging), Vault (camera + notes + audio), Apps (bookmarks + tools + dev console + settings). Each tab is overloaded. | P2 |
 
 ### 8. Accessibility
 

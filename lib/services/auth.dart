@@ -7,6 +7,8 @@ library;
 
 import 'dart:typed_data';
 
+import 'package:kabuk/config/errors.dart' show ValidationError;
+import 'package:kabuk/config/exports.dart' show ValidationError;
 import 'package:kabuk/config/result.dart';
 
 /// Abstract interface for authentication and identity management.

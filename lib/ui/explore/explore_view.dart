@@ -156,7 +156,7 @@ Future<List<ArticleData>> _fetchFeed(
       final cached = existingByUrl[item.url];
       if (cached != null) {
         // For Nostr items, patch stale titles (e.g. bare hashtag from mirror bots).
-        final isNostr = item.url?.startsWith('nostr:') ?? false;
+        final isNostr = item.url.startsWith('nostr:');
         if (isNostr && cached.name != item.title && item.title.isNotEmpty) {
           await store.updateArticleTitleAndDescription(
             cached.uri,

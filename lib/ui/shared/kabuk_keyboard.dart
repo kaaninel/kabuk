@@ -338,19 +338,20 @@ class _KabukKeyboardState extends ConsumerState<KabukKeyboard> {
             ),
             suffixIcon: _hasText
                 ? GestureDetector(
+                    behavior: HitTestBehavior.opaque,
                     onTap: () => widget.onSend?.call(),
                     child: Padding(
                       padding: const EdgeInsets.only(right: 4),
                       child: Container(
-                        width: 28,
-                        height: 28,
+                        width: 32,
+                        height: 32,
                         decoration: const BoxDecoration(
                           color: KabukTheme.primaryGreen,
                           shape: BoxShape.circle,
                         ),
                         child: const Icon(
                           Icons.arrow_upward,
-                          size: 16,
+                          size: 18,
                           color: Colors.white,
                         ),
                       ),
@@ -358,8 +359,8 @@ class _KabukKeyboardState extends ConsumerState<KabukKeyboard> {
                   )
                 : null,
             suffixIconConstraints: const BoxConstraints(
-              minWidth: 36,
-              minHeight: 0,
+              minWidth: 40,
+              minHeight: 40,
             ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(20),

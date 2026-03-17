@@ -334,7 +334,7 @@ extension KnowledgeStoreContentBlockExtension on KnowledgeStore {
     });
   }
 
-  /// Lists all content blocks for a document, ordered by [order].
+  /// Lists all content blocks for a document, ordered by order.
   Future<List<ContentBlockData>> listDocumentBlocks(String documentUri) async {
     final triples = await query()
         .where(NS.kabukParentDocument, equals: documentUri)

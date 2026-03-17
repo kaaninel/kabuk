@@ -1,7 +1,7 @@
 /// Enhanced search view — full-screen unified search across local store and Nostr.
 ///
 /// Combines [KnowledgeStore.search] for local data with Nostr relay
-/// search ([searchContent] for NIP-50, [searchByHashtag] for hashtags).
+/// search (searchContent for NIP-50, searchByHashtag for hashtags).
 /// Supports search history via SavedSearch, inline result display,
 /// and profile search.
 library;
@@ -11,6 +11,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kabuk/config/providers.dart';
+import 'package:kabuk/knowledge/exports.dart' show KnowledgeStore;
+import 'package:kabuk/knowledge/store.dart' show KnowledgeStore;
 import 'package:kabuk/knowledge/types/saved_search.dart';
 import 'package:kabuk/services/nostr.dart';
 import 'package:kabuk/services/nostr_utils.dart';

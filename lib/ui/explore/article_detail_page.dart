@@ -12,7 +12,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/knowledge/types/nostr_social.dart';
+import 'package:kabuk/ui/explore/article_detail_sheet.dart' show ArticleDetailSheet;
 import 'package:kabuk/ui/explore/browse_session.dart';
+import 'package:kabuk/ui/explore/explore_widgets.dart' show ArticleDetailSheet;
 import 'package:kabuk/ui/explore/fourchan_comments.dart';
 import 'package:kabuk/ui/explore/nostr_providers.dart';
 import 'package:kabuk/ui/explore/reddit_comments.dart';

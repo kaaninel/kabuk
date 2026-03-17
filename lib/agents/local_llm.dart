@@ -1,6 +1,6 @@
 /// Local on-device LLM service using llamadart.
 ///
-/// Runs GGUF models directly on the device via [llamadart]'s
+/// Runs GGUF models directly on the device via llamadart's
 /// [LlamaEngine], using Dart Native Assets for zero-config native
 /// library linking on iOS, macOS, Android, Linux, and Windows.
 /// Supports streaming, configurable sampling parameters, and automatic
@@ -14,6 +14,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:kabuk/agents/exports.dart' show LlmConfig;
+import 'package:kabuk/agents/http_llm.dart' show LlmConfig;
 import 'package:kabuk/agents/llm.dart';
 import 'package:llamadart/llamadart.dart';
 

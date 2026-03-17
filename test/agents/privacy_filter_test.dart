@@ -8,7 +8,7 @@ import 'package:kabuk/agents/privacy_filter.dart';
 void main() {
   group('AnonymizationMap', () {
     test('deAnonymize replaces placeholders with original values', () {
-      final map = const AnonymizationMap(
+      const map = AnonymizationMap(
         replacements: {'[PERSON_1]': 'Alice', '[EMAIL_1]': 'alice@example.com'},
         originalPrompt: 'Send Alice an email at alice@example.com',
         anonymizedPrompt: 'Send [PERSON_1] an email at [EMAIL_1]',
@@ -29,7 +29,7 @@ void main() {
     });
 
     test('hasReplacements returns true when replacements exist', () {
-      final map = const AnonymizationMap(
+      const map = AnonymizationMap(
         replacements: {'[PERSON_1]': 'Bob'},
         originalPrompt: 'Hi Bob',
         anonymizedPrompt: 'Hi [PERSON_1]',
@@ -43,7 +43,7 @@ void main() {
     const filter = PrivacyFilter(localLlm: null);
 
     test('anonymizes email addresses', () async {
-      final request = const LlmRequest(
+      const request = LlmRequest(
         messages: [
           LlmMessage.user('Email me at john.doe@example.com please'),
         ],
@@ -67,7 +67,7 @@ void main() {
     });
 
     test('anonymizes phone numbers', () async {
-      final request = const LlmRequest(
+      const request = LlmRequest(
         messages: [LlmMessage.user('Call me at 555-123-4567')],
       );
 
@@ -81,7 +81,7 @@ void main() {
     });
 
     test('anonymizes IP addresses', () async {
-      final request = const LlmRequest(
+      const request = LlmRequest(
         messages: [LlmMessage.user('My server is at 192.168.1.42')],
       );
 
@@ -95,7 +95,7 @@ void main() {
     });
 
     test('skips anonymization when privacy level is none', () async {
-      final request = const LlmRequest(
+      const request = LlmRequest(
         messages: [LlmMessage.user('Email me at alice@example.com')],
       );
 
@@ -106,7 +106,7 @@ void main() {
     });
 
     test('does not modify system or tool result messages', () async {
-      final request = const LlmRequest(
+      const request = LlmRequest(
         messages: [
           LlmMessage.system('You are a helpful assistant.'),
           LlmMessage.user('nothing to anonymize here'),
@@ -138,13 +138,13 @@ void main() {
     const filter = PrivacyFilter(localLlm: null);
 
     test('deAnonymizeResponse restores text response', () {
-      final map = const AnonymizationMap(
+      const map = AnonymizationMap(
         replacements: {'[PERSON_1]': 'Alice'},
         originalPrompt: '',
         anonymizedPrompt: '',
       );
 
-      final response = const LlmResponse.text(
+      const response = LlmResponse.text(
         'I scheduled a meeting with [PERSON_1].',
       );
 
@@ -156,13 +156,13 @@ void main() {
     });
 
     test('deAnonymizeResponse restores tool call arguments', () {
-      final map = const AnonymizationMap(
+      const map = AnonymizationMap(
         replacements: {'[PERSON_1]': 'Bob'},
         originalPrompt: '',
         anonymizedPrompt: '',
       );
 
-      final response = const LlmResponse.toolCalls(null, [
+      const response = LlmResponse.toolCalls(null, [
         LlmToolCall(
           id: 'tc_1',
           name: 'create_contact',
@@ -176,7 +176,7 @@ void main() {
     });
 
     test('deAnonymizeResponse passes through error responses', () {
-      final map = const AnonymizationMap(
+      const map = AnonymizationMap(
         replacements: {'[PERSON_1]': 'Alice'},
         originalPrompt: '',
         anonymizedPrompt: '',
@@ -188,7 +188,7 @@ void main() {
     });
 
     test('deAnonymizeEvent restores text delta', () {
-      final map = const AnonymizationMap(
+      const map = AnonymizationMap(
         replacements: {'[PERSON_1]': 'Charlie'},
         originalPrompt: '',
         anonymizedPrompt: '',

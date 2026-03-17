@@ -75,8 +75,8 @@ class ConversationList extends ConsumerWidget {
                 child: Row(
                   children: [
                     Icon(Icons.qr_code_rounded, size: 20, semanticLabel: ''),
-                    const SizedBox(width: 12),
-                    const Text('Add via QR Code'),
+                    SizedBox(width: 12),
+                    Text('Add via QR Code'),
                   ],
                 ),
               ),
@@ -86,8 +86,8 @@ class ConversationList extends ConsumerWidget {
                 child: Row(
                   children: [
                     Icon(Icons.group_add_outlined, size: 20, semanticLabel: ''),
-                    const SizedBox(width: 12),
-                    const Text('New Channel'),
+                    SizedBox(width: 12),
+                    Text('New Channel'),
                   ],
                 ),
               ),
@@ -96,8 +96,8 @@ class ConversationList extends ConsumerWidget {
                 child: Row(
                   children: [
                     Icon(Icons.send_rounded, size: 20, semanticLabel: ''),
-                    const SizedBox(width: 12),
-                    const Text('New Message'),
+                    SizedBox(width: 12),
+                    Text('New Message'),
                   ],
                 ),
               ),
@@ -106,8 +106,8 @@ class ConversationList extends ConsumerWidget {
                 child: Row(
                   children: [
                     Icon(Icons.person_add_outlined, size: 20, semanticLabel: ''),
-                    const SizedBox(width: 12),
-                    const Text('Add Contact'),
+                    SizedBox(width: 12),
+                    Text('Add Contact'),
                   ],
                 ),
               ),
@@ -116,8 +116,8 @@ class ConversationList extends ConsumerWidget {
                 child: Row(
                   children: [
                     Icon(Icons.download_rounded, size: 20, semanticLabel: ''),
-                    const SizedBox(width: 12),
-                    const Text('Import Nostr Contacts'),
+                    SizedBox(width: 12),
+                    Text('Import Nostr Contacts'),
                   ],
                 ),
               ),
@@ -1073,10 +1073,10 @@ class _ConversationTile extends ConsumerWidget {
                   size: 20,
                 ),
               )
-            : CircleAvatar(
+            : const CircleAvatar(
                 radius: 22,
                 backgroundColor: KabukTheme.surfaceVariant,
-                child: const Icon(
+                child: Icon(
                   Icons.chat_outlined,
                   color: KabukTheme.textSecondary,
                   size: 20,
@@ -1311,7 +1311,7 @@ class _NostrDmAvatar extends ConsumerWidget {
           child: Container(
             width: 14,
             height: 14,
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: KabukTheme.background,
               shape: BoxShape.circle,
             ),

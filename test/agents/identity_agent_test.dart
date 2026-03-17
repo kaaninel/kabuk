@@ -6,7 +6,9 @@ library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kabuk/agents/base.dart';
+import 'package:kabuk/agents/context.dart' show AgentContext;
 import 'package:kabuk/agents/domains/identity_agent.dart';
+import 'package:kabuk/agents/exports.dart' show AgentContext;
 import 'package:kabuk/agents/llm.dart';
 import 'package:kabuk/agents/messages.dart';
 import 'package:mocktail/mocktail.dart';

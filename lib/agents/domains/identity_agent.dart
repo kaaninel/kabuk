@@ -14,6 +14,8 @@ import 'package:kabuk/agents/llm.dart';
 import 'package:kabuk/agents/memory.dart';
 import 'package:kabuk/agents/messages.dart';
 import 'package:kabuk/config/result.dart';
+import 'package:kabuk/services/auth.dart' show AuthService;
+import 'package:kabuk/services/exports.dart' show AuthService;
 import 'package:kabuk/services/nostr.dart';
 import 'package:kabuk/services/nostr_utils.dart';
 

@@ -130,9 +130,9 @@ class AppsView extends ConsumerWidget {
                 ? const SliverToBoxAdapter(child: SizedBox.shrink())
                 : SliverMainAxisGroup(
                     slivers: [
-                      SliverToBoxAdapter(
+                      const SliverToBoxAdapter(
                         child: Padding(
-                          padding: const EdgeInsets.only(
+                          padding: EdgeInsets.only(
                             top: KabukTheme.spacingMd,
                           ),
                           child: _SectionHeader(
@@ -214,9 +214,9 @@ class AppsView extends ConsumerWidget {
           ),
 
           // ─── Built-in Tools ───────────────────────────────────────
-          SliverToBoxAdapter(
+          const SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.only(top: KabukTheme.spacingLg),
+              padding: EdgeInsets.only(top: KabukTheme.spacingLg),
               child: _SectionHeader(
                 icon: Icons.handyman_rounded,
                 title: 'Tools',
@@ -292,13 +292,13 @@ class AppsView extends ConsumerWidget {
           const SliverToBoxAdapter(child: _DevSection()),
 
           // ─── Marketplace ──────────────────────────────────────────
-          SliverToBoxAdapter(
+          const SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.only(top: KabukTheme.spacingLg),
+              padding: EdgeInsets.only(top: KabukTheme.spacingLg),
               child: _SectionHeader(
                 icon: Icons.storefront_rounded,
                 title: 'Marketplace',
-                color: const Color(0xFF78909C),
+                color: Color(0xFF78909C),
               ),
             ),
           ),
@@ -413,7 +413,7 @@ class AppsView extends ConsumerWidget {
                 ),
                 const SizedBox(height: KabukTheme.spacingMd),
                 // Icon picker.
-                Text(
+                const Text(
                   'Icon',
                   style: TextStyle(
                     color: KabukTheme.textSecondary,
@@ -463,7 +463,7 @@ class AppsView extends ConsumerWidget {
                 ),
                 const SizedBox(height: KabukTheme.spacingMd),
                 // Color picker.
-                Text(
+                const Text(
                   'Color',
                   style: TextStyle(
                     color: KabukTheme.textSecondary,
@@ -1028,7 +1028,7 @@ class _DevSection extends ConsumerWidget {
                 for (final lib in libraries)
                   ListTile(
                     dense: true,
-                    leading: Icon(
+                    leading: const Icon(
                       Icons.extension_rounded,
                       size: 16,
                       color: KabukTheme.accentGreen,
@@ -1045,7 +1045,7 @@ class _DevSection extends ConsumerWidget {
                 for (final agent in agents)
                   ListTile(
                     dense: true,
-                    leading: Icon(
+                    leading: const Icon(
                       Icons.smart_toy_rounded,
                       size: 16,
                       color: KabukTheme.purpleAccent,

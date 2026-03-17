@@ -103,7 +103,7 @@ class TieredLlmConfig {
 /// - If `request.model` starts with `'tier:'`, the suffix determines
 ///   the tier (e.g., `'tier:advanced'`).
 /// - If `request.model` is `null` or doesn't match a tier name,
-///   the [base] tier is used.
+///   the base tier is used.
 /// - If the selected tier isn't available (no model configured),
 ///   the request falls through to the next lower tier.
 ///

@@ -6,6 +6,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:kabuk/ui/chat/conversation_detail.dart' show ConversationDetail;
 import 'package:kabuk/ui/chat/conversation_list.dart';
 
 /// Chat view — the Chat tab in the bottom navigation.

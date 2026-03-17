@@ -12,7 +12,7 @@ import 'package:kabuk/services/nostr.dart';
 
 /// A [FeedSource] that fetches Nostr text notes by hashtag.
 ///
-/// The [url] parameter is interpreted as a comma-separated list of
+/// The url parameter is interpreted as a comma-separated list of
 /// hashtags (without the `#` prefix). For example: `flutter,dart,mobile`.
 ///
 /// Feed URLs for Nostr sources use the format:

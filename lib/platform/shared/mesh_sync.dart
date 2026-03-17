@@ -20,6 +20,8 @@ import 'dart:developer' as dev;
 import 'dart:io';
 import 'dart:math';
 
+import 'package:kabuk/knowledge/changes.dart' show ChangeSet;
+import 'package:kabuk/knowledge/exports.dart' show ChangeSet;
 import 'package:kabuk/services/mesh.dart';
 
 // ---------------------------------------------------------------------------

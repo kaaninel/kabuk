@@ -6,7 +6,6 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:developer' as dev;
 
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -351,7 +350,7 @@ class ChatService {
       }
     } on LlmStreamException catch (e) {
       buffer.write('\n\nError: ${e.message}');
-    } catch (e, st) {
+    } catch (e) {
       // ignore unexpected errors
     }
 

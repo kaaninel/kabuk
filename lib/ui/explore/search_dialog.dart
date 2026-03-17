@@ -2,7 +2,7 @@
 ///
 /// Provides a two-tab search experience: local article search and
 /// Nostr relay search (NIP-50 text / hashtag). Searches can be saved
-/// for later as [SavedSearch] entries.
+/// for later as SavedSearch entries.
 library;
 
 import 'dart:async';

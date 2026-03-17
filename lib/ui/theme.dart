@@ -194,8 +194,8 @@ abstract final class KabukTheme {
         borderRadius: BorderRadius.all(Radius.circular(radiusMd)),
         borderSide: BorderSide(color: primaryGreen, width: 1.5),
       ),
-      hintStyle: const TextStyle(color: textTertiary, fontSize: 14),
-      contentPadding: const EdgeInsets.symmetric(
+      hintStyle: TextStyle(color: textTertiary, fontSize: 14),
+      contentPadding: EdgeInsets.symmetric(
         horizontal: spacingMd,
         vertical: spacingSm + 4,
       ),

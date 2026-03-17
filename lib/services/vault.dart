@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:kabuk/config/errors.dart' show NotFoundError;
+import 'package:kabuk/config/exports.dart' show NotFoundError;
 import 'package:kabuk/config/result.dart';
 
 /// Encrypted, tag-based file storage abstraction.

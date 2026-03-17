@@ -698,7 +698,7 @@ class KabukDatabase extends _$KabukDatabase {
     );
   }
 
-  /// Delete all messages whose [expiresAt] is in the past.
+  /// Delete all messages whose expiresAt is in the past.
   Future<void> purgeExpiredMessages() async {
     final now = DateTime.now();
     await (delete(

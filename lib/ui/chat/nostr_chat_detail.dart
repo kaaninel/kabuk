@@ -236,7 +236,7 @@ class _NostrChatDetailState extends ConsumerState<NostrChatDetail> {
       builder: (ctx) => AlertDialog(
         backgroundColor: KabukTheme.surface,
         title: const Row(
-          children: const [
+          children: [
             Icon(Icons.security, color: KabukTheme.accentGreen),
             SizedBox(width: 8),
             Text('Safety Number'),
@@ -1358,9 +1358,9 @@ class _DmBubbleState extends ConsumerState<_DmBubble> {
                             if (widget.message.isPinned)
                               const Align(
                                 alignment: Alignment.topLeft,
-                                child: const Row(
+                                child: Row(
                                   mainAxisSize: MainAxisSize.min,
-                                  children: const [
+                                  children: [
                                     Icon(
                                       Icons.push_pin,
                                       size: 10,

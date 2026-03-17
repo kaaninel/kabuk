@@ -5,10 +5,12 @@
 /// BGAppRefreshTask. On desktop the in-app 30-minute timer in [ExploreView]
 /// is sufficient; the OS-level scheduler is a no-op.
 ///
-/// The only job registered here is [BackgroundRefreshService.feedRefreshTask]:
+/// The only job registered here is BackgroundRefreshService.feedRefreshTask:
 /// it fetches all subscribed feed URLs and persists new articles to the
 /// knowledge store so the user always sees fresh content when they open the app.
 library;
+
+import 'package:kabuk/ui/explore/explore_view.dart' show ExploreView;
 
 /// Unique task name sent to the OS scheduler.
 const String kFeedRefreshTaskName = 'kabuk.feed_refresh';

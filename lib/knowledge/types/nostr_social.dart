@@ -43,7 +43,7 @@ class NostrSocialStats {
 /// Immutable representation of a Nostr text note (kind 1).
 ///
 /// Stored as a `kabuk:NostrNote` entity in the knowledge store,
-/// linked to the original Nostr event via [nostrEventId] and [nostrPubkey].
+/// linked to the original Nostr event via nostrEventId and nostrPubkey.
 @immutable
 class NostrNoteData {
   /// Creates a [NostrNoteData] with the given field values.

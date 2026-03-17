@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/types/note.dart';
 import 'package:kabuk/ui/create/create_view.dart';
+import 'package:kabuk/ui/create/document_editor.dart' show DocumentEditor;
 import 'package:kabuk/ui/theme.dart';
 
 // ---------------------------------------------------------------------------
@@ -608,13 +609,13 @@ class _EmptyState extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
+              Icon(
                 Icons.search_off_rounded,
                 size: 48,
                 color: KabukTheme.textTertiary,
               ),
-              const SizedBox(height: KabukTheme.spacingMd),
-              const Text(
+              SizedBox(height: KabukTheme.spacingMd),
+              Text(
                 'No matching documents',
                 style: TextStyle(
                   color: KabukTheme.textSecondary,
@@ -622,8 +623,8 @@ class _EmptyState extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: KabukTheme.spacingSm),
-              const Text(
+              SizedBox(height: KabukTheme.spacingSm),
+              Text(
                 'Try a different search query',
                 style: TextStyle(color: KabukTheme.textTertiary, fontSize: 13),
               ),

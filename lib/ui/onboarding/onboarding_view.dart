@@ -935,7 +935,7 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
               border: Border.all(color: KabukTheme.accentGreen.withAlpha(50)),
             ),
             child: const Row(
-              children: const [
+              children: [
                 Icon(
                   Icons.wifi_tethering_rounded,
                   size: 18,

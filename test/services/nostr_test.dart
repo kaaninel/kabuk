@@ -121,7 +121,7 @@ void main() {
 
   group('UnsignedNostrEvent', () {
     test('constructor sets defaults', () {
-      final event = const UnsignedNostrEvent(kind: 1, content: 'test');
+      const event = UnsignedNostrEvent(kind: 1, content: 'test');
       expect(event.kind, 1);
       expect(event.content, 'test');
       expect(event.tags, isEmpty);
@@ -129,7 +129,7 @@ void main() {
     });
 
     test('custom tags and timestamp', () {
-      final event = const UnsignedNostrEvent(
+      const event = UnsignedNostrEvent(
         kind: 0,
         content: '{"name": "Alice"}',
         tags: [

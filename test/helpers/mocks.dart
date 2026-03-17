@@ -225,7 +225,7 @@ MockAgentContextBundle createMockAgentContext() => MockAgentContextBundle();
 // Streaming test helpers
 // ---------------------------------------------------------------------------
 
-/// Stubs [llm.stream] to emit a single text delta followed by done.
+/// Stubs llm.stream to emit a single text delta followed by done.
 ///
 /// Use this in place of the old `complete()` stub when testing agents
 /// that now use streaming via `processLlmRequest()`.
@@ -238,7 +238,7 @@ void stubLlmStreamText(MockLlmService llm, String text) {
   );
 }
 
-/// Stubs [llm.stream] to throw an [LlmStreamException] synchronously.
+/// Stubs llm.stream to throw an [LlmStreamException] synchronously.
 ///
 /// This causes `processLlmRequest()` to catch the exception and return
 /// an [ErrorAgentResponse] with the given [message].
@@ -246,7 +246,7 @@ void stubLlmStreamError(MockLlmService llm, String message) {
   when(() => llm.stream(any())).thenThrow(LlmStreamException(message));
 }
 
-/// Stubs [llm.stream] to emit tool call events.
+/// Stubs llm.stream to emit tool call events.
 void stubLlmStreamToolCalls(MockLlmService llm, List<LlmToolCall> calls) {
   when(() => llm.stream(any())).thenAnswer(
     (_) => Stream.fromIterable([

@@ -268,7 +268,7 @@ abstract final class NS {
 
   /// `kabuk:nostrKeyEntry` — a labeled Nostr key entry for a Person.
   ///
-  /// The object string is `{pubkeyHex}:{label}` where [label] is a
+  /// The object string is `{pubkeyHex}:{label}` where label is a
   /// user-supplied tag such as "personal", "work", or left empty for default.
   /// Multiple entries may exist per Person; each has a unique pubkey value.
   static const String kabukNostrKeyEntry = '${kabuk}nostrKeyEntry';

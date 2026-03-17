@@ -61,6 +61,7 @@ import 'package:kabuk/services/nostr_utils.dart';
 import 'package:kabuk/services/notification.dart';
 import 'package:kabuk/services/presentation.dart';
 import 'package:kabuk/services/vault.dart';
+import 'package:kabuk/ui/shell.dart' show KabukShell;
 
 // =============================================================================
 // Active Profile
@@ -184,7 +185,7 @@ final notificationServiceProvider = Provider<NotificationService>((ref) {
 /// Stream of notification tap payloads.
 ///
 /// Emits a new value whenever the user taps a system notification.
-/// Widgets can use [ref.listen] on this provider to react to taps —
+/// Widgets can use ref.listen on this provider to react to taps —
 /// for example, navigating to the conversation that was tapped.
 final notificationTapStreamProvider = StreamProvider<Map<String, dynamic>>((
   ref,
@@ -985,7 +986,7 @@ final nostrProfileProvider = FutureProvider.family<NostrProfile?, String>((
   return nostr.fetchProfileCached(pubkeyHex);
 });
 
-/// Fetches recent public text notes (kind 1) authored by [pubkeyHex].
+/// Fetches recent public text notes (kind 1) authored by pubkeyHex.
 ///
 /// Returns up to 30 notes sorted newest-first. Used for the contact
 /// profile sheet's public-notes feed. Uses the same subscription pattern

@@ -1,7 +1,7 @@
 /// Nostr public channel chat view — NIP-28 group messaging.
 ///
 /// Displays messages for a public channel identified by its kind-40 event ID
-/// ([channelEventId]). Messages are sent as kind-42 events via
+/// (channelEventId). Messages are sent as kind-42 events via
 /// [NostrService.sendChannelMessage] and received through
 /// [NostrService.watchChannelMessages].
 library;
@@ -669,7 +669,7 @@ class _MessageBubble extends ConsumerWidget {
                             ),
                             child: const Text(
                               'Reply to message',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 11,
                                 color: KabukTheme.textSecondary,
                                 fontStyle: FontStyle.italic,

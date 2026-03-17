@@ -350,8 +350,8 @@ class _SocialSection extends ConsumerWidget {
           ),
           ref.watch(nostrCommentsForUrlProvider(url)).when(
             data: (comments) => comments.isEmpty
-                ? Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                ? const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
                     child: Text(
                       'No comments yet — be the first!',
                       style: TextStyle(
@@ -377,8 +377,8 @@ class _SocialSection extends ConsumerWidget {
                 ),
               ),
             ),
-            error: (_, _) => Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            error: (_, _) => const Padding(
+              padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: Text(
                 'Could not load comments',
                 style: TextStyle(fontSize: 13, color: KabukTheme.textTertiary),
@@ -543,7 +543,7 @@ class _CommentInputState extends ConsumerState<_CommentInput> {
             style: const TextStyle(fontSize: 14),
             decoration: InputDecoration(
               hintText: 'Write a comment...',
-              hintStyle: TextStyle(
+              hintStyle: const TextStyle(
                 fontSize: 14,
                 color: KabukTheme.textTertiary,
               ),
@@ -572,7 +572,7 @@ class _CommentInputState extends ConsumerState<_CommentInput> {
             : IconButton(
                 onPressed: _submit,
                 tooltip: 'Send comment',
-                icon: Icon(
+                icon: const Icon(
                   Icons.send_rounded,
                   size: 18,
                   color: KabukTheme.purpleAccent,

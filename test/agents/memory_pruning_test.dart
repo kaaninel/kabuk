@@ -1,7 +1,7 @@
 /// Tests for agent memory pruning logic.
 ///
 /// Verifies that [AgentMemoryMixin._pruneMemories] correctly
-/// removes oldest memories when exceeding [maxMemories].
+/// removes oldest memories when exceeding maxMemories.
 library;
 
 import 'package:flutter_test/flutter_test.dart';
