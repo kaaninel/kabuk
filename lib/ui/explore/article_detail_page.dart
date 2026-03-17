@@ -132,6 +132,7 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
     if (!_currentArticle.read) {
       store.markArticleRead(_currentArticle.uri);
     }
+    ref.read(keyboardModeProvider.notifier).state = KeyboardMode.none;
     setState(() {
       _slideForward = true;
       _currentIndex++;
@@ -143,8 +144,8 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
   void _goToPreviousArticle() {
     if (!_hasPrevious) return;
     HapticFeedback.mediumImpact();
+    ref.read(keyboardModeProvider.notifier).state = KeyboardMode.none;
     setState(() {
-      _slideForward = false;
       _currentIndex--;
       _currentArticle = widget.articles![_currentIndex];
     });
@@ -423,7 +424,7 @@ class _ArticleDetailContent extends ConsumerWidget {
                     },
                   )
                 : _RedditLinkText(
-                    text: _cleanDescription(article.description!),
+                    text: _cleanDescription(_stripStatsLine(article.description!)),
                     onSubredditTap: (sub) {
                       // Navigate in-app to the subreddit rather than opening browser.
                       ref
@@ -981,6 +982,7 @@ class _UnifiedComment {
     this.authorPicture,
     this.isPending = false,
     this.redditReplies = const [],
+    this.depth = 0,
   });
 
   final String id;
@@ -992,6 +994,7 @@ class _UnifiedComment {
   final String? authorPicture;
   final bool isPending;
   final List<RedditComment> redditReplies; // only for Reddit top-level
+  final int depth;
 
   static _UnifiedComment fromNostr(NostrComment c) => _UnifiedComment(
     id: c.eventId,
@@ -1011,6 +1014,7 @@ class _UnifiedComment {
     source: _CommentSource.reddit,
     score: c.score,
     redditReplies: c.replies,
+    depth: c.depth,
   );
 
   static _UnifiedComment fromFourchan(FourchanPost p) => _UnifiedComment(
@@ -1084,8 +1088,14 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
         (fourchanAsync?.hasError ?? false);
 
     final stats = statsAsync.valueOrNull ?? const NostrSocialStats();
+    // Parse Reddit post-level stats from description for merging.
+    final redditUpvotes = _parseRedditStat(article.description, r'⬆\s*([\d,]+)');
+    final redditComments = _parseRedditStat(article.description, r'💬\s*([\d,]+)');
+    final mergedReactCount = stats.reactionCount + (redditUpvotes ?? 0);
+    final mergedReplyCount = stats.replyCount + (redditComments ?? 0);
+
     final hasActivity = unified.isNotEmpty ||
-        stats.reactionCount > 0 ||
+        mergedReactCount > 0 ||
         stats.repostCount > 0;
 
     // When no activity and not expanded, show collapsed "Add a comment" button.
@@ -1093,7 +1103,7 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Divider(height: 32, indent: 16, endIndent: 16),
+          const SizedBox(height: 20),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: GestureDetector(
@@ -1124,15 +1134,23 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Divider(height: 32, indent: 16, endIndent: 16),
+        const SizedBox(height: 16),
 
-        // ── Nostr engagement stats bar ─────────────────────────────────────
+        // ── Engagement stats bar (merged Nostr + Reddit) ───────────────────
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
           child: statsAsync.when(
-            data: (s) => _buildStatsBar(context, ref, url, s),
-            loading: () =>
-                _buildStatsBar(context, ref, url, const NostrSocialStats()),
+            skipLoadingOnRefresh: true,
+            data: (s) => _buildStatsBar(
+              context, ref, url, s,
+              redditUpvotes: redditUpvotes,
+              redditComments: redditComments,
+            ),
+            loading: () => _buildStatsBar(
+              context, ref, url, const NostrSocialStats(),
+              redditUpvotes: redditUpvotes,
+              redditComments: redditComments,
+            ),
             error: (e, _) => Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Text(
@@ -1148,25 +1166,20 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
 
         // ── Discussion header ──────────────────────────────────────────────
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
           child: Row(
             children: [
-              const Icon(
-                Icons.forum_rounded,
-                size: 18,
-                color: KabukTheme.textSecondary,
-              ),
-              const SizedBox(width: 8),
-              const Text(
-                'Discussion',
-                style: TextStyle(
-                  fontSize: 14,
+              Text(
+                '${unified.length > 0 ? unified.length : ''} '
+                    'Comment${unified.length != 1 ? 's' : ''}',
+                style: const TextStyle(
+                  fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: KabukTheme.textSecondary,
                 ),
               ),
-              const SizedBox(width: 8),
-              // Source badges in header.
+              const SizedBox(width: 6),
+              // Source badges.
               const _SourceBadge(source: _CommentSource.nostr),
               if (isReddit) ...[
                 const SizedBox(width: 4),
@@ -1278,55 +1291,63 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
     BuildContext context,
     WidgetRef ref,
     String url,
-    NostrSocialStats stats,
-  ) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: KabukTheme.purpleAccent.withAlpha(12),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: KabukTheme.purpleAccent.withAlpha(30)),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            Icons.bolt_rounded,
-            size: 16,
-            color: KabukTheme.purpleAccent.withAlpha(160),
-          ),
-          const SizedBox(width: 10),
-          _statChip(
-            label: 'React',
-            icon: stats.userReacted
-                ? Icons.favorite_rounded
-                : Icons.favorite_border_rounded,
-            count: stats.reactionCount,
-            active: stats.userReacted,
-            activeColor: const Color(0xFFE91E63),
-            onTap: () => reactToUrl(ref, url: url),
-          ),
-          const SizedBox(width: 8),
-          _statChip(
-            label: 'Reply',
-            icon: Icons.chat_bubble_outline_rounded,
-            count: stats.replyCount,
-            active: false,
-            activeColor: KabukTheme.blueAccent,
-            onTap: () {},
-          ),
-          const SizedBox(width: 8),
-          _statChip(
-            label: 'Repost',
-            icon: stats.userReposted
-                ? Icons.repeat_on_rounded
-                : Icons.repeat_rounded,
-            count: stats.repostCount,
-            active: stats.userReposted,
-            activeColor: KabukTheme.accentGreen,
-            onTap: () => repostUrl(ref, url: url),
-          ),
-        ],
-      ),
+    NostrSocialStats stats, {
+    int? redditUpvotes,
+    int? redditComments,
+  }) {
+    final mergedReacts = stats.reactionCount + (redditUpvotes ?? 0);
+    final mergedReplies = stats.replyCount + (redditComments ?? 0);
+    return Row(
+      children: [
+        _statChip(
+          label: 'React',
+          icon: stats.userReacted
+              ? Icons.favorite_rounded
+              : Icons.favorite_border_rounded,
+          count: mergedReacts,
+          active: stats.userReacted,
+          activeColor: const Color(0xFFE91E63),
+          onTap: () => reactToUrl(ref, url: url),
+        ),
+        const SizedBox(width: 16),
+        _statChip(
+          label: 'Reply',
+          icon: Icons.chat_bubble_outline_rounded,
+          count: mergedReplies,
+          active: false,
+          activeColor: KabukTheme.blueAccent,
+          onTap: () {},
+        ),
+        const SizedBox(width: 16),
+        _statChip(
+          label: 'Repost',
+          icon: stats.userReposted
+              ? Icons.repeat_on_rounded
+              : Icons.repeat_rounded,
+          count: stats.repostCount,
+          active: stats.userReposted,
+          activeColor: KabukTheme.accentGreen,
+          onTap: () => repostUrl(ref, url: url),
+        ),
+        const Spacer(),
+        IconButton(
+          icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+          color: KabukTheme.textTertiary,
+          onPressed: () {},
+          visualDensity: VisualDensity.compact,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+        ),
+        const SizedBox(width: 12),
+        IconButton(
+          icon: const Icon(Icons.share_outlined, size: 18),
+          color: KabukTheme.textTertiary,
+          onPressed: () {},
+          visualDensity: VisualDensity.compact,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+        ),
+      ],
     );
   }
 
@@ -1351,18 +1372,32 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 16, color: color),
+            Icon(icon, size: 18, color: color),
             if (count > 0) ...[
-              const SizedBox(width: 3),
+              const SizedBox(width: 4),
               Text(
-                count.toString(),
-                style: TextStyle(fontSize: 12, color: color),
+                _fmtCount(count),
+                style: TextStyle(fontSize: 13, color: color),
               ),
             ],
           ],
         ),
       ),
     );
+  }
+
+  static String _fmtCount(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}k';
+    return n.toString();
+  }
+
+  /// Parses a numeric stat from the article description using a regex.
+  static int? _parseRedditStat(String? description, String pattern) {
+    if (description == null) return null;
+    final match = RegExp(pattern).firstMatch(description);
+    if (match == null) return null;
+    return int.tryParse(match.group(1)!.replaceAll(',', ''));
   }
 }
 
@@ -1424,146 +1459,171 @@ class _UnifiedCommentTileState extends State<_UnifiedCommentTile> {
   Widget build(BuildContext context) {
     final c = widget.comment;
     final hasReplies = c.redditReplies.isNotEmpty;
+    final indent = c.depth * 16.0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-          child: Opacity(
-            opacity: c.isPending ? 0.6 : 1.0,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Avatar / source badge stack.
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    CircleAvatar(
-                      radius: 16,
-                      backgroundColor: _sourceColor(c.source).withAlpha(25),
-                      backgroundImage: c.authorPicture != null
-                          ? NetworkImage(c.authorPicture!)
-                          : null,
-                      child: c.authorPicture == null
-                          ? Icon(
-                              Icons.person_rounded,
-                              size: 18,
-                              color: _sourceColor(c.source).withAlpha(140),
-                            )
-                          : null,
+        Container(
+          margin: EdgeInsets.only(left: 16 + indent),
+          padding: const EdgeInsets.fromLTRB(0, 10, 16, 10),
+          decoration: c.depth > 0
+              ? BoxDecoration(
+                  border: Border(
+                    left: BorderSide(
+                      color: _threadColor(c.depth),
+                      width: 2,
                     ),
-                    // Source badge chip — bottom-right of avatar.
-                    Positioned(
-                      bottom: -2,
-                      right: -4,
-                      child: Container(
-                        padding: const EdgeInsets.all(2),
-                        decoration: const BoxDecoration(
-                          color: KabukTheme.surface,
-                          shape: BoxShape.circle,
-                        ),
-                        child: _SourceBadge(source: c.source),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  ),
+                )
+              : null,
+          child: Padding(
+            padding: EdgeInsets.only(left: c.depth > 0 ? 12 : 0),
+            child: Opacity(
+              opacity: c.isPending ? 0.6 : 1.0,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Avatar with source badge.
+                  Stack(
+                    clipBehavior: Clip.none,
                     children: [
-                      Row(
-                        children: [
-                          Text(
-                            c.displayAuthor,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: _authorColor(c.source),
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          if (c.isPending)
-                            const SizedBox(
-                              width: 10,
-                              height: 10,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 1.5,
-                              ),
-                            )
-                          else
-                            Text(
-                              _timeAgo(c.timestamp),
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: KabukTheme.textTertiary,
-                              ),
-                            ),
-                          if (c.score != null) ...[
-                            const Spacer(),
-                            Icon(
-                              Icons.arrow_upward_rounded,
-                              size: 11,
-                              color: _sourceColor(c.source).withAlpha(180),
-                            ),
-                            const SizedBox(width: 2),
-                            Text(
-                              _fmtScore(c.score!),
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: KabukTheme.textSecondary,
-                              ),
-                            ),
-                          ],
-                        ],
+                      CircleAvatar(
+                        radius: c.depth > 0 ? 12 : 16,
+                        backgroundColor: _sourceColor(c.source).withAlpha(25),
+                        backgroundImage: c.authorPicture != null
+                            ? NetworkImage(c.authorPicture!)
+                            : null,
+                        child: c.authorPicture == null
+                            ? Icon(
+                                Icons.person_rounded,
+                                size: c.depth > 0 ? 14 : 18,
+                                color: _sourceColor(c.source).withAlpha(140),
+                              )
+                            : null,
                       ),
-                      const SizedBox(height: 3),
-                      Text(
-                        c.content,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          height: 1.5,
-                          color: KabukTheme.textPrimary,
-                        ),
-                        maxLines: 10,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (hasReplies) ...[
-                        const SizedBox(height: 4),
-                        GestureDetector(
-                          onTap: () =>
-                              setState(() => _showReplies = !_showReplies),
-                          child: Text(
-                            _showReplies
-                                ? 'Hide replies'
-                                : '${c.redditReplies.length} '
-                                      'repl${c.redditReplies.length == 1 ? 'y' : 'ies'}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: KabukTheme.textTertiary,
+                      if (c.depth == 0)
+                        Positioned(
+                          bottom: -2,
+                          right: -4,
+                          child: Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: const BoxDecoration(
+                              color: KabukTheme.surface,
+                              shape: BoxShape.circle,
                             ),
+                            child: _SourceBadge(source: c.source),
                           ),
                         ),
-                      ],
                     ],
                   ),
-                ),
-              ],
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                c.displayAuthor,
+                                style: TextStyle(
+                                  fontSize: c.depth > 0 ? 12 : 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: _authorColor(c.source),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            if (c.isPending)
+                              const SizedBox(
+                                width: 10,
+                                height: 10,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 1.5,
+                                ),
+                              )
+                            else
+                              Text(
+                                _timeAgo(c.timestamp),
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: KabukTheme.textTertiary,
+                                ),
+                              ),
+                            if (c.score != null) ...[
+                              const Spacer(),
+                              Icon(
+                                Icons.arrow_upward_rounded,
+                                size: 11,
+                                color: _sourceColor(c.source).withAlpha(180),
+                              ),
+                              const SizedBox(width: 2),
+                              Text(
+                                _fmtScore(c.score!),
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: KabukTheme.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          c.content,
+                          style: TextStyle(
+                            fontSize: c.depth > 0 ? 12.5 : 13,
+                            height: 1.5,
+                            color: KabukTheme.textPrimary,
+                          ),
+                          maxLines: c.depth > 1 ? 6 : 10,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (hasReplies) ...[
+                          const SizedBox(height: 6),
+                          GestureDetector(
+                            onTap: () =>
+                                setState(() => _showReplies = !_showReplies),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  _showReplies
+                                      ? Icons.expand_less_rounded
+                                      : Icons.expand_more_rounded,
+                                  size: 16,
+                                  color: KabukTheme.blueAccent,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _showReplies
+                                      ? 'Hide replies'
+                                      : '${c.redditReplies.length} '
+                                            'repl${c.redditReplies.length == 1 ? 'y' : 'ies'}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: KabukTheme.blueAccent,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-        const Divider(
-          height: 1,
-          indent: 16,
-          endIndent: 16,
-          color: KabukTheme.divider,
-        ),
-        // Reddit nested replies (collapsed by default).
+        // Nested replies with proper threading.
         if (_showReplies)
           ...c.redditReplies
-              .take(5)
+              .take(10)
               .map(
                 (r) =>
                     _UnifiedCommentTile(comment: _UnifiedComment.fromReddit(r)),
@@ -1571,6 +1631,13 @@ class _UnifiedCommentTileState extends State<_UnifiedCommentTile> {
       ],
     );
   }
+
+  static Color _threadColor(int depth) => switch (depth % 4) {
+    0 => KabukTheme.blueAccent.withAlpha(60),
+    1 => KabukTheme.purpleAccent.withAlpha(60),
+    2 => KabukTheme.accentGreen.withAlpha(60),
+    _ => KabukTheme.redditOrange.withAlpha(60),
+  };
 
   static Color _sourceColor(_CommentSource source) => switch (source) {
     _CommentSource.nostr => KabukTheme.purpleAccent,
@@ -1615,12 +1682,28 @@ class _CommentInput extends ConsumerStatefulWidget {
 
 class _CommentInputState extends ConsumerState<_CommentInput> {
   final _controller = TextEditingController();
+  final _focusNode = FocusNode();
   bool _sending = false;
 
   @override
+  void initState() {
+    super.initState();
+    _focusNode.addListener(_onFocusChange);
+  }
+
+  @override
   void dispose() {
+    _focusNode.removeListener(_onFocusChange);
     _controller.dispose();
+    _focusNode.dispose();
     super.dispose();
+  }
+
+  void _onFocusChange() {
+    if (_focusNode.hasFocus) {
+      // Auto-open custom keyboard when comment input gets focus.
+      ref.read(keyboardModeProvider.notifier).state = KeyboardMode.text;
+    }
   }
 
   Future<void> _submit() async {
@@ -1633,6 +1716,8 @@ class _CommentInputState extends ConsumerState<_CommentInput> {
       setState(() => _sending = false);
       if (success) {
         _controller.clear();
+        _focusNode.unfocus();
+        ref.read(keyboardModeProvider.notifier).state = KeyboardMode.none;
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1646,40 +1731,14 @@ class _CommentInputState extends ConsumerState<_CommentInput> {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: KabukKeyboard(
-            simple: true,
-            controller: _controller,
-            enabled: !_sending,
-            maxLines: 1,
-            hintText: 'Write a comment\u2026',
-            onSubmitted: (_) => _submit(),
-          ),
-        ),
-        const SizedBox(width: 8),
-        _sending
-            ? const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : IconButton(
-                onPressed: _submit,
-                tooltip: 'Publish Nostr comment',
-                icon: const Icon(
-                  Icons.send_rounded,
-                  size: 18,
-                  color: KabukTheme.purpleAccent,
-                ),
-                style: IconButton.styleFrom(
-                  backgroundColor: KabukTheme.purpleAccent.withAlpha(30),
-                  fixedSize: const Size(34, 34),
-                  padding: EdgeInsets.zero,
-                ),
-              ),
-      ],
+    return KabukKeyboard(
+      controller: _controller,
+      focusNode: _focusNode,
+      enabled: !_sending,
+      maxLines: 3,
+      hintText: 'Write a comment\u2026',
+      onSend: _submit,
+      onSubmitted: (_) => _submit(),
     );
   }
 }
