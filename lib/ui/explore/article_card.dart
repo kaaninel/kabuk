@@ -137,7 +137,9 @@ class ArticleCard extends ConsumerWidget {
         }
         return false; // keep the card in the list
       },
-      child: Container(
+      child: Opacity(
+        opacity: article.read ? 0.7 : 1.0,
+        child: Container(
           decoration: BoxDecoration(
             color: KabukTheme.cardColor,
             borderRadius: BorderRadius.circular(16),
@@ -242,6 +244,7 @@ class ArticleCard extends ConsumerWidget {
             ],
           ),
         ),
+      ),
       ),
     );
   }
@@ -626,23 +629,6 @@ class _ActionBar extends ConsumerWidget {
             onTap: hasUrl ? () => _handleRepost(context, ref) : null,
           ),
           const Spacer(),
-          if (hasUrl &&
-              nostrStats != null &&
-              nostrStats.whenOrNull(
-                    data: (s) =>
-                        s.reactionCount > 0 ||
-                        s.replyCount > 0 ||
-                        s.repostCount > 0,
-                  ) ==
-                  true)
-            Padding(
-              padding: const EdgeInsets.only(right: 4),
-              child: Icon(
-                Icons.bolt_rounded,
-                size: 16,
-                color: KabukTheme.purpleAccent.withAlpha(140),
-              ),
-            ),
           IconButton(
             icon: const Icon(
               Icons.bookmark_add_outlined,
@@ -666,14 +652,22 @@ class _ActionBar extends ConsumerWidget {
     required Color color,
     VoidCallback? onTap,
   }) {
-    final button = TextButton.icon(
-      onPressed: onTap,
-      icon: Icon(icon, size: 16, color: color, semanticLabel: semanticLabel),
-      label: Text(label ?? '', style: TextStyle(fontSize: 12, color: color)),
-      style: TextButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        minimumSize: const Size(0, 32),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    final child = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: color),
+        if (label != null) ...[
+          const SizedBox(width: 4),
+          Text(label, style: TextStyle(fontSize: 12, color: color)),
+        ],
+      ],
+    );
+    final button = InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        child: child,
       ),
     );
     final effectiveLabel =

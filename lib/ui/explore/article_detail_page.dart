@@ -388,26 +388,34 @@ class _ArticleDetailContent extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
             child: GestureDetector(
               onTap: onViewInBrowser,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.open_in_new_rounded,
-                    size: 13,
-                    color: KabukTheme.textTertiary,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    _truncateUrl(article.url!),
-                    style: const TextStyle(
-                      fontSize: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: KabukTheme.cardColor,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: KabukTheme.divider),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.open_in_new_rounded,
+                      size: 12,
                       color: KabukTheme.textTertiary,
-                      decoration: TextDecoration.underline,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+                    const SizedBox(width: 4),
+                    Text(
+                      _truncateUrl(article.url!),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: KabukTheme.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -488,15 +496,11 @@ class _ArticleDetailContent extends ConsumerWidget {
         .trim();
   }
 
-  /// Truncates a URL for compact display (shows domain + path prefix).
+  /// Truncates a URL for compact display (shows domain only).
   String _truncateUrl(String url) {
     try {
       final uri = Uri.parse(url);
-      final host = uri.host.replaceFirst('www.', '');
-      final path = uri.path.length > 20
-          ? '${uri.path.substring(0, 20)}…'
-          : uri.path;
-      return '$host$path';
+      return uri.host.replaceFirst('www.', '');
     } catch (_) {
       return url.length > 40 ? '${url.substring(0, 40)}…' : url;
     }
@@ -676,13 +680,22 @@ class _UnifiedComment {
 /// Merges Nostr comments, Reddit comments (for Reddit posts), and 4chan
 /// replies (for 4chan posts) into a single chronological stream.
 /// Each comment is badged with its source icon.
-class _DiscussionSection extends ConsumerWidget {
+class _DiscussionSection extends ConsumerStatefulWidget {
   const _DiscussionSection({required this.article});
 
   final ArticleData article;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_DiscussionSection> createState() =>
+      _DiscussionSectionState();
+}
+
+class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final article = widget.article;
     final url = article.url;
     if (url == null || url.isEmpty) return const SizedBox.shrink();
 
@@ -718,6 +731,44 @@ class _DiscussionSection extends ConsumerWidget {
         (redditAsync?.isLoading ?? false) ||
         (fourchanAsync?.isLoading ?? false);
 
+    final stats = statsAsync.valueOrNull ?? const NostrSocialStats();
+    final hasActivity = unified.isNotEmpty ||
+        stats.reactionCount > 0 ||
+        stats.repostCount > 0;
+
+    // When no activity and not expanded, show collapsed "Add a comment" button.
+    if (!hasActivity && !_expanded && !isLoading) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Divider(height: 32, indent: 16, endIndent: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: GestureDetector(
+              onTap: () => setState(() => _expanded = true),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.add_comment_rounded,
+                    size: 16,
+                    color: KabukTheme.textTertiary.withAlpha(180),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Add a comment',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: KabukTheme.textTertiary.withAlpha(180),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -727,7 +778,7 @@ class _DiscussionSection extends ConsumerWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
           child: statsAsync.when(
-            data: (stats) => _buildStatsBar(context, ref, url, stats),
+            data: (s) => _buildStatsBar(context, ref, url, s),
             loading: () =>
                 _buildStatsBar(context, ref, url, const NostrSocialStats()),
             error: (_, _) => const SizedBox.shrink(),
@@ -848,16 +899,7 @@ class _DiscussionSection extends ConsumerWidget {
             size: 16,
             color: KabukTheme.purpleAccent.withAlpha(160),
           ),
-          const SizedBox(width: 6),
-          Text(
-            'Nostr',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: KabukTheme.purpleAccent.withAlpha(180),
-            ),
-          ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           _statChip(
             label: 'React',
             icon: stats.userReacted
@@ -1215,7 +1257,7 @@ class _CommentInputState extends ConsumerState<_CommentInput> {
             maxLines: 1,
             style: const TextStyle(fontSize: 14),
             decoration: InputDecoration(
-              hintText: 'Write a Nostr comment…',
+              hintText: 'Write a comment…',
               hintStyle: const TextStyle(
                 fontSize: 14,
                 color: KabukTheme.textTertiary,
