@@ -136,17 +136,26 @@ const Map<KeyboardLanguage, _Layout> _layouts = {
 /// `TextEditingController` to insert text/emoji at the cursor position.
 ///
 /// When the mode is [KeyboardMode.none], the widget collapses to zero height.
+///
+/// Set [simple] to `true` for a lightweight variant that renders only a
+/// themed text field using the system keyboard — no mode toolbar, send
+/// button, emoji, gallery, or voice overlays.
 class KabukKeyboard extends ConsumerStatefulWidget {
   /// Creates a [KabukKeyboard].
   const KabukKeyboard({
     required this.controller,
-    required this.focusNode,
+    this.focusNode,
     this.onMediaSelected,
     this.onVoiceRecorded,
     this.onSend,
     this.onAttachment,
+    this.onChanged,
+    this.onSubmitted,
     this.hintText = 'Ask anything\u2026',
     this.enabled = true,
+    this.simple = false,
+    this.maxLines,
+    this.autofocus = false,
     super.key,
   });
 
@@ -154,7 +163,10 @@ class KabukKeyboard extends ConsumerStatefulWidget {
   final TextEditingController controller;
 
   /// The text field's focus node — used to prevent OS keyboard from showing.
-  final FocusNode focusNode;
+  ///
+  /// Optional in [simple] mode; the system [TextField] creates its own when
+  /// this is `null`.
+  final FocusNode? focusNode;
 
   /// Called when the user picks media from the gallery panel.
   final ValueChanged<List<String>>? onMediaSelected;
@@ -168,11 +180,29 @@ class KabukKeyboard extends ConsumerStatefulWidget {
   /// Called when the user taps the attachment button in the mode bar.
   final VoidCallback? onAttachment;
 
+  /// Called when the text changes.
+  final ValueChanged<String>? onChanged;
+
+  /// Called when the user submits (e.g. presses enter/done on the keyboard).
+  final ValueChanged<String>? onSubmitted;
+
   /// Hint text shown in the embedded text field.
   final String hintText;
 
   /// Whether the input is interactive.
   final bool enabled;
+
+  /// When `true`, renders a lightweight text field with no mode toolbar,
+  /// send button, or overlay panels. Uses the system keyboard.
+  final bool simple;
+
+  /// Maximum lines for the text field.
+  ///
+  /// Defaults to `1` in [simple] mode, `5` in full mode.
+  final int? maxLines;
+
+  /// Whether the text field should be focused on build.
+  final bool autofocus;
 
   @override
   ConsumerState<KabukKeyboard> createState() => _KabukKeyboardState();
@@ -215,6 +245,8 @@ class _KabukKeyboardState extends ConsumerState<KabukKeyboard> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.simple) return _buildSimpleInput();
+
     final mode = ref.watch(keyboardModeProvider);
     final panelHeight = _targetHeight(mode);
     final isOpening =
@@ -271,6 +303,39 @@ class _KabukKeyboardState extends ConsumerState<KabukKeyboard> {
     );
   }
 
+  /// Lightweight text field — no toolbar, no send button, system keyboard.
+  Widget _buildSimpleInput() {
+    return TextField(
+      controller: widget.controller,
+      focusNode: widget.focusNode,
+      enabled: widget.enabled,
+      autofocus: widget.autofocus,
+      maxLines: widget.maxLines ?? 1,
+      minLines: 1,
+      onChanged: widget.onChanged,
+      onSubmitted: widget.onSubmitted,
+      style: const TextStyle(color: KabukTheme.textPrimary, fontSize: 14),
+      decoration: InputDecoration(
+        hintText: widget.hintText,
+        hintStyle: const TextStyle(
+          color: KabukTheme.textSecondary,
+          fontSize: 14,
+        ),
+        filled: true,
+        fillColor: KabukTheme.surfaceVariant,
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(20),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    );
+  }
+
   Widget _buildInputRow(bool isCustomKeyboardActive) {
     return Padding(
       padding: const EdgeInsets.symmetric(
@@ -288,8 +353,9 @@ class _KabukKeyboardState extends ConsumerState<KabukKeyboard> {
           readOnly: isCustomKeyboardActive,
           showCursor: true,
           textInputAction: TextInputAction.newline,
-          maxLines: 5,
+          maxLines: widget.maxLines ?? 5,
           minLines: 1,
+          autofocus: widget.autofocus,
           onTap: () {
             if (isCustomKeyboardActive) {
               ref.read(keyboardModeProvider.notifier).state = KeyboardMode.none;

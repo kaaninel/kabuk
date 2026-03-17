@@ -12,6 +12,7 @@ import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/types/note.dart';
 import 'package:kabuk/ui/create/create_view.dart';
 import 'package:kabuk/ui/create/document_editor.dart' show DocumentEditor;
+import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
 import 'package:kabuk/ui/theme.dart';
 
 // ---------------------------------------------------------------------------
@@ -294,43 +295,12 @@ class _Toolbar extends StatelessWidget {
               ),
               secondChild: SizedBox(
                 height: 36,
-                child: TextField(
+                child: KabukKeyboard(
+                  simple: true,
                   controller: searchController,
                   onChanged: onSearchChanged,
                   autofocus: true,
-                  style: const TextStyle(
-                    color: KabukTheme.textPrimary,
-                    fontSize: 13,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: 'Search...',
-                    hintStyle: const TextStyle(color: KabukTheme.textTertiary),
-                    prefixIcon: const Icon(
-                      Icons.search_rounded,
-                      size: 18,
-                      color: KabukTheme.textTertiary,
-                    ),
-                    suffixIcon: IconButton(
-                      icon: const Icon(
-                        Icons.close_rounded,
-                        size: 18,
-                        color: KabukTheme.textTertiary,
-                      ),
-                      onPressed: () {
-                        searchController.clear();
-                        onSearchChanged('');
-                        onSearchToggle();
-                      },
-                    ),
-                    filled: true,
-                    fillColor: KabukTheme.surface,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
-                      borderSide: BorderSide.none,
-                    ),
-                    contentPadding: EdgeInsets.zero,
-                    isDense: true,
-                  ),
+                  hintText: 'Search...',
                 ),
               ),
               crossFadeState: searchActive

@@ -6,12 +6,10 @@
 /// block styling.
 library;
 
-import 'dart:developer' as dev;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:kabuk/ui/explore/quick_peek_sheet.dart';
 import 'package:kabuk/ui/theme.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 /// Creates the standard Kabuk [MarkdownStyleSheet] for consistent
 /// markdown rendering across the app.
@@ -172,18 +170,18 @@ class KabukMarkdown extends StatelessWidget {
       selectable: selectable,
       shrinkWrap: shrinkWrap,
       styleSheet: kabukMarkdownStyle(context),
-      onTapLink: onTapLink ?? (_, href, _) => _defaultLinkHandler(href),
+      onTapLink: onTapLink ??
+          (text, href, _) => _defaultLinkHandler(context, href, text),
     );
   }
 
-  void _defaultLinkHandler(String? href) {
+  void _defaultLinkHandler(BuildContext context, String? href, String text) {
     if (href == null || href.isEmpty) return;
-    final uri = Uri.tryParse(href);
-    if (uri == null) return;
-    launchUrl(uri, mode: LaunchMode.externalApplication).catchError((Object e) {
-      dev.log('Failed to open link: $href ($e)', name: 'Markdown', error: e);
-      return false;
-    });
+    QuickPeekSheet.show(
+      context,
+      url: href,
+      title: text.isNotEmpty ? text : null,
+    );
   }
 }
 
@@ -220,17 +218,17 @@ class KabukMarkdownBlock extends StatelessWidget {
       selectable: selectable,
       padding: padding ?? const EdgeInsets.all(KabukTheme.spacingMd),
       styleSheet: kabukMarkdownStyle(context),
-      onTapLink: onTapLink ?? (_, href, _) => _defaultLinkHandler(href),
+      onTapLink: onTapLink ??
+          (text, href, _) => _defaultLinkHandler(context, href, text),
     );
   }
 
-  void _defaultLinkHandler(String? href) {
+  void _defaultLinkHandler(BuildContext context, String? href, String text) {
     if (href == null || href.isEmpty) return;
-    final uri = Uri.tryParse(href);
-    if (uri == null) return;
-    launchUrl(uri, mode: LaunchMode.externalApplication).catchError((Object e) {
-      dev.log('Failed to open link: $href ($e)', name: 'Markdown', error: e);
-      return false;
-    });
+    QuickPeekSheet.show(
+      context,
+      url: href,
+      title: text.isNotEmpty ? text : null,
+    );
   }
 }

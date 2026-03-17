@@ -21,6 +21,7 @@ import 'package:kabuk/ui/chat/nostr_chat_detail.dart';
 import 'package:kabuk/ui/chat/qr_contact_exchange.dart';
 import 'package:kabuk/ui/settings/settings_view.dart';
 import 'package:kabuk/ui/shared/identity_quick_switcher.dart';
+import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
 import 'package:kabuk/ui/theme.dart';
 
 /// The main chat tab — a messaging-style conversation list.
@@ -210,45 +211,11 @@ class _ConversationListState extends ConsumerState<ConversationList> {
               KabukTheme.spacingMd,
               KabukTheme.spacingXs,
             ),
-            child: TextField(
+            child: KabukKeyboard(
+              simple: true,
               controller: _searchController,
               onChanged: _onSearchChanged,
-              style: const TextStyle(
-                color: KabukTheme.textPrimary,
-                fontSize: 14,
-              ),
-              decoration: InputDecoration(
-                hintText: 'Search conversations\u2026',
-                hintStyle: const TextStyle(
-                  color: KabukTheme.textSecondary,
-                  fontSize: 14,
-                ),
-                prefixIcon: const Icon(
-                  Icons.search_rounded,
-                  color: KabukTheme.textSecondary,
-                  size: 20,
-                ),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(
-                          Icons.close_rounded,
-                          color: KabukTheme.textSecondary,
-                          size: 18,
-                        ),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _searchQuery = '');
-                        },
-                      )
-                    : null,
-                filled: true,
-                fillColor: KabukTheme.surfaceVariant,
-                contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
-                  borderSide: BorderSide.none,
-                ),
-              ),
+              hintText: 'Search conversations\u2026',
             ),
           ),
         ),

@@ -18,6 +18,7 @@ import 'package:kabuk/services/nostr_utils.dart';
 import 'package:kabuk/ui/explore/article_detail_page.dart';
 import 'package:kabuk/ui/explore/discovery_providers.dart';
 import 'package:kabuk/ui/shared/feed_image.dart';
+import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
 import 'package:kabuk/ui/theme.dart';
 
 /// Enhanced search dialog with local + Nostr search and save capability.
@@ -172,25 +173,12 @@ class _SearchDialogState extends ConsumerState<SearchDialog> {
               child: Row(
                 children: [
                   Expanded(
-                    child: TextField(
+                    child: KabukKeyboard(
+                      simple: true,
                       controller: _controller,
                       autofocus: true,
                       onChanged: _search,
-                      textInputAction: TextInputAction.search,
-                      decoration: InputDecoration(
-                        hintText: 'Search articles & Nostr...',
-                        prefixIcon: const Icon(Icons.search_rounded),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide.none,
-                        ),
-                        filled: true,
-                        fillColor: KabukTheme.surfaceVariant,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                      ),
+                      hintText: 'Search articles & Nostr...',
                     ),
                   ),
                   if (_activeQuery.isNotEmpty) ...[

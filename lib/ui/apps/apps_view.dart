@@ -15,11 +15,11 @@ import 'package:kabuk/knowledge/types/event.dart';
 import 'package:kabuk/knowledge/types/note.dart';
 import 'package:kabuk/knowledge/types/person.dart';
 import 'package:kabuk/knowledge/types/saved_view.dart';
+import 'package:kabuk/ui/explore/quick_peek_sheet.dart';
 import 'package:kabuk/ui/settings/settings_view.dart';
 import 'package:kabuk/ui/shared/identity_quick_switcher.dart';
 import 'package:kabuk/ui/shared/kabuk_markdown.dart';
 import 'package:kabuk/ui/theme.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 // ---------------------------------------------------------------------------
 // Providers
@@ -722,13 +722,10 @@ class _BookmarkTile extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
-          onTap: () async {
+          onTap: () {
             final url = bookmark.url;
             if (url == null) return;
-            final uri = Uri.parse(url);
-            if (await canLaunchUrl(uri)) {
-              await launchUrl(uri, mode: LaunchMode.inAppBrowserView);
-            }
+            QuickPeekSheet.show(context, url: url, title: bookmark.name);
           },
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,

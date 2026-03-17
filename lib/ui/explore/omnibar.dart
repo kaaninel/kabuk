@@ -30,10 +30,11 @@ import 'package:kabuk/ui/explore/discovery_providers.dart';
 import 'package:kabuk/ui/explore/explore_view.dart';
 import 'package:kabuk/ui/explore/feed_management_sheet.dart';
 import 'package:kabuk/ui/explore/profile_view.dart';
+import 'package:kabuk/ui/explore/quick_peek_sheet.dart';
 import 'package:kabuk/ui/explore/topic_following.dart';
 import 'package:kabuk/ui/shared/feed_image.dart';
+import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
 import 'package:kabuk/ui/theme.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 // =============================================================================
 // Pattern detection helpers
@@ -597,7 +598,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
     if (q.isEmpty) return;
 
     if (_isUrlQuery(q)) {
-      unawaited(_openExternal(q));
+      _openExternal(q);
     } else if (_isBrowseableQuery(q)) {
       // Cancel pending debounce and navigate immediately.
       _browseDebounce?.cancel();
@@ -606,16 +607,13 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
     // For plain text queries the results list is already visible.
   }
 
-  /// Opens a URL in the external browser.
-  Future<void> _openExternal(String url) async {
+  /// Opens a URL in-app via [QuickPeekSheet].
+  void _openExternal(String url) {
     var openUrl = url.trim();
     if (!openUrl.startsWith('http://') && !openUrl.startsWith('https://')) {
       openUrl = 'https://$openUrl';
     }
-    final uri = Uri.tryParse(openUrl);
-    if (uri != null) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
+    QuickPeekSheet.show(context, url: openUrl);
   }
 
   // ---------------------------------------------------------------------------
@@ -890,34 +888,15 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
   // ---------------------------------------------------------------------------
 
   Widget _buildSearchField() {
-    return TextField(
+    return KabukKeyboard(
+      simple: true,
       controller: _controller,
       autofocus: true,
       onChanged: _onQueryChanged,
       onSubmitted: _onSubmitted,
-      style: const TextStyle(color: KabukTheme.textPrimary, fontSize: 16),
-      textInputAction: TextInputAction.go,
-      decoration: InputDecoration(
-        hintText: _scope != null
-            ? 'Search in ${_scopeName ?? "feed"}...'
-            : 'Search, subscribe, or enter URL...',
-        hintStyle: const TextStyle(color: KabukTheme.textTertiary),
-        border: InputBorder.none,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: KabukTheme.spacingMd,
-          vertical: KabukTheme.spacingSm,
-        ),
-        suffixIcon: _controller.text.isNotEmpty
-            ? IconButton(
-                icon: const Icon(Icons.clear, size: 18),
-                color: KabukTheme.textTertiary,
-                onPressed: () {
-                  _controller.clear();
-                  _onQueryChanged('');
-                },
-              )
-            : null,
-      ),
+      hintText: _scope != null
+          ? 'Search in ${_scopeName ?? "feed"}...'
+          : 'Search, subscribe, or enter URL...',
     );
   }
 
@@ -1541,9 +1520,9 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
         _actionTile(
           icon: Icons.open_in_new_rounded,
           iconColor: KabukTheme.accentGreen,
-          title: 'Open in browser',
-          subtitle: 'Open this link in your browser',
-          onTap: () => unawaited(_openExternal(_query)),
+          title: 'Open link',
+          subtitle: 'Preview this link in-app',
+          onTap: () => _openExternal(_query),
         ),
       );
       actions.add(
@@ -1563,9 +1542,8 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
           icon: Icons.bolt_rounded,
           iconColor: KabukTheme.purpleAccent,
           title: 'View on njump.me',
-          subtitle: 'Open this Nostr entity in your browser',
-          onTap: () =>
-              unawaited(_openExternal('https://njump.me/${_query.trim()}')),
+          subtitle: 'Preview this Nostr entity in-app',
+          onTap: () => _openExternal('https://njump.me/${_query.trim()}'),
         ),
       );
     }

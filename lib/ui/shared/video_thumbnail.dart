@@ -7,9 +7,9 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:kabuk/ui/explore/quick_peek_sheet.dart';
 import 'package:kabuk/ui/shared/feed_image.dart';
 import 'package:kabuk/ui/theme.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -185,8 +185,8 @@ class VideoThumbnail extends StatelessWidget {
           ),
         );
       } else {
-        // Other external video — open in browser.
-        launchUrl(Uri.parse(videoUrl), mode: LaunchMode.externalApplication);
+        // Other external video — open in-app via QuickPeekSheet.
+        QuickPeekSheet.show(context, url: videoUrl);
       }
     }
   }

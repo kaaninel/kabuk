@@ -11,6 +11,7 @@ import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/services/nostr.dart';
 import 'package:kabuk/services/nostr_utils.dart';
 import 'package:kabuk/ui/explore/nostr_providers.dart';
+import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
 import 'package:kabuk/ui/shared/nostr_author_row.dart';
 import 'package:kabuk/ui/theme.dart';
 
@@ -160,23 +161,10 @@ class _ThreadViewState extends ConsumerState<ThreadView> {
         child: Row(
           children: [
             Expanded(
-              child: TextField(
+              child: KabukKeyboard(
+                simple: true,
                 controller: _replyController,
-                style: const TextStyle(color: KabukTheme.textPrimary),
-                decoration: InputDecoration(
-                  hintText: 'Write a reply...',
-                  hintStyle: const TextStyle(color: KabukTheme.textTertiary),
-                  filled: true,
-                  fillColor: KabukTheme.surfaceVariant,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: KabukTheme.spacingMd,
-                    vertical: KabukTheme.spacingSm,
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
+                hintText: 'Write a reply...',
               ),
             ),
             const SizedBox(width: KabukTheme.spacingSm),
