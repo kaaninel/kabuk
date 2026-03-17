@@ -166,15 +166,14 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: KabukTheme.background,
-      appBar: AppBar(
-        backgroundColor: KabukTheme.background,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded),
-          tooltip: 'Back to feed',
-          onPressed: () => Navigator.of(context).pop(),
-        ),
+      appBar: _ArticleOmniBar(
+        article: _currentArticle,
+        onBack: () => Navigator.of(context).pop(),
+        onViewInBrowser: () {
+          final url = _currentArticle.url;
+          if (url == null) return;
+          QuickPeekSheet.show(context, url: url, title: _currentArticle.name);
+        },
       ),
       body: GestureDetector(
         onHorizontalDragEnd: _onHorizontalDragEnd,
@@ -312,67 +311,12 @@ class _ArticleDetailContent extends ConsumerWidget {
             ),
           ),
 
-        // ── Meta row ───────────────────────────────────────────────────────
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-          child: Row(
-            children: [
-              if (article.author != null) ...[
-                const Icon(
-                  Icons.person_outline_rounded,
-                  size: 14,
-                  color: KabukTheme.textTertiary,
-                ),
-                const SizedBox(width: 4),
-                Flexible(
-                  child: Builder(builder: (context) {
-                    final isReddit = _isRedditArticle(article);
-                    final author = article.author!;
-                    final isHexPubkey =
-                        RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(author);
-
-                    return Semantics(
-                      button: isReddit || isHexPubkey,
-                      label: isReddit
-                          ? 'View profile of ${author.startsWith('u/') ? author : 'u/$author'}'
-                          : isHexPubkey
-                              ? 'View Nostr profile'
-                              : null,
-                      excludeSemantics: isReddit || isHexPubkey,
-                      child: GestureDetector(
-                        onTap: isReddit
-                            ? () => _openUserProfile(context, author)
-                            : isHexPubkey
-                                ? () => Navigator.of(context).push(
-                                      MaterialPageRoute<void>(
-                                        builder: (_) =>
-                                            ProfileView(pubkey: author),
-                                      ),
-                                    )
-                                : null,
-                        child: Text(
-                          isReddit
-                              ? (author.startsWith('u/')
-                                  ? author
-                                  : 'u/$author')
-                              : _formatAuthor(author),
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: isReddit
-                                ? KabukTheme.blueAccent
-                                : isHexPubkey
-                                    ? KabukTheme.purpleAccent
-                                    : KabukTheme.textSecondary,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    );
-                  }),
-                ),
-                const SizedBox(width: 12),
-              ],
-              if (article.datePublished != null) ...[
+        // ── Meta row (date only — author/source in omnibar) ─────────────
+        if (article.datePublished != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            child: Row(
+              children: [
                 const Icon(
                   Icons.schedule_rounded,
                   size: 14,
@@ -387,9 +331,8 @@ class _ArticleDetailContent extends ConsumerWidget {
                   ),
                 ),
               ],
-            ],
+            ),
           ),
-        ),
 
         // ── Description ────────────────────────────────────────────────────
         if (article.description != null && article.description!.isNotEmpty)
@@ -529,44 +472,6 @@ class _ArticleDetailContent extends ConsumerWidget {
                   ),
                 );
               }).toList(),
-            ),
-          ),
-
-        // ── Source link (external web/RSS only, not for Nostr/internal) ───
-        if (article.url != null && !_isInternalUrl(article.url!))
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-            child: GestureDetector(
-              onTap: onViewInBrowser,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: KabukTheme.cardColor,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: KabukTheme.divider),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.open_in_new_rounded,
-                      size: 12,
-                      color: KabukTheme.textTertiary,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      _truncateUrl(article.url!),
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: KabukTheme.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             ),
           ),
 
@@ -713,6 +618,271 @@ class _ArticleDetailContent extends ConsumerWidget {
           author: name,
           sourceType: FeedSourceType.reddit,
         ),
+      ),
+    );
+  }
+
+  /// Formats a large number compactly (e.g. 1234 → "1.2k").
+  static String _compactCount(int count) {
+    if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}m';
+    if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}k';
+    return count.toString();
+  }
+}
+
+// =============================================================================
+// Article OmniBar — Chrome-like info bar in the AppBar
+// =============================================================================
+
+/// Omnibar-style AppBar for article detail pages.
+///
+/// Shows source icon + author (tappable → ChannelView) + channel/subreddit +
+/// domain in a compact, Chrome-address-bar-like layout. Replaces the old
+/// plain back-button-only AppBar and the in-body meta row.
+class _ArticleOmniBar extends StatelessWidget implements PreferredSizeWidget {
+  const _ArticleOmniBar({
+    required this.article,
+    required this.onBack,
+    required this.onViewInBrowser,
+  });
+
+  final ArticleData article;
+  final VoidCallback onBack;
+  final VoidCallback onViewInBrowser;
+
+  @override
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+
+  // ── Source detection ──────────────────────────────────────────────────
+
+  bool get _isReddit {
+    final source = article.feedSource ?? '';
+    return source.contains('reddit') ||
+        (article.url ?? '').contains('reddit.com');
+  }
+
+  bool get _isFourchan {
+    final source = article.feedSource ?? '';
+    return source.contains('4chan') ||
+        (article.url ?? '').contains('4chan.org') ||
+        (article.url ?? '').contains('4channel.org');
+  }
+
+  bool get _isNostr {
+    final source = article.feedSource ?? '';
+    return source.contains('nostr') ||
+        (article.url ?? '').startsWith('nostr:');
+  }
+
+  Color get _sourceColor {
+    if (_isReddit) return KabukTheme.redditOrange;
+    if (_isFourchan) return const Color(0xFF789922);
+    if (_isNostr) return KabukTheme.nostrPurple;
+    return KabukTheme.accentGreen;
+  }
+
+  IconData get _sourceIcon {
+    if (_isReddit) return Icons.forum_rounded;
+    if (_isFourchan) return Icons.tag_rounded;
+    if (_isNostr) return Icons.bolt_rounded;
+    return Icons.rss_feed_rounded;
+  }
+
+  String get _sourceName {
+    if (_isReddit) return 'Reddit';
+    if (_isFourchan) return '4chan';
+    if (_isNostr) return 'Nostr';
+    final url = article.url;
+    if (url != null) {
+      try {
+        return Uri.parse(url).host.replaceFirst('www.', '');
+      } catch (_) {}
+    }
+    return 'Feed';
+  }
+
+  String get _authorDisplay {
+    final author = article.author;
+    if (author == null) return '';
+    if (_isReddit) {
+      return author.startsWith('u/') ? author : 'u/$author';
+    }
+    if (RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(author)) {
+      return '@${author.substring(0, 8)}…';
+    }
+    return author;
+  }
+
+  /// The channel (subreddit, board, etc.) if known.
+  String? get _channelDisplay {
+    for (final tag in article.tags) {
+      if (tag.startsWith('r/')) return tag;
+    }
+    if (_isFourchan) {
+      final match = RegExp(r'/(\w+)/').firstMatch(article.url ?? '');
+      if (match != null) return '/${match.group(1)}/';
+    }
+    final source = article.feedSource ?? '';
+    if (source.isNotEmpty &&
+        !source.contains('reddit') &&
+        !source.contains('nostr')) {
+      return source;
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final channel = _channelDisplay;
+    final author = _authorDisplay;
+    final hasUrl = article.url != null &&
+        !article.url!.startsWith('nostr:') &&
+        !article.url!.startsWith('kabuk:') &&
+        article.url!.isNotEmpty;
+
+    return AppBar(
+      backgroundColor: KabukTheme.background,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      leadingWidth: 40,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_rounded, size: 22),
+        tooltip: 'Back to feed',
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(),
+        onPressed: onBack,
+      ),
+      titleSpacing: 4,
+      title: GestureDetector(
+        onTap: hasUrl ? onViewInBrowser : null,
+        child: Container(
+          height: 38,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: KabukTheme.surfaceVariant,
+            borderRadius: BorderRadius.circular(19),
+          ),
+          child: Row(
+            children: [
+              // Source icon.
+              Icon(_sourceIcon, size: 15, color: _sourceColor),
+              const SizedBox(width: 6),
+
+              // Author (tappable).
+              if (author.isNotEmpty)
+                Flexible(
+                  child: _OmniBarAuthor(
+                    author: author,
+                    color: _sourceColor,
+                    article: article,
+                    isReddit: _isReddit,
+                    isNostr: _isNostr,
+                  ),
+                ),
+
+              // Separator dot.
+              if (author.isNotEmpty && (channel != null || hasUrl))
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 5),
+                  child: Container(
+                    width: 3,
+                    height: 3,
+                    decoration: const BoxDecoration(
+                      color: KabukTheme.textTertiary,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+
+              // Channel or domain.
+              if (channel != null)
+                Text(
+                  channel,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: _sourceColor.withAlpha(200),
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                )
+              else if (hasUrl)
+                Flexible(
+                  child: Text(
+                    _sourceName,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: KabukTheme.textSecondary,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+
+              // External link icon.
+              if (hasUrl) ...[
+                const SizedBox(width: 4),
+                const Icon(
+                  Icons.open_in_new_rounded,
+                  size: 12,
+                  color: KabukTheme.textTertiary,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Tappable author name in the omnibar that navigates to ChannelView.
+class _OmniBarAuthor extends StatelessWidget {
+  const _OmniBarAuthor({
+    required this.author,
+    required this.color,
+    required this.article,
+    required this.isReddit,
+    required this.isNostr,
+  });
+
+  final String author;
+  final Color color;
+  final ArticleData article;
+  final bool isReddit;
+  final bool isNostr;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        if (isReddit) {
+          final name = author.startsWith('u/') ? author.substring(2) : author;
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => ChannelView(
+                author: name,
+                sourceType: FeedSourceType.reddit,
+              ),
+            ),
+          );
+        } else if (isNostr && article.author != null) {
+          final pubkey = article.author!;
+          if (RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(pubkey)) {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => ProfileView(pubkey: pubkey),
+              ),
+            );
+          }
+        }
+      },
+      child: Text(
+        author,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }
