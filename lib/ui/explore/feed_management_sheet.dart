@@ -221,7 +221,7 @@ class _FeedManagementSheetState extends ConsumerState<_FeedManagementSheet> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _EditFeedSheet(feed: feed),
+      builder: (_) => EditFeedSheet(feed: feed),
     );
 
     if (result == true) {
@@ -250,7 +250,7 @@ class _FeedTile extends StatelessWidget {
     final color = isNostr
         ? KabukTheme.purpleAccent
         : isReddit
-        ? const Color(0xFFFF4500)
+        ? KabukTheme.redditOrange
         : KabukTheme.blueAccent;
     final icon = isNostr
         ? Icons.bolt_rounded
@@ -386,16 +386,17 @@ enum _FeedAction { edit, delete }
 // =============================================================================
 
 /// Bottom sheet for editing a feed subscription's properties.
-class _EditFeedSheet extends ConsumerStatefulWidget {
-  const _EditFeedSheet({required this.feed});
+class EditFeedSheet extends ConsumerStatefulWidget {
+  /// Creates an [EditFeedSheet].
+  const EditFeedSheet({super.key, required this.feed});
 
   final FeedSubscriptionData feed;
 
   @override
-  ConsumerState<_EditFeedSheet> createState() => _EditFeedSheetState();
+  ConsumerState<EditFeedSheet> createState() => _EditFeedSheetState();
 }
 
-class _EditFeedSheetState extends ConsumerState<_EditFeedSheet> {
+class _EditFeedSheetState extends ConsumerState<EditFeedSheet> {
   late final TextEditingController _nameController;
   late final TextEditingController _categoryController;
   late int _refreshInterval;

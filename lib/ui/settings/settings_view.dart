@@ -16,7 +16,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kabuk/agents/llm.dart';
 import 'package:kabuk/config/constants.dart';
 import 'package:kabuk/config/providers.dart';
+import 'package:kabuk/ui/explore/explore_view.dart';
 import 'package:kabuk/ui/settings/dev_mode_page.dart';
+import 'package:kabuk/ui/settings/feed_sources_page.dart';
 import 'package:kabuk/ui/settings/identity_page.dart';
 import 'package:kabuk/ui/settings/llm_settings_page.dart';
 import 'package:kabuk/ui/settings/local_models_page.dart';
@@ -81,6 +83,8 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
     final identityAsync = ref.watch(currentIdentityProvider);
     final allIds = ref.watch(allIdentitiesProvider);
     final devMode = ref.watch(devModeProvider);
+    final feedSubs = ref.watch(subscriptionsProvider);
+    final feedCount = feedSubs.valueOrNull?.length ?? 0;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -268,6 +272,33 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
           ],
           const SizedBox(height: KabukTheme.spacingLg),
 
+          // --- Feed Sources Section ---
+          const SettingsSectionHeader(
+            icon: Icons.rss_feed_rounded,
+            title: 'Feed Sources',
+            color: KabukTheme.warmAccent,
+          ),
+          const SizedBox(height: KabukTheme.spacingSm),
+          SettingsTile(
+            icon: Icons.rss_feed_rounded,
+            iconColor: KabukTheme.warmAccent,
+            title: 'Feed Sources',
+            subtitle: feedCount > 0
+                ? '$feedCount source${feedCount > 1 ? 's' : ''} configured'
+                : 'No sources configured',
+            trailing: const Icon(
+              Icons.chevron_right,
+              color: KabukTheme.textSecondary,
+              size: 20,
+            ),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const FeedSourcesPage(),
+              ),
+            ),
+          ),
+          const SizedBox(height: KabukTheme.spacingLg),
+
           // --- Nostr Relays Section ---
           const SettingsSectionHeader(
             icon: Icons.cell_tower_rounded,
@@ -301,48 +332,50 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
           ),
           const SizedBox(height: KabukTheme.spacingLg),
 
-          // --- Data & Storage Section ---
-          const SettingsSectionHeader(
-            icon: Icons.storage_rounded,
-            title: 'Data & Storage',
-            color: KabukTheme.purpleAccent,
-          ),
-          const SizedBox(height: KabukTheme.spacingSm),
-          SettingsTile(
-            icon: Icons.dns_rounded,
-            iconColor: KabukTheme.purpleAccent,
-            title: 'Knowledge Store',
-            subtitle: 'RDF triple store backed by SQLite',
-            onTap: () => showComingSoonDialog(
-              context,
-              title: 'Knowledge Store',
+          // --- Data & Storage Section (dev mode only – features not yet built) ---
+          if (devMode) ...[
+            const SettingsSectionHeader(
+              icon: Icons.storage_rounded,
+              title: 'Data & Storage',
+              color: KabukTheme.purpleAccent,
+            ),
+            const SizedBox(height: KabukTheme.spacingSm),
+            SettingsTile(
               icon: Icons.dns_rounded,
-              description:
-                  'Browse, query, and manage your RDF knowledge graph.\n\n'
-                  'Features in development:\n'
-                  '\u2022 Triple browser with SPARQL-like filtering\n'
-                  '\u2022 Import/export in Turtle and JSON-LD formats\n'
-                  '\u2022 Storage statistics and compaction',
+              iconColor: KabukTheme.purpleAccent,
+              title: 'Knowledge Store',
+              subtitle: 'Coming soon · RDF triple store',
+              onTap: () => showComingSoonDialog(
+                context,
+                title: 'Knowledge Store',
+                icon: Icons.dns_rounded,
+                description:
+                    'Browse, query, and manage your RDF knowledge graph.\n\n'
+                    'Features in development:\n'
+                    '\u2022 Triple browser with SPARQL-like filtering\n'
+                    '\u2022 Import/export in Turtle and JSON-LD formats\n'
+                    '\u2022 Storage statistics and compaction',
+              ),
             ),
-          ),
-          SettingsTile(
-            icon: Icons.lock_rounded,
-            iconColor: KabukTheme.warmAccent,
-            title: 'Encryption',
-            subtitle: 'Vault-based encryption at rest',
-            onTap: () => showComingSoonDialog(
-              context,
-              title: 'Encryption',
+            SettingsTile(
               icon: Icons.lock_rounded,
-              description:
-                  'Manage vault encryption for your local data store.\n\n'
-                  'Features in development:\n'
-                  '\u2022 Change encryption passphrase\n'
-                  '\u2022 Biometric unlock configuration\n'
-                  '\u2022 Key rotation and backup recovery',
+              iconColor: KabukTheme.warmAccent,
+              title: 'Encryption',
+              subtitle: 'Coming soon · Vault-based encryption at rest',
+              onTap: () => showComingSoonDialog(
+                context,
+                title: 'Encryption',
+                icon: Icons.lock_rounded,
+                description:
+                    'Manage vault encryption for your local data store.\n\n'
+                    'Features in development:\n'
+                    '\u2022 Change encryption passphrase\n'
+                    '\u2022 Biometric unlock configuration\n'
+                    '\u2022 Key rotation and backup recovery',
+              ),
             ),
-          ),
-          const SizedBox(height: KabukTheme.spacingLg),
+            const SizedBox(height: KabukTheme.spacingLg),
+          ],
 
           // --- About Section ---
           const SettingsSectionHeader(
