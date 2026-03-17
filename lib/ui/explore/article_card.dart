@@ -782,10 +782,8 @@ class _ActionBar extends ConsumerWidget {
   }
 
   String? _resolveStat(int? nostrCount, int? sourceCount) {
-    if (nostrCount != null && nostrCount > 0) return _formatCount(nostrCount);
-    if (sourceCount != null && sourceCount > 0) {
-      return _formatCount(sourceCount);
-    }
+    final total = (nostrCount ?? 0) + (sourceCount ?? 0);
+    if (total > 0) return _formatCount(total);
     return null;
   }
 

@@ -119,6 +119,12 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
     super.initState();
     _currentIndex = widget.initialIndex;
     _currentArticle = widget.article;
+    // Dismiss any active keyboard when entering article detail.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(keyboardModeProvider.notifier).state = KeyboardMode.none;
+      }
+    });
   }
 
   @override
@@ -1066,6 +1072,19 @@ class _DiscussionSection extends ConsumerStatefulWidget {
 
 class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
   bool _expanded = false;
+  final _commentFocusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _commentFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _focusCommentInput() {
+    setState(() => _expanded = true);
+    _commentFocusNode.requestFocus();
+    ref.read(keyboardModeProvider.notifier).state = KeyboardMode.text;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1248,7 +1267,7 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
         // ── Nostr comment input ────────────────────────────────────────────
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: _CommentInput(url: url),
+          child: _CommentInput(url: url, focusNode: _commentFocusNode),
         ),
 
         // ── Merged comment list ────────────────────────────────────────────
@@ -1339,7 +1358,7 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
           count: mergedReplies,
           active: false,
           activeColor: KabukTheme.blueAccent,
-          onTap: () {},
+          onTap: _focusCommentInput,
         ),
         const SizedBox(width: 16),
         _statChip(
@@ -1356,7 +1375,16 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
         IconButton(
           icon: const Icon(Icons.bookmark_add_outlined, size: 18),
           color: KabukTheme.textTertiary,
-          onPressed: () {},
+          onPressed: () {
+            // TODO: Save to Vault / bookmarks when implemented.
+            HapticFeedback.lightImpact();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Bookmarks coming soon'),
+                duration: Duration(seconds: 2),
+              ),
+            );
+          },
           visualDensity: VisualDensity.compact,
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(),
@@ -1365,7 +1393,16 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
         IconButton(
           icon: const Icon(Icons.share_outlined, size: 18),
           color: KabukTheme.textTertiary,
-          onPressed: () {},
+          onPressed: () {
+            Clipboard.setData(ClipboardData(text: url));
+            HapticFeedback.lightImpact();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Link copied'),
+                duration: Duration(seconds: 2),
+              ),
+            );
+          },
           visualDensity: VisualDensity.compact,
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(),
@@ -1695,9 +1732,12 @@ class _UnifiedCommentTileState extends State<_UnifiedCommentTile> {
 // =============================================================================
 
 class _CommentInput extends ConsumerStatefulWidget {
-  const _CommentInput({required this.url});
+  const _CommentInput({required this.url, this.focusNode});
 
   final String url;
+
+  /// Optional external focus node (e.g. from Reply button).
+  final FocusNode? focusNode;
 
   @override
   ConsumerState<_CommentInput> createState() => _CommentInputState();
@@ -1705,12 +1745,13 @@ class _CommentInput extends ConsumerStatefulWidget {
 
 class _CommentInputState extends ConsumerState<_CommentInput> {
   final _controller = TextEditingController();
-  final _focusNode = FocusNode();
+  late final FocusNode _focusNode;
   bool _sending = false;
 
   @override
   void initState() {
     super.initState();
+    _focusNode = widget.focusNode ?? FocusNode();
     _focusNode.addListener(_onFocusChange);
   }
 
@@ -1718,7 +1759,8 @@ class _CommentInputState extends ConsumerState<_CommentInput> {
   void dispose() {
     _focusNode.removeListener(_onFocusChange);
     _controller.dispose();
-    _focusNode.dispose();
+    // Only dispose if we created it ourselves.
+    if (widget.focusNode == null) _focusNode.dispose();
     super.dispose();
   }
 
