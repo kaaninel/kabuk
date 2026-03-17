@@ -17,6 +17,7 @@ import 'package:kabuk/knowledge/types/bookmark.dart';
 import 'package:kabuk/services/media_cache.dart';
 import 'package:kabuk/ui/explore/article_detail_page.dart';
 import 'package:kabuk/ui/explore/nostr_providers.dart';
+import 'package:kabuk/ui/explore/profile_view.dart';
 import 'package:kabuk/ui/explore/quick_peek_sheet.dart';
 import 'package:kabuk/ui/shared/feed_image.dart';
 import 'package:kabuk/ui/shared/video_thumbnail.dart';
@@ -34,6 +35,8 @@ class ArticleCard extends ConsumerWidget {
     super.key,
     this.onBeforeOpen,
     this.onReturnFromDetail,
+    this.articles,
+    this.index,
   });
 
   /// The article data to display.
@@ -46,6 +49,12 @@ class ArticleCard extends ConsumerWidget {
   /// Called after the detail page pops (used by the feed to scroll back
   /// to this article's position in the list).
   final VoidCallback? onReturnFromDetail;
+
+  /// Optional list of feed articles for swipe-to-next navigation.
+  final List<ArticleData>? articles;
+
+  /// Index of this article within [articles].
+  final int? index;
 
   /// Returns the accent color for this article's source (used for borders).
   Color _sourceAccentColor() {
@@ -400,6 +409,8 @@ class ArticleCard extends ConsumerWidget {
     pushArticleDetail(
       context,
       article: article,
+      articles: articles,
+      initialIndex: index ?? 0,
     ).then((_) => onReturnFromDetail?.call());
   }
 
@@ -422,16 +433,26 @@ class ArticleCard extends ConsumerWidget {
 ///
 /// The subreddit name (`r/xxx`) and author name are tappable — tapping
 /// opens the corresponding Reddit page inside the in-app quick peek sheet.
+/// For Nostr sources, tapping the author navigates to [ProfileView].
 class _SourceHeader extends StatelessWidget {
   const _SourceHeader({required this.article});
 
   final ArticleData article;
 
+  /// Whether the given string looks like a full Nostr hex pubkey.
+  static bool _isHexPubkey(String value) =>
+      RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(value);
+
   @override
   Widget build(BuildContext context) {
     final source = article.feedSource ?? '';
+    final url = article.url ?? '';
     final isReddit =
-        source.contains('reddit') || (article.url ?? '').contains('reddit.com');
+        source.contains('reddit') || url.contains('reddit.com');
+    final isNostr = !isReddit &&
+        (url.startsWith('nostr:') ||
+            source.startsWith('kabuk:') ||
+            source.isEmpty);
     final timeAgo = _formatTimeAgo(article.datePublished);
 
     final Color iconColor;
@@ -439,6 +460,9 @@ class _SourceHeader extends StatelessWidget {
     if (isReddit) {
       iconColor = KabukTheme.redditOrange;
       iconData = Icons.reddit;
+    } else if (isNostr) {
+      iconColor = KabukTheme.purpleAccent;
+      iconData = Icons.hub_rounded;
     } else {
       iconColor = KabukTheme.blueAccent;
       iconData = Icons.rss_feed_rounded;
@@ -446,6 +470,7 @@ class _SourceHeader extends StatelessWidget {
 
     final subreddit = _subredditName(article);
     final author = article.author;
+    final authorIsHexPubkey = author != null && _isHexPubkey(author);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 2),
@@ -484,12 +509,15 @@ class _SourceHeader extends StatelessWidget {
                     ),
                   ),
                 ),
-                // Author / username — tappable for Reddit sources.
+                // Author — tappable for Reddit (opens QuickPeek) and
+                // Nostr hex-pubkey authors (opens ProfileView).
                 if (author != null)
                   GestureDetector(
                     onTap: isReddit
                         ? () => _openUserProfile(context, author)
-                        : null,
+                        : authorIsHexPubkey
+                            ? () => _openNostrProfile(context, author)
+                            : null,
                     child: Text(
                       isReddit
                           ? (author.startsWith('u/')
@@ -500,7 +528,9 @@ class _SourceHeader extends StatelessWidget {
                         fontSize: 11,
                         color: isReddit
                             ? KabukTheme.blueAccent.withAlpha(200)
-                            : KabukTheme.textTertiary,
+                            : authorIsHexPubkey
+                                ? KabukTheme.purpleAccent.withAlpha(200)
+                                : KabukTheme.textTertiary,
                       ),
                     ),
                   ),
@@ -579,6 +609,15 @@ class _SourceHeader extends StatelessWidget {
       context,
       url: 'https://www.reddit.com/u/$name',
       title: 'u/$name',
+    );
+  }
+
+  /// Opens the Nostr user profile page for a hex pubkey.
+  void _openNostrProfile(BuildContext context, String pubkey) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ProfileView(pubkey: pubkey),
+      ),
     );
   }
 

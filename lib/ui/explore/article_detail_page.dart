@@ -10,18 +10,21 @@ import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/knowledge/types/nostr_social.dart';
 import 'package:kabuk/ui/explore/browse_session.dart';
 import 'package:kabuk/ui/explore/explore_view.dart' show friendlyError;
 import 'package:kabuk/ui/explore/fourchan_comments.dart';
 import 'package:kabuk/ui/explore/nostr_providers.dart';
+import 'package:kabuk/ui/explore/profile_view.dart';
+import 'package:kabuk/ui/explore/quick_peek_sheet.dart';
 import 'package:kabuk/ui/explore/reddit_comments.dart';
 import 'package:kabuk/ui/shared/feed_image.dart';
 import 'package:kabuk/ui/shared/fullscreen_image_viewer.dart';
+import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
 import 'package:kabuk/ui/shared/video_thumbnail.dart';
 import 'package:kabuk/ui/theme.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 // =============================================================================
 // Route helper
@@ -31,14 +34,23 @@ import 'package:url_launcher/url_launcher.dart';
 ///
 /// Uses a slide-up transition for a smooth Reddit-like feel.
 /// Returns the navigator's future so callers can react when the page is popped.
+///
+/// When [articles] and [initialIndex] are provided, the detail page supports
+/// Reddit-style swipe-to-next-article navigation via overscroll detection.
 Future<void> pushArticleDetail(
   BuildContext context, {
   required ArticleData article,
+  List<ArticleData>? articles,
+  int initialIndex = 0,
 }) {
   return Navigator.of(context).push(
     PageRouteBuilder<void>(
       pageBuilder: (context, animation, secondaryAnimation) =>
-          ArticleDetailPage(article: article),
+          ArticleDetailPage(
+        article: article,
+        articles: articles,
+        initialIndex: initialIndex,
+      ),
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
         final tween = Tween(begin: const Offset(0, 1), end: Offset.zero)
             .chain(CurveTween(curve: Curves.easeOutCubic));
@@ -55,15 +67,124 @@ Future<void> pushArticleDetail(
 // =============================================================================
 
 /// Full-screen article detail page.
-class ArticleDetailPage extends ConsumerWidget {
+///
+/// When [articles] is provided, supports Reddit-style swipe-to-next-article
+/// navigation via overscroll detection at the top/bottom of the content.
+class ArticleDetailPage extends ConsumerStatefulWidget {
   /// Creates an [ArticleDetailPage].
-  const ArticleDetailPage({required this.article, super.key});
+  const ArticleDetailPage({
+    required this.article,
+    this.articles,
+    this.initialIndex = 0,
+    super.key,
+  });
 
-  /// The article to display.
+  /// The article to display (or the initial article when [articles] is set).
   final ArticleData article;
 
+  /// Optional list of articles for swipe navigation.
+  final List<ArticleData>? articles;
+
+  /// Starting index within [articles].
+  final int initialIndex;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ArticleDetailPage> createState() => _ArticleDetailPageState();
+}
+
+class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
+  late int _currentIndex;
+  late ArticleData _currentArticle;
+  final _scrollController = ScrollController();
+  double _overscrollAmount = 0;
+  bool _showNextHint = false;
+
+  /// Direction of the last article transition for slide animation.
+  bool _slideUp = true;
+
+  bool get _hasNext =>
+      widget.articles != null &&
+      _currentIndex < widget.articles!.length - 1;
+
+  bool get _hasPrevious =>
+      widget.articles != null && _currentIndex > 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex;
+    _currentArticle = widget.article;
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _goToNextArticle() {
+    if (!_hasNext) return;
+    HapticFeedback.mediumImpact();
+    final store = ref.read(knowledgeStoreProvider);
+    if (!_currentArticle.read) {
+      store.markArticleRead(_currentArticle.uri);
+    }
+    setState(() {
+      _slideUp = true;
+      _currentIndex++;
+      _currentArticle = widget.articles![_currentIndex];
+      _overscrollAmount = 0;
+      _showNextHint = false;
+    });
+    _scrollController.jumpTo(0);
+  }
+
+  void _goToPreviousArticle() {
+    if (!_hasPrevious) return;
+    HapticFeedback.mediumImpact();
+    setState(() {
+      _slideUp = false;
+      _currentIndex--;
+      _currentArticle = widget.articles![_currentIndex];
+      _overscrollAmount = 0;
+      _showNextHint = false;
+    });
+    _scrollController.jumpTo(0);
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    if (widget.articles == null) return false;
+
+    if (notification is OverscrollNotification) {
+      if (notification.overscroll > 0 && _hasNext) {
+        _overscrollAmount += notification.overscroll;
+        if (_overscrollAmount > 100) {
+          _goToNextArticle();
+        }
+      } else if (notification.overscroll < 0 && _hasPrevious) {
+        _overscrollAmount += notification.overscroll.abs();
+        if (_overscrollAmount > 100) {
+          _goToPreviousArticle();
+        }
+      }
+    }
+    if (notification is ScrollEndNotification) {
+      _overscrollAmount = 0;
+    }
+    // Show "pull up for next" hint when near bottom.
+    if (notification is ScrollUpdateNotification &&
+        _scrollController.hasClients) {
+      final pos = _scrollController.position;
+      final nearBottom = pos.pixels >= pos.maxScrollExtent - 50;
+      if (nearBottom != _showNextHint && _hasNext) {
+        setState(() => _showNextHint = nearBottom);
+      }
+    }
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: KabukTheme.background,
       appBar: AppBar(
@@ -75,17 +196,58 @@ class ArticleDetailPage extends ConsumerWidget {
           tooltip: 'Back to feed',
           onPressed: () => Navigator.of(context).pop(),
         ),
+        actions: [
+          if (widget.articles != null)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.only(right: 16),
+                child: Text(
+                  '${_currentIndex + 1} / ${widget.articles!.length}',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: KabukTheme.textTertiary,
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
-      body: _ArticleDetailContent(
-        article: article,
-        onViewInBrowser: () {
-          final url = article.url;
-          if (url == null) return;
-          final uri = Uri.tryParse(url);
-          if (uri != null) {
-            launchUrl(uri, mode: LaunchMode.externalApplication).ignore();
-          }
-        },
+      body: NotificationListener<ScrollNotification>(
+        onNotification: _handleScrollNotification,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          transitionBuilder: (child, animation) {
+            final begin = _slideUp
+                ? const Offset(0, 0.3)
+                : const Offset(0, -0.3);
+            return SlideTransition(
+              position: Tween<Offset>(begin: begin, end: Offset.zero)
+                  .animate(CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+              )),
+              child: FadeTransition(opacity: animation, child: child),
+            );
+          },
+          child: _ArticleDetailContent(
+            key: ValueKey(_currentArticle.uri),
+            article: _currentArticle,
+            scrollController: _scrollController,
+            showNextHint: _showNextHint && _hasNext,
+            nextArticle: _hasNext
+                ? widget.articles![_currentIndex + 1]
+                : null,
+            onViewInBrowser: () {
+              final url = _currentArticle.url;
+              if (url == null) return;
+              QuickPeekSheet.show(
+                context,
+                url: url,
+                title: _currentArticle.name,
+              );
+            },
+          ),
+        ),
       ),
     );
   }
@@ -100,10 +262,23 @@ class _ArticleDetailContent extends ConsumerWidget {
   const _ArticleDetailContent({
     required this.article,
     required this.onViewInBrowser,
+    this.scrollController,
+    this.showNextHint = false,
+    this.nextArticle,
+    super.key,
   });
 
   final ArticleData article;
   final VoidCallback onViewInBrowser;
+
+  /// Scroll controller shared with the parent for overscroll detection.
+  final ScrollController? scrollController;
+
+  /// Whether to show the "pull up for next" hint at the bottom.
+  final bool showNextHint;
+
+  /// The next article in the list (used for the hint label).
+  final ArticleData? nextArticle;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -111,6 +286,7 @@ class _ArticleDetailContent extends ConsumerWidget {
     final isVideo = _isVideoUrl(article.url);
 
     return ListView(
+      controller: scrollController,
       padding: EdgeInsets.zero,
       children: [
         // ── Media ──────────────────────────────────────────────────────────
@@ -196,32 +372,50 @@ class _ArticleDetailContent extends ConsumerWidget {
                 ),
                 const SizedBox(width: 4),
                 Flexible(
-                  child: Semantics(
-                    button: _isRedditArticle(article),
-                    label: _isRedditArticle(article)
-                        ? 'View profile of ${article.author!.startsWith('u/') ? article.author! : 'u/${article.author!}'}'
-                        : null,
-                    excludeSemantics: _isRedditArticle(article),
-                    child: GestureDetector(
-                      onTap: _isRedditArticle(article)
-                          ? () => _openUserProfile(context, article.author!)
-                          : null,
-                      child: Text(
-                        _isRedditArticle(article)
-                            ? (article.author!.startsWith('u/')
-                                ? article.author!
-                                : 'u/${article.author!}')
-                            : _formatAuthor(article.author!),
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: _isRedditArticle(article)
-                              ? KabukTheme.blueAccent
-                              : KabukTheme.textSecondary,
+                  child: Builder(builder: (context) {
+                    final isReddit = _isRedditArticle(article);
+                    final author = article.author!;
+                    final isHexPubkey =
+                        RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(author);
+
+                    return Semantics(
+                      button: isReddit || isHexPubkey,
+                      label: isReddit
+                          ? 'View profile of ${author.startsWith('u/') ? author : 'u/$author'}'
+                          : isHexPubkey
+                              ? 'View Nostr profile'
+                              : null,
+                      excludeSemantics: isReddit || isHexPubkey,
+                      child: GestureDetector(
+                        onTap: isReddit
+                            ? () => _openUserProfile(context, author)
+                            : isHexPubkey
+                                ? () => Navigator.of(context).push(
+                                      MaterialPageRoute<void>(
+                                        builder: (_) =>
+                                            ProfileView(pubkey: author),
+                                      ),
+                                    )
+                                : null,
+                        child: Text(
+                          isReddit
+                              ? (author.startsWith('u/')
+                                  ? author
+                                  : 'u/$author')
+                              : _formatAuthor(author),
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: isReddit
+                                ? KabukTheme.blueAccent
+                                : isHexPubkey
+                                    ? KabukTheme.purpleAccent
+                                    : KabukTheme.textSecondary,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                  ),
+                    );
+                  }),
                 ),
                 const SizedBox(width: 12),
               ],
@@ -300,10 +494,11 @@ class _ArticleDetailContent extends ConsumerWidget {
                     ),
                     onTapLink: (text, href, title) {
                       if (href == null) return;
-                      final uri = Uri.tryParse(href);
-                      if (uri != null) {
-                        launchUrl(uri, mode: LaunchMode.externalApplication);
-                      }
+                      QuickPeekSheet.show(
+                        context,
+                        url: href,
+                        title: text.isNotEmpty ? text : null,
+                      );
                     },
                   )
                 : _RedditLinkText(
@@ -318,15 +513,11 @@ class _ArticleDetailContent extends ConsumerWidget {
                       );
                     },
                     onUserTap: (user) {
-                      final uri = Uri.tryParse(
-                        'https://www.reddit.com/user/$user',
+                      QuickPeekSheet.show(
+                        context,
+                        url: 'https://www.reddit.com/user/$user',
+                        title: 'u/$user',
                       );
-                      if (uri != null) {
-                        launchUrl(
-                          uri,
-                          mode: LaunchMode.externalApplication,
-                        ).ignore();
-                      }
                     },
                   ),
           ),
@@ -425,6 +616,42 @@ class _ArticleDetailContent extends ConsumerWidget {
 
         // ── Unified discussion (Nostr + Reddit + 4chan) ────────────────────
         _DiscussionSection(article: article),
+
+        // ── Next-article hint ─────────────────────────────────────────────
+        if (showNextHint && nextArticle != null)
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            alignment: Alignment.center,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.keyboard_arrow_up,
+                  color: KabukTheme.textSecondary,
+                  size: 20,
+                ),
+                const Text(
+                  'Pull up for next',
+                  style: TextStyle(
+                    color: KabukTheme.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Text(
+                    nextArticle!.name ?? '',
+                    style: const TextStyle(
+                      color: KabukTheme.textTertiary,
+                      fontSize: 11,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
 
         const SizedBox(height: 48),
       ],
@@ -535,10 +762,11 @@ class _ArticleDetailContent extends ConsumerWidget {
 
   void _openUserProfile(BuildContext context, String author) {
     final name = author.startsWith('u/') ? author.substring(2) : author;
-    final uri = Uri.tryParse('https://www.reddit.com/user/$name');
-    if (uri != null) {
-      launchUrl(uri, mode: LaunchMode.externalApplication).ignore();
-    }
+    QuickPeekSheet.show(
+      context,
+      url: 'https://www.reddit.com/user/$name',
+      title: 'u/$name',
+    );
   }
 }
 
@@ -1305,29 +1533,12 @@ class _CommentInputState extends ConsumerState<_CommentInput> {
     return Row(
       children: [
         Expanded(
-          child: TextField(
+          child: KabukKeyboard(
+            simple: true,
             controller: _controller,
             enabled: !_sending,
             maxLines: 1,
-            style: const TextStyle(fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'Write a comment…',
-              hintStyle: const TextStyle(
-                fontSize: 14,
-                color: KabukTheme.textTertiary,
-              ),
-              filled: true,
-              fillColor: KabukTheme.surfaceVariant,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 10,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(20),
-                borderSide: BorderSide.none,
-              ),
-              isDense: true,
-            ),
+            hintText: 'Write a comment\u2026',
             onSubmitted: (_) => _submit(),
           ),
         ),

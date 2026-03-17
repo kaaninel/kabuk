@@ -170,9 +170,11 @@ class NostrFeedSource implements FeedSource {
     }).toList();
   }
 
-  /// Tries to extract a display name from the event.
+  /// Returns the full hex pubkey so the UI can navigate to the author's profile.
+  ///
+  /// Display formatting (truncation, `@` prefix) happens in the card widget.
   String? _resolveAuthorName(NostrEvent event) {
-    return '@${event.pubkey.substring(0, 8)}';
+    return event.pubkey;
   }
 
   /// Extracts the first image URL from note content.
