@@ -11,7 +11,7 @@ import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/services/feed.dart';
 import 'package:kabuk/services/nostr.dart';
 import 'package:kabuk/services/nostr_utils.dart';
-import 'package:kabuk/ui/explore/explore_view.dart' show ExploreView;
+import 'package:kabuk/ui/explore/explore_view.dart' show ExploreView, friendlyError;
 
 // =============================================================================
 // Data classes
@@ -163,7 +163,7 @@ class BrowseNotifier extends StateNotifier<BrowseSession?> {
         url: url,
         displayName: displayName,
         sourceType: sourceType,
-        error: e.toString(),
+        error: friendlyError(e),
       );
     }
   }
@@ -220,7 +220,7 @@ class BrowseNotifier extends StateNotifier<BrowseSession?> {
       );
     } on Object catch (e) {
       if (state?.url == pubkeyHex) {
-        state = state!.copyWith(loading: false, error: e.toString());
+        state = state!.copyWith(loading: false, error: friendlyError(e));
       }
     }
   }
@@ -260,7 +260,7 @@ class BrowseNotifier extends StateNotifier<BrowseSession?> {
         loadingMore: false,
       );
     } on Object catch (e) {
-      state = s.copyWith(loadingMore: false, error: e.toString());
+      state = s.copyWith(loadingMore: false, error: friendlyError(e));
     }
   }
 

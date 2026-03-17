@@ -260,13 +260,7 @@ class _ConversationDetailState extends ConsumerState<ConversationDetail> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     KabukMarkdown(data: text),
-                    const Text(
-                      '▍',
-                      style: TextStyle(
-                        color: KabukTheme.accentGreen,
-                        fontSize: 14,
-                      ),
-                    ),
+                    const _BlinkingCursor(),
                   ],
                 ),
               ),
@@ -383,10 +377,21 @@ class _ConversationDetailState extends ConsumerState<ConversationDetail> {
         vertical: KabukTheme.spacingSm,
       ),
       itemCount: merged.length,
-      itemBuilder: (context, index) => MessageBubble(
-        message: merged[index],
-        onTapInfo: () => _showMessageInfo(context, merged[index]),
-      ),
+      itemBuilder: (context, index) {
+        final msg = merged[index];
+        final isOptimistic = msg.id.startsWith('optimistic_');
+        final bubble = MessageBubble(
+          message: msg,
+          onTapInfo: () => _showMessageInfo(context, msg),
+          onRetry: msg.status == 'failed'
+              ? () => _sendMessage(msg.content)
+              : null,
+        );
+        if (isOptimistic) {
+          return Opacity(opacity: 0.8, child: bubble);
+        }
+        return bubble;
+      },
     );
   }
 }
@@ -416,7 +421,7 @@ class _SuggestionChip extends StatelessWidget {
 
 /// Animated thinking indicator shown while the AI is processing.
 ///
-/// Displays a pulsing dot and a status label (e.g. "Thinking…",
+/// Displays three bouncing dots and a status label (e.g. "Thinking…",
 /// "Using Create note…") so the user knows the AI is working.
 class _ThinkingBubble extends StatefulWidget {
   const _ThinkingBubble({this.status});
@@ -429,21 +434,30 @@ class _ThinkingBubble extends StatefulWidget {
 }
 
 class _ThinkingBubbleState extends State<_ThinkingBubble>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
+    with TickerProviderStateMixin {
+  late final List<AnimationController> _dotControllers;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    )..repeat(reverse: true);
+    _dotControllers = List.generate(3, (i) {
+      final controller = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 600),
+      );
+      // Stagger each dot by 200ms.
+      Future.delayed(Duration(milliseconds: i * 200), () {
+        if (mounted) controller.repeat(reverse: true);
+      });
+      return controller;
+    });
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    for (final c in _dotControllers) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -467,39 +481,97 @@ class _ThinkingBubbleState extends State<_ThinkingBubble>
             ),
           ),
           const SizedBox(width: KabukTheme.spacingSm),
-          FadeTransition(
-            opacity: _controller.drive(Tween(begin: 0.4, end: 1.0)),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: KabukTheme.surfaceVariant,
-                borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: KabukTheme.accentGreen.withAlpha(180),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      color: KabukTheme.textSecondary,
-                      fontSize: 13,
-                      fontStyle: FontStyle.italic,
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: KabukTheme.surfaceVariant,
+              borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Three bouncing dots.
+                for (int i = 0; i < 3; i++) ...[
+                  if (i > 0) const SizedBox(width: 4),
+                  AnimatedBuilder(
+                    animation: _dotControllers[i],
+                    builder: (context, child) {
+                      final value = _dotControllers[i].value;
+                      return Transform.translate(
+                        offset: Offset(0, -3 * value),
+                        child: Opacity(
+                          opacity: 0.4 + 0.6 * value,
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: Container(
+                      width: 6,
+                      height: 6,
+                      decoration: const BoxDecoration(
+                        color: KabukTheme.accentGreen,
+                        shape: BoxShape.circle,
+                      ),
                     ),
                   ),
                 ],
-              ),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: KabukTheme.textSecondary,
+                    fontSize: 13,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A blinking cursor widget for the streaming bubble.
+///
+/// Toggles the cursor character between fully opaque and invisible
+/// every 500 ms to mimic a text-editor caret.
+class _BlinkingCursor extends StatefulWidget {
+  const _BlinkingCursor();
+
+  @override
+  State<_BlinkingCursor> createState() => _BlinkingCursorState();
+}
+
+class _BlinkingCursorState extends State<_BlinkingCursor>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _controller.drive(
+        Tween(begin: 0.0, end: 1.0),
+      ),
+      child: const Text(
+        '▍',
+        style: TextStyle(color: KabukTheme.accentGreen, fontSize: 14),
       ),
     );
   }

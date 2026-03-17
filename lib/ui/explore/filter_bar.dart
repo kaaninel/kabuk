@@ -5,6 +5,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/ui/explore/feed_management_sheet.dart';
@@ -108,7 +109,10 @@ class FilterBar extends StatelessWidget {
             ),
           ),
           selected: isSelected,
-          onSelected: (_) => onTap(),
+          onSelected: (_) {
+            HapticFeedback.selectionClick();
+            onTap();
+          },
           backgroundColor: KabukTheme.surface,
           selectedColor: color.withAlpha(180),
           checkmarkColor: Colors.white,

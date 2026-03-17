@@ -4,8 +4,11 @@
 /// [_SourceHeader] and [_ActionBar].
 library;
 
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:kabuk/config/providers.dart';
@@ -104,6 +107,7 @@ class ArticleCard extends ConsumerWidget {
         ),
       ),
       confirmDismiss: (direction) async {
+        unawaited(HapticFeedback.lightImpact());
         final store = ref.read(knowledgeStoreProvider);
         if (direction == DismissDirection.startToEnd) {
           final url = article.url;
@@ -347,6 +351,7 @@ class ArticleCard extends ConsumerWidget {
   }
 
   void _openDetail(BuildContext context, WidgetRef ref) {
+    HapticFeedback.selectionClick();
     final store = ref.read(knowledgeStoreProvider);
     if (!article.read) {
       store.markArticleRead(article.uri);
@@ -694,6 +699,7 @@ class _ActionBar extends ConsumerWidget {
   }
 
   Future<void> _handleReaction(BuildContext context, WidgetRef ref) async {
+    unawaited(HapticFeedback.lightImpact());
     final url = article.url;
     if (url == null) return;
     final success = await reactToUrl(ref, url: url);
@@ -708,6 +714,7 @@ class _ActionBar extends ConsumerWidget {
   }
 
   Future<void> _handleComment(BuildContext context, WidgetRef ref) async {
+    unawaited(HapticFeedback.lightImpact());
     final controller = TextEditingController();
     final comment = await showDialog<String>(
       context: context,
@@ -766,6 +773,7 @@ class _ActionBar extends ConsumerWidget {
   }
 
   Future<void> _handleRepost(BuildContext context, WidgetRef ref) async {
+    unawaited(HapticFeedback.lightImpact());
     final url = article.url;
     if (url == null) return;
     final success = await repostUrl(ref, url: url);

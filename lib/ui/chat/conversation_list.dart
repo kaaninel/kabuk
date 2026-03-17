@@ -29,12 +29,35 @@ import 'package:kabuk/ui/theme.dart';
 /// 1. Contact avatars row (horizontal scroll)
 /// 2. Pinned "Kabuk AI" contact
 /// 3. Recent conversations list
-class ConversationList extends ConsumerWidget {
+class ConversationList extends ConsumerStatefulWidget {
   /// Creates a [ConversationList].
   const ConversationList({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ConversationList> createState() => _ConversationListState();
+}
+
+class _ConversationListState extends ConsumerState<ConversationList> {
+  final _searchController = TextEditingController();
+  Timer? _debounceTimer;
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _debounceTimer?.cancel();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) setState(() => _searchQuery = value.toLowerCase().trim());
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final conversationsAsync = ref.watch(conversationsProvider);
     final contactsAsync = ref.watch(contactsProvider);
     final isConfigured = ref.watch(llmConfigProvider) != null;
@@ -153,7 +176,7 @@ class ConversationList extends ConsumerWidget {
   ) {
     // Exclude Nostr topic subscriptions (belong in Explore) and agent
     // conversations (shown via the pinned Kabuk AI tile above).
-    final filtered = conversations
+    final baseFiltered = conversations
         .where(
           (c) =>
               c.type != 'nostr_topic' &&
@@ -161,11 +184,74 @@ class ConversationList extends ConsumerWidget {
               !c.title.startsWith('Subscribed to Nostr topic'),
         )
         .toList();
+
+    // Apply search filter if active.
+    final filtered = _searchQuery.isEmpty
+        ? baseFiltered
+        : baseFiltered.where((c) {
+            final title = c.title.toLowerCase();
+            final lastMsg = (c.lastMessage ?? '').toLowerCase();
+            return title.contains(_searchQuery) ||
+                lastMsg.contains(_searchQuery);
+          }).toList();
+
     return CustomScrollView(
       slivers: [
         // Contacts row (horizontal scroll strip).
         if (contacts.isNotEmpty)
           SliverToBoxAdapter(child: _ContactsRow(contacts: contacts)),
+
+        // Search field.
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              KabukTheme.spacingMd,
+              KabukTheme.spacingSm,
+              KabukTheme.spacingMd,
+              KabukTheme.spacingXs,
+            ),
+            child: TextField(
+              controller: _searchController,
+              onChanged: _onSearchChanged,
+              style: const TextStyle(
+                color: KabukTheme.textPrimary,
+                fontSize: 14,
+              ),
+              decoration: InputDecoration(
+                hintText: 'Search conversations\u2026',
+                hintStyle: const TextStyle(
+                  color: KabukTheme.textSecondary,
+                  fontSize: 14,
+                ),
+                prefixIcon: const Icon(
+                  Icons.search_rounded,
+                  color: KabukTheme.textSecondary,
+                  size: 20,
+                ),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: KabukTheme.textSecondary,
+                          size: 18,
+                        ),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      )
+                    : null,
+                filled: true,
+                fillColor: KabukTheme.surfaceVariant,
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ),
+        ),
 
         // Section header.
         if (contacts.isNotEmpty)
@@ -188,16 +274,33 @@ class ConversationList extends ConsumerWidget {
             ),
           ),
 
-        // Kabuk AI — always pinned.
+        // Kabuk AI — always pinned, not affected by search.
         SliverToBoxAdapter(child: _KabukAiTile(isConfigured: isConfigured)),
 
-        // AI conversation list.
+        // Conversation list.
         if (filtered.isNotEmpty)
           SliverList(
             delegate: SliverChildBuilderDelegate(
               (context, index) =>
                   _ConversationTile(conversation: filtered[index]),
               childCount: filtered.length,
+            ),
+          ),
+
+        // Empty state when search returns no results.
+        if (filtered.isEmpty && _searchQuery.isNotEmpty)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.all(KabukTheme.spacingLg),
+              child: Center(
+                child: Text(
+                  'No conversations found',
+                  style: TextStyle(
+                    color: KabukTheme.textSecondary,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
             ),
           ),
       ],
@@ -1042,6 +1145,9 @@ class _ConversationTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Resolve a better display name from Nostr profile metadata.
+    final displayName = _resolveDisplayName(ref);
+
     return Dismissible(
       key: ValueKey(conversation.id),
       direction: DismissDirection.endToStart,
@@ -1061,7 +1167,7 @@ class _ConversationTile extends ConsumerWidget {
         leading: _isNostrDm && conversation.nostrPubkey != null
             ? _NostrDmAvatar(
                 pubkeyHex: conversation.nostrPubkey!,
-                displayName: _displayTitle,
+                displayName: displayName,
               )
             : conversation.type == 'nostr_channel'
             ? CircleAvatar(
@@ -1083,7 +1189,7 @@ class _ConversationTile extends ConsumerWidget {
                 ),
               ),
         title: Text(
-          _displayTitle,
+          displayName,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
@@ -1142,13 +1248,34 @@ class _ConversationTile extends ConsumerWidget {
             ),
           ],
         ),
-        onTap: () => _openConversation(context, ref),
+        onTap: () => _openConversation(context, ref, displayName),
+        onLongPress: () => _showContextMenu(context, ref),
       ),
     );
   }
 
+  /// Resolves the best display name for this conversation.
+  ///
+  /// For Nostr DMs, checks the profile metadata for a real name.
+  /// Falls back to the stored title or formatted hex pubkey.
+  String _resolveDisplayName(WidgetRef ref) {
+    if (_isNostrDm && conversation.nostrPubkey != null) {
+      final profile = ref
+          .watch(nostrProfileProvider(conversation.nostrPubkey!))
+          .valueOrNull;
+      if (profile != null && profile.name.isNotEmpty) {
+        return profile.name;
+      }
+    }
+    return _displayTitle;
+  }
+
   /// Opens the correct detail screen based on conversation type.
-  void _openConversation(BuildContext context, WidgetRef ref) {
+  void _openConversation(
+    BuildContext context,
+    WidgetRef ref,
+    String displayName,
+  ) {
     ref.read(activeConversationProvider.notifier).state = conversation.id;
 
     // Reset unread count on open.
@@ -1162,7 +1289,7 @@ class _ConversationTile extends ConsumerWidget {
           builder: (_) => NostrChatDetail(
             conversationId: conversation.id,
             recipientPubkey: conversation.nostrPubkey!,
-            displayName: _displayTitle,
+            displayName: displayName,
           ),
         ),
       );
@@ -1184,6 +1311,69 @@ class _ConversationTile extends ConsumerWidget {
         ),
       );
     }
+  }
+
+  /// Shows a context menu with conversation actions.
+  void _showContextMenu(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: KabukTheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(KabukTheme.radiusXl),
+        ),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(top: KabukTheme.spacingSm),
+                decoration: BoxDecoration(
+                  color: KabukTheme.textSecondary.withAlpha(100),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            if (conversation.unreadCount > 0)
+              ListTile(
+                leading: const Icon(
+                  Icons.mark_email_read_outlined,
+                  color: KabukTheme.textPrimary,
+                ),
+                title: const Text('Mark as read'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  ref
+                      .read(databaseProvider)
+                      .resetUnreadCount(conversation.id);
+                },
+              ),
+            ListTile(
+              leading: const Icon(
+                Icons.delete_outline,
+                color: KabukTheme.error,
+              ),
+              title: const Text(
+                'Delete conversation',
+                style: TextStyle(color: KabukTheme.error),
+              ),
+              onTap: () async {
+                Navigator.of(ctx).pop();
+                final confirm = await _confirmDelete(context);
+                if (confirm == true && context.mounted) {
+                  _deleteConversation(context, ref);
+                }
+              },
+            ),
+            const SizedBox(height: KabukTheme.spacingSm),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<bool?> _confirmDelete(BuildContext context) {

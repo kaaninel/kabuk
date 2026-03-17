@@ -31,13 +31,21 @@ import 'package:kabuk/ui/theme.dart';
 /// re-creation on every rebuild (which causes flicker and memory leaks).
 class MessageBubble extends ConsumerStatefulWidget {
   /// Creates a [MessageBubble] for the given [message].
-  const MessageBubble({required this.message, this.onTapInfo, super.key});
+  const MessageBubble({
+    required this.message,
+    this.onTapInfo,
+    this.onRetry,
+    super.key,
+  });
 
   /// The database message to render.
   final Message message;
 
   /// Called when the user selects "Info" from the context menu.
   final VoidCallback? onTapInfo;
+
+  /// Called when the user taps "Retry" on a failed message.
+  final VoidCallback? onRetry;
 
   @override
   ConsumerState<MessageBubble> createState() => _MessageBubbleState();
@@ -286,6 +294,29 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                     Icons.done_all,
                     size: 12,
                     color: KabukTheme.accentGreen,
+                  ),
+                ] else if (_isUser && message.status == 'failed') ...[
+                  const SizedBox(width: 4),
+                  GestureDetector(
+                    onTap: widget.onRetry,
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.error_outline,
+                          size: 14,
+                          color: KabukTheme.error,
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          'Retry',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: KabukTheme.error,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ],

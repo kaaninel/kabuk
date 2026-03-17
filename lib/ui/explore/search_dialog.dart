@@ -31,6 +31,7 @@ class SearchDialog extends ConsumerStatefulWidget {
 
 class _SearchDialogState extends ConsumerState<SearchDialog> {
   final _controller = TextEditingController();
+  Timer? _debounceTimer;
   List<ArticleData> _localResults = [];
   List<NostrEvent> _nostrResults = [];
   bool _searching = false;
@@ -42,24 +43,36 @@ class _SearchDialogState extends ConsumerState<SearchDialog> {
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
   Future<void> _search(String query) async {
-    _activeQuery = query.trim();
-    if (_activeQuery.isEmpty) {
+    _debounceTimer?.cancel();
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      _activeQuery = '';
       setState(() {
         _localResults = [];
         _nostrResults = [];
       });
       return;
     }
+    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+      _performSearch(trimmed);
+    });
+  }
+
+  Future<void> _performSearch(String query) async {
+    _activeQuery = query;
     setState(() => _searching = true);
 
     final store = ref.read(knowledgeStoreProvider);
     final all = await store.listArticles(limit: 500);
-    final q = _activeQuery.toLowerCase();
+    if (query != _activeQuery) return; // stale
+
+    final q = query.toLowerCase();
     final local = all.where((a) {
       return (a.name?.toLowerCase().contains(q) ?? false) ||
           (a.description?.toLowerCase().contains(q) ?? false) ||
@@ -67,12 +80,21 @@ class _SearchDialogState extends ConsumerState<SearchDialog> {
           a.tags.any((t) => t.toLowerCase().contains(q));
     }).toList();
 
+    // Rank title matches above description-only matches.
+    local.sort((a, b) {
+      final aTitle = a.name?.toLowerCase().contains(q) ?? false;
+      final bTitle = b.name?.toLowerCase().contains(q) ?? false;
+      if (aTitle && !bTitle) return -1;
+      if (!aTitle && bTitle) return 1;
+      return 0;
+    });
+
     setState(() {
       _localResults = local;
       _searching = false;
     });
 
-    unawaited(_searchNostr(_activeQuery));
+    unawaited(_searchNostr(query));
   }
 
   Future<void> _searchNostr(String query) async {
@@ -93,6 +115,8 @@ class _SearchDialogState extends ConsumerState<SearchDialog> {
         timeout: const Duration(seconds: 6),
       );
 
+      if (query != _activeQuery) return; // stale, ignore
+
       final seen = <String>{};
       events.removeWhere((e) => !seen.add(e.id));
       events.sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -104,7 +128,9 @@ class _SearchDialogState extends ConsumerState<SearchDialog> {
         });
       }
     } on Object {
-      if (mounted) setState(() => _nostrSearching = false);
+      if (mounted && query == _activeQuery) {
+        setState(() => _nostrSearching = false);
+      }
     }
   }
 

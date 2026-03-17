@@ -11,6 +11,7 @@ import 'dart:developer' as dev;
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kabuk/config/namespaces.dart';
 import 'package:kabuk/config/providers.dart';
@@ -24,6 +25,31 @@ import 'package:kabuk/ui/explore/explore_widgets.dart';
 import 'package:kabuk/ui/explore/nostr_providers.dart';
 import 'package:kabuk/ui/shared/identity_quick_switcher.dart';
 import 'package:kabuk/ui/theme.dart';
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+/// Maps a raw exception to a short, user-friendly message.
+String friendlyError(Object e) {
+  final msg = e.toString().toLowerCase();
+  if (msg.contains('socketexception') || msg.contains('failed host lookup')) {
+    return 'No internet connection — check your network';
+  }
+  if (msg.contains('timeout') || msg.contains('timed out')) {
+    return 'Request timed out — please try again';
+  }
+  if (msg.contains('403') || msg.contains('forbidden')) {
+    return 'Access denied — this content may be restricted';
+  }
+  if (msg.contains('404') || msg.contains('not found')) {
+    return 'Content not found';
+  }
+  if (msg.contains('429') || msg.contains('rate limit')) {
+    return 'Too many requests — please wait a moment';
+  }
+  return 'Something went wrong — please try again';
+}
 
 // =============================================================================
 // Providers
@@ -439,6 +465,7 @@ class _ExploreViewState extends ConsumerState<ExploreView>
   /// the articles list re-reads from the store to incorporate
   /// anything that was stored during the background fetch.
   Future<void> _refreshFeed() async {
+    unawaited(HapticFeedback.mediumImpact());
     // If a refresh is already in progress, await it instead of returning
     // immediately — this ensures RefreshIndicator waits for real completion.
     if (_refreshFuture != null) return _refreshFuture!;
@@ -544,40 +571,73 @@ class _ExploreViewState extends ConsumerState<ExploreView>
         ],
         body: browseSession != null
             ? _buildBrowseView(context, browseSession, isOffline: isOffline)
-            : articlesAsync.when(
-                data: (articles) {
-                  if (articles.isEmpty) {
-                    return RefreshIndicator(
-                      onRefresh: _refreshFeed,
-                      color: KabukTheme.accentGreen,
-                      child: CustomScrollView(
-                        slivers: [
-                          if (isOffline) _buildOfflineBanner(),
-                          SliverFillRemaining(
-                            child: EmptyFeedState(
-                              onSearchTap: () => _openOmnibarSearch(context),
+            : AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                child: articlesAsync.when(
+                  data: (articles) {
+                    if (articles.isEmpty) {
+                      return RefreshIndicator(
+                        key: const ValueKey('empty'),
+                        onRefresh: _refreshFeed,
+                        color: KabukTheme.accentGreen,
+                        child: CustomScrollView(
+                          slivers: [
+                            if (isOffline) _buildOfflineBanner(),
+                            SliverFillRemaining(
+                              child: EmptyFeedState(
+                                onSearchTap: () => _openOmnibarSearch(context),
+                              ),
                             ),
+                          ],
+                        ),
+                      );
+                    }
+                    return KeyedSubtree(
+                      key: const ValueKey('feed'),
+                      child: _buildFeed(
+                        context,
+                        articles,
+                        subsAsync,
+                        selectedFeed,
+                        isOffline: isOffline,
+                        isWifi: isWifiConn,
+                      ),
+                    );
+                  },
+                  loading: () => const KeyedSubtree(
+                      key: ValueKey('skeleton'),
+                      child: _FeedSkeleton(),
+                    ),
+                  error: (e, _) => Center(
+                    key: const ValueKey('error'),
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.cloud_off_rounded,
+                            size: 48,
+                            color: KabukTheme.textSecondary,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            friendlyError(e),
+                            style: const TextStyle(
+                              color: KabukTheme.textSecondary,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 16),
+                          FilledButton.icon(
+                            onPressed: () {
+                              ref.invalidate(articlesProvider);
+                            },
+                            icon: const Icon(Icons.refresh_rounded),
+                            label: const Text('Try again'),
                           ),
                         ],
                       ),
-                    );
-                  }
-                  return _buildFeed(
-                    context,
-                    articles,
-                    subsAsync,
-                    selectedFeed,
-                    isOffline: isOffline,
-                    isWifi: isWifiConn,
-                  );
-                },
-                loading: () => const _FeedSkeleton(),
-                error: (e, _) => Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(
-                      'Error loading feed: $e',
-                      style: const TextStyle(color: KabukTheme.textSecondary),
                     ),
                   ),
                 ),
@@ -642,9 +702,9 @@ class _ExploreViewState extends ConsumerState<ExploreView>
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Icon(
-                        Icons.error_outline_rounded,
-                        size: 40,
-                        color: KabukTheme.error,
+                        Icons.cloud_off_rounded,
+                        size: 48,
+                        color: KabukTheme.textSecondary,
                       ),
                       const SizedBox(height: 12),
                       Text(
@@ -656,12 +716,26 @@ class _ExploreViewState extends ConsumerState<ExploreView>
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        session.error,
+                        friendlyError(session.error),
                         style: const TextStyle(
                           color: KabukTheme.textTertiary,
                           fontSize: 12,
                         ),
                         textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton.icon(
+                        onPressed: () {
+                          ref
+                              .read(browseSessionProvider.notifier)
+                              .browse(
+                                session.url,
+                                session.displayName,
+                                session.sourceType,
+                              );
+                        },
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Try again'),
                       ),
                     ],
                   ),
@@ -1102,7 +1176,10 @@ class _ExploreViewState extends ConsumerState<ExploreView>
       selected: isSelected,
       excludeSemantics: true,
       child: GestureDetector(
-        onTap: () => ref.read(feedSortProvider.notifier).state = sort,
+        onTap: () {
+          HapticFeedback.selectionClick();
+          ref.read(feedSortProvider.notifier).state = sort;
+        },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),

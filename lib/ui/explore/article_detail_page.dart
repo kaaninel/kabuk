@@ -6,12 +6,14 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/knowledge/types/nostr_social.dart';
 import 'package:kabuk/ui/explore/browse_session.dart';
+import 'package:kabuk/ui/explore/explore_view.dart' show friendlyError;
 import 'package:kabuk/ui/explore/fourchan_comments.dart';
 import 'package:kabuk/ui/explore/nostr_providers.dart';
 import 'package:kabuk/ui/explore/reddit_comments.dart';
@@ -341,6 +343,7 @@ class _ArticleDetailContent extends ConsumerWidget {
                 return GestureDetector(
                   onTap: isSubreddit
                       ? () {
+                          HapticFeedback.selectionClick();
                           // Navigate in-app rather than opening external browser.
                           final sub = tag.startsWith('r/') ? tag : 'r/$tag';
                           ref
@@ -731,6 +734,11 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
         (redditAsync?.isLoading ?? false) ||
         (fourchanAsync?.isLoading ?? false);
 
+    final hasError =
+        nostrAsync.hasError ||
+        (redditAsync?.hasError ?? false) ||
+        (fourchanAsync?.hasError ?? false);
+
     final stats = statsAsync.valueOrNull ?? const NostrSocialStats();
     final hasActivity = unified.isNotEmpty ||
         stats.reactionCount > 0 ||
@@ -781,7 +789,16 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
             data: (s) => _buildStatsBar(context, ref, url, s),
             loading: () =>
                 _buildStatsBar(context, ref, url, const NostrSocialStats()),
-            error: (_, _) => const SizedBox.shrink(),
+            error: (e, _) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Text(
+                friendlyError(e),
+                style: const TextStyle(
+                  color: KabukTheme.textTertiary,
+                  fontSize: 12,
+                ),
+              ),
+            ),
           ),
         ),
 
@@ -855,7 +872,41 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
         ),
 
         // ── Merged comment list ────────────────────────────────────────────
-        if (unified.isEmpty && !isLoading)
+        if (unified.isEmpty && !isLoading && hasError)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+            child: Column(
+              children: [
+                const Icon(
+                  Icons.cloud_off_rounded,
+                  size: 32,
+                  color: KabukTheme.textTertiary,
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  "Couldn't load comments",
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: KabukTheme.textTertiary,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  onPressed: () {
+                    refreshNostrSocial(ref, url);
+                    if (isReddit) ref.invalidate(redditCommentsProvider(url));
+                    if (isFourchan) {
+                      ref.invalidate(fourchanCommentsProvider(url));
+                    }
+                  },
+                  icon: const Icon(Icons.refresh_rounded, size: 16),
+                  label: const Text('Try again'),
+                ),
+              ],
+            ),
+          )
+        else if (unified.isEmpty && !isLoading)
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 4, 16, 0),
             child: Text(
@@ -949,7 +1000,10 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
       button: true,
       excludeSemantics: true,
       child: GestureDetector(
-        onTap: onTap,
+        onTap: () {
+          HapticFeedback.lightImpact();
+          onTap();
+        },
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

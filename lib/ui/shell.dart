@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:developer' as dev;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kabuk/agents/cost_tracker.dart';
 import 'package:kabuk/config/providers.dart';
@@ -34,7 +35,7 @@ final pendingProfilePubkeyProvider = StateProvider<String?>((ref) => null);
 
 /// The main app shell with bottom navigation.
 ///
-/// Displays four primary views — Explore, Chat, Create, and Apps —
+/// Displays four primary views — Explore, Chat, Vault, and Apps —
 /// using a Material 3 [NavigationBar] with an [IndexedStack] body
 /// to preserve view state across tab switches.
 ///
@@ -190,6 +191,7 @@ class _KabukShellState extends ConsumerState<KabukShell>
         surfaceTintColor: Colors.transparent,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         onDestinationSelected: (index) {
+          HapticFeedback.selectionClick();
           ref.read(selectedTabProvider.notifier).state = index;
         },
         destinations: const [
