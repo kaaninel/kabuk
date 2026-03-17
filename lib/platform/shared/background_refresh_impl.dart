@@ -112,10 +112,21 @@ Future<void> _runFeedRefresh() async {
           feedSource: sub.uri,
           limit: 300,
         );
-        final existingUrls = existing.map((a) => a.url).toSet();
+        final existingByUrl = {for (final a in existing) a.url: a};
 
         for (final item in items) {
-          if (existingUrls.contains(item.url)) continue;
+          final cached = existingByUrl[item.url];
+          if (cached != null) {
+            final isNostr = item.url?.startsWith('nostr:') ?? false;
+            if (isNostr && cached.name != item.title && item.title.isNotEmpty) {
+              await store.updateArticleTitleAndDescription(
+                cached.uri,
+                title: item.title,
+                description: item.description,
+              );
+            }
+            continue;
+          }
           await store.createArticle(
             title: item.title,
             description: item.description,

@@ -80,11 +80,20 @@ Future<void> followTopic(WidgetRef ref, String hashtag) async {
   final normalized = hashtag.toLowerCase().replaceAll('#', '');
 
   // Persist the followed topic as a SavedSearch (used for UI chips).
-  await store.createSavedSearch(
-    name: '#$normalized',
-    queryText: normalized,
-    source: 'nostr_hashtag',
+  // Guard against duplicates — multiple taps could otherwise create extras.
+  final existingSearches = await store.listSavedSearches();
+  final alreadyHasSearch = existingSearches.any(
+    (s) =>
+        s.source == 'nostr_hashtag' &&
+        s.query?.toLowerCase() == normalized,
   );
+  if (!alreadyHasSearch) {
+    await store.createSavedSearch(
+      name: '#$normalized',
+      queryText: normalized,
+      source: 'nostr_hashtag',
+    );
+  }
 
   // Also create a FeedSubscription so refreshAllFeeds can fetch articles.
   final feedUrl = 'nostr:t/$normalized';

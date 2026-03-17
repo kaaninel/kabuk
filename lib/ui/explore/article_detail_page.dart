@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/knowledge/types/nostr_social.dart';
+import 'package:kabuk/ui/explore/browse_session.dart';
 import 'package:kabuk/ui/explore/fourchan_comments.dart';
 import 'package:kabuk/ui/explore/nostr_providers.dart';
 import 'package:kabuk/ui/explore/reddit_comments.dart';
@@ -417,13 +418,13 @@ class _ArticleDetailContent extends ConsumerWidget {
                 : _RedditLinkText(
                     text: _cleanDescription(article.description!),
                     onSubredditTap: (sub) {
-                      final uri = Uri.tryParse('https://www.reddit.com/r/$sub');
-                      if (uri != null) {
-                        launchUrl(
-                          uri,
-                          mode: LaunchMode.externalApplication,
-                        ).ignore();
-                      }
+                      // Navigate in-app to the subreddit rather than opening browser.
+                      ref
+                          .read(browseSessionProvider.notifier)
+                          .browse('r/$sub', 'r/$sub', 'reddit');
+                      Navigator.of(context).popUntil(
+                        (route) => route.isFirst,
+                      );
                     },
                     onUserTap: (user) {
                       final uri = Uri.tryParse(
@@ -451,16 +452,14 @@ class _ArticleDetailContent extends ConsumerWidget {
                 return GestureDetector(
                   onTap: isSubreddit
                       ? () {
+                          // Navigate in-app rather than opening external browser.
                           final sub = tag.startsWith('r/') ? tag : 'r/$tag';
-                          final uri = Uri.tryParse(
-                            'https://www.reddit.com/$sub',
+                          ref
+                              .read(browseSessionProvider.notifier)
+                              .browse(sub, sub, 'reddit');
+                          Navigator.of(context).popUntil(
+                            (route) => route.isFirst,
                           );
-                          if (uri != null) {
-                            launchUrl(
-                              uri,
-                              mode: LaunchMode.externalApplication,
-                            ).ignore();
-                          }
                         }
                       : null,
                   child: Container(

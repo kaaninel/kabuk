@@ -39,7 +39,14 @@ final articleTypeTriplesProvider = StreamProvider<List<Triple>>((ref) {
 final articlesProvider = FutureProvider<List<ArticleData>>((ref) async {
   ref.watch(articleTypeTriplesProvider);
   final store = ref.watch(knowledgeStoreProvider);
-  return store.listArticles(limit: 200);
+  final all = await store.listArticles(limit: 200);
+  // Deduplicate by URL — the same content can be stored under different
+  // feedSource URIs if subscriptions were recreated between sessions.
+  final seenUrls = <String>{};
+  return all.where((a) {
+    final key = a.url ?? a.uri;
+    return seenUrls.add(key);
+  }).toList();
 });
 
 /// Loads feed subscriptions for filter chips.
@@ -136,13 +143,29 @@ Future<List<ArticleData>> _fetchFeed(
         : sub.feedUrl!;
 
     final items = await feedService.fetchItems(fetchUrl, type: sourceType);
-    // Deduplicate against existing articles from this feed.
-    final existing = await store.listArticles(feedSource: sub.uri, limit: 500);
-    final existingUrls = existing.map((a) => a.url).toSet();
+    // Deduplicate globally by URL — prevents duplicates when a subscription
+    // is recreated with a new feedSource URI between sessions.
+    final allExisting = await store.listArticles(limit: 2000);
+    final existingByUrl = {
+      for (final a in allExisting)
+        if (a.url != null) a.url!: a,
+    };
 
     final newArticles = <ArticleData>[];
     for (final item in items) {
-      if (existingUrls.contains(item.url)) continue;
+      final cached = existingByUrl[item.url];
+      if (cached != null) {
+        // For Nostr items, patch stale titles (e.g. bare hashtag from mirror bots).
+        final isNostr = item.url?.startsWith('nostr:') ?? false;
+        if (isNostr && cached.name != item.title && item.title.isNotEmpty) {
+          await store.updateArticleTitleAndDescription(
+            cached.uri,
+            title: item.title,
+            description: item.description,
+          );
+        }
+        continue;
+      }
       final uri = await store.createArticle(
         title: item.title,
         description: item.description,
@@ -710,7 +733,17 @@ class _ExploreViewState extends ConsumerState<ExploreView>
   }
 
   /// Subscribe banner shown at the top of the browse view.
+  ///
+  /// Returns [SizedBox.shrink] when the source is already subscribed.
   Widget _buildBrowseBanner(BrowseSession session) {
+    final subs = ref.watch(subscriptionsProvider).valueOrNull ?? [];
+    final isAlreadySubscribed = subs.any(
+      (s) => s.feedUrl == session.url || s.name == session.displayName,
+    );
+
+    // No banner needed when the user is already subscribed.
+    if (isAlreadySubscribed) return const SizedBox.shrink();
+
     final isNostrProfile = session.sourceType == 'nostr_profile';
     final isReddit = session.sourceType == 'reddit';
     final isFourchan = session.sourceType == 'fourchan';
@@ -1010,11 +1043,18 @@ class _ExploreViewState extends ConsumerState<ExploreView>
       return;
     }
 
-    // Merge new articles into the displayed list.
+    // Merge new articles into the displayed list, and update changed fields
+    // (e.g. Nostr titles repaired by re-fetch logic).
     for (final article in articles) {
       if (!_displayedUris.contains(article.uri)) {
         _displayedArticles.add(article);
         _displayedUris.add(article.uri);
+      } else {
+        // Update in-place if the title changed (e.g. after Nostr title patch).
+        final idx = _displayedArticles.indexWhere((a) => a.uri == article.uri);
+        if (idx >= 0 && _displayedArticles[idx].name != article.name) {
+          _displayedArticles[idx] = article;
+        }
       }
     }
   }

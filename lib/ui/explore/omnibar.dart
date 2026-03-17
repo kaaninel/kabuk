@@ -1335,7 +1335,12 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
     return savedAsync.when(
       data: (searches) {
         if (searches.isEmpty) return const SizedBox.shrink();
-        final recent = searches.take(6).toList();
+        // Deduplicate by query text, keeping the most-recent entry for each.
+        final seen = <String>{};
+        final deduped = searches
+            .where((s) => seen.add((s.query ?? s.name ?? '').toLowerCase()))
+            .toList();
+        final recent = deduped.take(6).toList();
         return _section(
           label: 'Recent Searches',
           icon: Icons.history_rounded,
@@ -1489,31 +1494,46 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
 
   Widget _buildSmartActions() {
     final actions = <Widget>[];
+    final subs = ref.watch(subscriptionsProvider).valueOrNull ?? [];
 
     if (_isSubredditQuery(_query)) {
       final name = 'r/${_subredditName(_query)}';
-      actions.add(
-        _actionTile(
-          icon: Icons.add_circle_outline_rounded,
-          iconColor: const Color(0xFFFF4500),
-          title: 'Subscribe to $name',
-          subtitle: 'Add this subreddit to your feed',
-          onTap: () => _subscribeToSubreddit(name),
-        ),
+      final alreadySubscribed = subs.any(
+        (s) =>
+            s.name?.toLowerCase() == name.toLowerCase() ||
+            s.feedUrl?.toLowerCase() == name.toLowerCase(),
       );
+      if (!alreadySubscribed) {
+        actions.add(
+          _actionTile(
+            icon: Icons.add_circle_outline_rounded,
+            iconColor: const Color(0xFFFF4500),
+            title: 'Subscribe to $name',
+            subtitle: 'Add this subreddit to your feed',
+            onTap: () => _subscribeToSubreddit(name),
+          ),
+        );
+      }
     }
 
     if (_isHashtagQuery(_query)) {
       final tag = _hashtagName(_query);
-      actions.add(
-        _actionTile(
-          icon: Icons.add_circle_outline_rounded,
-          iconColor: KabukTheme.purpleAccent,
-          title: 'Follow #$tag on Nostr',
-          subtitle: 'See posts tagged with this topic',
-          onTap: () => _followHashtag(tag),
-        ),
+      final alreadyFollowing = subs.any(
+        (s) =>
+            s.feedType == 'nostr' &&
+            (s.feedUrl == 'nostr:t/$tag' || s.name?.toLowerCase() == '#$tag'),
       );
+      if (!alreadyFollowing) {
+        actions.add(
+          _actionTile(
+            icon: Icons.add_circle_outline_rounded,
+            iconColor: KabukTheme.purpleAccent,
+            title: 'Follow #$tag on Nostr',
+            subtitle: 'See posts tagged with this topic',
+            onTap: () => _followHashtag(tag),
+          ),
+        );
+      }
     }
 
     if (_isUrlQuery(_query)) {

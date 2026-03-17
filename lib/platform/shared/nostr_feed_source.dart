@@ -114,21 +114,42 @@ class NostrFeedSource implements FeedSource {
       // Extract first image URL from content.
       final imageUrl = _extractImageUrl(event.content);
 
-      // Strip URLs before deriving title and description.
-      final content = event.content.trim();
-      final stripped = content
+      // Work with raw content lines first, then strip URLs per line.
+      final rawLines = event.content.trim().split('\n');
+
+      // Find the first line that has real text content (not just hashtags/markdown headers).
+      String? meaningfulLine;
+      for (final line in rawLines) {
+        // Strip URLs from this line for evaluation.
+        final cleaned = line
+            .replaceAll(RegExp(r'https?://\S+'), '')
+            .trim()
+            // Remove leading markdown headers (###, ##, #).
+            .replaceFirst(RegExp(r'^#{1,6}\s*'), '');
+        if (cleaned.isEmpty) continue;
+        // Skip lines that are only hashtag tokens (e.g. "#V2EX").
+        final words = cleaned.split(RegExp(r'\s+'));
+        if (words.every((w) => w.startsWith('#') || w.isEmpty)) continue;
+        meaningfulLine = cleaned;
+        break;
+      }
+
+      // Full stripped content for description (collapse excess whitespace but keep newlines).
+      final stripped = event.content
+          .trim()
           .replaceAll(RegExp(r'https?://\S+'), '')
-          .replaceAll(RegExp(r'\s{2,}'), ' ')
+          .replaceAll(RegExp(r'[ \t]{2,}'), ' ')
           .trim();
 
-      final titleEnd = stripped.indexOf('\n');
-      final title = stripped.isEmpty
+      final titleSource = meaningfulLine ?? stripped;
+      final titleEnd = titleSource.indexOf('\n');
+      final title = titleSource.isEmpty
           ? 'Nostr post'
           : titleEnd > 0 && titleEnd < 120
-              ? stripped.substring(0, titleEnd)
-              : stripped.length > 120
-                  ? '${stripped.substring(0, 120)}…'
-                  : stripped;
+              ? titleSource.substring(0, titleEnd)
+              : titleSource.length > 120
+                  ? '${titleSource.substring(0, 120)}…'
+                  : titleSource;
 
       return FeedItem(
         title: title,

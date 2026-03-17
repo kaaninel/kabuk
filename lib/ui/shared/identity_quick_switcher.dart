@@ -256,13 +256,21 @@ class IdentityQuickSwitcher extends ConsumerWidget {
   }
 
   /// Derives display initials from a [UserIdentity].
+  ///
+  /// Uses the first two characters of the pubkey hex for default-named
+  /// identities (e.g. "Identity 1"), giving a unique crypto-style badge.
   static String _initials(UserIdentity? identity) {
     if (identity == null) return '';
-    if (identity.displayName.isNotEmpty) {
+    final hex = identity.publicKeyHex;
+    // Default identity names like "Identity 1" don't make meaningful initials.
+    // Use the first two hex chars of the pubkey for a unique identifier.
+    final isDefaultName = RegExp(r'^Identity\s+\d+$', caseSensitive: false)
+        .hasMatch(identity.displayName);
+    if (!isDefaultName && identity.displayName.isNotEmpty) {
       return identity.displayName[0].toUpperCase();
     }
-    if ((identity.publicKeyHex?.length ?? 0) >= 2) {
-      return identity.publicKeyHex!.substring(0, 2).toUpperCase();
+    if ((hex?.length ?? 0) >= 2) {
+      return hex!.substring(0, 2).toUpperCase();
     }
     return '';
   }

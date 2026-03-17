@@ -18,7 +18,6 @@ import 'package:kabuk/ui/explore/quick_peek_sheet.dart';
 import 'package:kabuk/ui/shared/feed_image.dart';
 import 'package:kabuk/ui/shared/video_thumbnail.dart';
 import 'package:kabuk/ui/theme.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 // =============================================================================
 // Article Card
@@ -300,12 +299,57 @@ class ArticleCard extends ConsumerWidget {
   }
 
   /// Strips raw URLs from a title string for clean display.
+  ///
+  /// For Nostr articles, if the stored title is just a bare hashtag token
+  /// (e.g. "#V2EX" from mirror bots), extract a real title from the
+  /// description instead.
   String _cleanTitle(String title) {
+    final isNostrArticle = article.url?.startsWith('nostr:') ?? false;
+    if (isNostrArticle) {
+      final trimmed = title.trim();
+      // Detect bare hashtag title: starts with '#', no spaces, or all tokens
+      // are hashtags (e.g. "#V2EX" or "#bitcoin #nostr").
+      final isBareHashtag = trimmed.startsWith('#') &&
+          trimmed.split(RegExp(r'\s+')).every((w) => w.startsWith('#'));
+      if (isBareHashtag) {
+        final better = _extractTitleFromDescription(article.description ?? '');
+        if (better.isNotEmpty) return better;
+      }
+    }
     final cleaned = title
         .replaceAll(RegExp(r'https?://\S+'), '')
         .replaceAll(RegExp(r'\s{2,}'), ' ')
         .trim();
     return cleaned.isEmpty ? 'Nostr post' : cleaned;
+  }
+
+  /// Extracts a meaningful title from a Nostr note description by skipping
+  /// leading hashtag-only lines and markdown header markers.
+  String _extractTitleFromDescription(String description) {
+    if (description.isEmpty) return '';
+    // Try line-by-line on newline-separated content first.
+    final lines = description.split('\n');
+    for (final line in lines) {
+      final lineClean =
+          line.replaceAll(RegExp(r'https?://\S+'), '').trim();
+      if (lineClean.isEmpty) continue;
+      // Skip lines whose tokens are ALL hashtags (e.g. "#V2EX").
+      final words = lineClean.split(RegExp(r'\s+'));
+      if (words.every((w) => w.startsWith('#') || w.isEmpty)) continue;
+      // Strip leading markdown header markers (e.g. "### ") for display.
+      final displayTitle =
+          lineClean.replaceFirst(RegExp(r'^#{1,6}\s+'), '').trim();
+      if (displayTitle.isEmpty) continue;
+      return displayTitle.length > 120
+          ? '${displayTitle.substring(0, 120)}…'
+          : displayTitle;
+    }
+    // Fallback: strip leading "#WORD " tokens then markdown headers.
+    final stripped = description
+        .replaceAll(RegExp(r'^(#\w+\s+)+'), '')
+        .replaceFirst(RegExp(r'^#{1,6}\s+'), '')
+        .trim();
+    return stripped.length > 120 ? '${stripped.substring(0, 120)}…' : stripped;
   }
 
   void _openDetail(BuildContext context, WidgetRef ref) {
@@ -613,17 +657,6 @@ class _ActionBar extends ConsumerWidget {
                 color: KabukTheme.purpleAccent.withAlpha(140),
               ),
             ),
-          if (hasUrl)
-            IconButton(
-              icon: const Icon(
-                Icons.open_in_new_rounded,
-                size: 18,
-                color: KabukTheme.textTertiary,
-              ),
-              tooltip: 'Open in browser',
-              onPressed: () => _openUrl(articleUrl),
-              visualDensity: VisualDensity.compact,
-            ),
           IconButton(
             icon: const Icon(
               Icons.bookmark_add_outlined,
@@ -785,13 +818,6 @@ class _ActionBar extends ConsumerWidget {
     if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M';
     if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}k';
     return count.toString();
-  }
-
-  Future<void> _openUrl(String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri != null) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
   }
 
   Future<void> _saveBookmark(BuildContext context, WidgetRef ref) async {

@@ -357,6 +357,24 @@ extension KnowledgeStoreArticleExtension on KnowledgeStore {
     });
   }
 
+  /// Updates the title and description of an existing article.
+  ///
+  /// Useful to repair cached articles that were stored with poor titles
+  /// (e.g. bare hashtag names from Nostr mirror bots) after fetch-logic
+  /// improvements.
+  Future<void> updateArticleTitleAndDescription(
+    String uri, {
+    required String title,
+    String? description,
+  }) {
+    return mutate((ctx) async {
+      await ctx.set(uri, NS.schemaName, title);
+      if (description != null) {
+        await ctx.set(uri, NS.schemaDescription, description);
+      }
+    });
+  }
+
   /// Retrieves a single Article by [uri], or `null` if not found.
   Future<ArticleData?> getArticleData(String uri) async {
     final triples = await getEntity(uri);
