@@ -328,8 +328,14 @@ class _ChatSheetOverlayState extends ConsumerState<_ChatSheetOverlay> {
               // Thinking / status indicator.
               if (isProcessing && streamingText == null)
                 _ThinkingBubble(status: processingStatus),
-              // Input bar.
-              ChatInput(onSend: _sendMessage, enabled: !isProcessing),
+              // Input bar — pad for keyboard inset since this lives in a
+              // Stack and does not benefit from Scaffold resize.
+              Padding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).viewInsets.bottom,
+                ),
+                child: ChatInput(onSend: _sendMessage, enabled: !isProcessing),
+              ),
             ],
           ),
         );

@@ -151,11 +151,13 @@ class ConversationList extends ConsumerWidget {
     List<PersonData> contacts,
     bool isConfigured,
   ) {
-    // Exclude Nostr topic subscriptions — they belong in Explore, not Chat.
+    // Exclude Nostr topic subscriptions (belong in Explore) and agent
+    // conversations (shown via the pinned Kabuk AI tile above).
     final filtered = conversations
         .where(
           (c) =>
               c.type != 'nostr_topic' &&
+              c.type != 'agent' &&
               !c.title.startsWith('Subscribed to Nostr topic'),
         )
         .toList();

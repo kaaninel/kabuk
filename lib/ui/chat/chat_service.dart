@@ -92,21 +92,24 @@ class ChatService {
     final db = _ref.read(databaseProvider);
     var conversationId = _ref.read(activeConversationProvider);
 
-    // Create a new conversation if none is active.
+    // Re-use the single canonical agent conversation rather than creating a
+    // new thread for every quick-chat session.  Only create one when none
+    // exists yet.
     if (conversationId == null) {
-      conversationId = _uuid.v4();
-      // Fire-and-forget: don't await DB write — set state immediately
-      // so UI can react optimistically.
-      unawaited(
-        db.upsertConversation(
+      final all = await db.listConversations();
+      final existing = all.where((c) => c.type == 'agent').firstOrNull;
+      if (existing != null) {
+        conversationId = existing.id;
+      } else {
+        conversationId = _uuid.v4();
+        await db.upsertConversation(
           ConversationsCompanion.insert(
             id: conversationId,
-            title: Value(
-              text.length > 50 ? '${text.substring(0, 50)}...' : text,
-            ),
+            title: const Value('Kabuk AI'),
+            type: const Value('agent'),
           ),
-        ),
-      );
+        );
+      }
       _ref.read(activeConversationProvider.notifier).state = conversationId;
     }
 
@@ -378,7 +381,9 @@ class ChatService {
     try {
       final db = _ref.read(databaseProvider);
 
-      // Only generate title for the first exchange (2 messages: user + agent).
+      // Never rename the canonical agent (Kabuk AI) conversation.
+      final conv = await db.getConversation(conversationId);
+      if (conv?.type == 'agent') return;
       final messages = await db.getMessages(conversationId);
       // Count only user+agent messages (skip tool_call, tool_result, system).
       final mainMessages = messages

@@ -38,7 +38,7 @@ final _savedViewsProvider = FutureProvider<List<SavedViewData>>((ref) {
 });
 
 /// Recent notes — last 5 notes from the knowledge store.
-final _recentNotesProvider = FutureProvider<List<NoteData>>((ref) {
+final _recentNotesProvider = FutureProvider.autoDispose<List<NoteData>>((ref) {
   final store = ref.watch(knowledgeStoreProvider);
   return store.listNotes(limit: 5);
 });
