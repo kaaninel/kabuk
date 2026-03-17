@@ -583,13 +583,6 @@ class _ArticleDetailContent extends ConsumerWidget {
       ),
     );
   }
-
-  /// Formats a large number compactly (e.g. 1234 → "1.2k").
-  static String _compactCount(int count) {
-    if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}m';
-    if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}k';
-    return count.toString();
-  }
 }
 
 // =============================================================================

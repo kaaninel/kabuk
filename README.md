@@ -108,6 +108,7 @@ Core foundation is complete and the app is running on iOS. Current working featu
 - ✅ Agent system — 11 specialized agents (identity, messaging, feeds, discover, router, etc.)
 - ✅ Settings — LLM config, local models, service providers, encryption at rest
 - ✅ Horizontal swipe navigation between articles
+- ✅ Breadcrumb omnibar — Source › Channel › Author › Title navigation in article detail
 - 🔄 Local LLM on-device inference (GGUF model support)
 - 🔄 External LLM API integration (OpenAI, Ollama)
 - 🔄 MCP (Model Context Protocol) server support
