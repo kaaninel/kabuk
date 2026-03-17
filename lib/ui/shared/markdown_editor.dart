@@ -22,12 +22,14 @@ class MarkdownEditor extends StatefulWidget {
     this.initialText,
     this.hintText = 'Start writing in markdown...',
     this.onChanged,
+    this.onTap,
     this.minLines = 12,
     this.maxLines,
     this.autofocus = false,
     this.showToolbar = true,
     this.showPreviewToggle = true,
     this.readOnly = false,
+    this.suppressSystemKeyboard = false,
     this.focusNode,
     super.key,
   });
@@ -43,6 +45,9 @@ class MarkdownEditor extends StatefulWidget {
 
   /// Called when the text changes.
   final ValueChanged<String>? onChanged;
+
+  /// Called when the editor is tapped.
+  final VoidCallback? onTap;
 
   /// Minimum number of visible lines.
   final int minLines;
@@ -61,6 +66,12 @@ class MarkdownEditor extends StatefulWidget {
 
   /// Whether the editor is read-only (shows preview only).
   final bool readOnly;
+
+  /// Whether to suppress the system keyboard (for custom keyboard use).
+  ///
+  /// Unlike [readOnly], this keeps the editor editable and the toolbar
+  /// visible, but prevents the system keyboard from appearing.
+  final bool suppressSystemKeyboard;
 
   /// External focus node.
   final FocusNode? focusNode;
@@ -159,12 +170,17 @@ class MarkdownEditorState extends State<MarkdownEditor> {
         controller: _controller,
         focusNode: _focusNode,
         autofocus: widget.autofocus,
+        readOnly: widget.readOnly,
+        showCursor: true,
+        keyboardType: widget.suppressSystemKeyboard
+            ? TextInputType.none
+            : TextInputType.multiline,
         maxLines: widget.maxLines,
         minLines: widget.maxLines == null ? null : widget.minLines,
         expands: widget.maxLines == null,
         textAlignVertical: TextAlignVertical.top,
-        keyboardType: TextInputType.multiline,
         textCapitalization: TextCapitalization.sentences,
+        onTap: widget.onTap,
         style: const TextStyle(
           color: KabukTheme.textPrimary,
           fontSize: 15,

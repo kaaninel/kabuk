@@ -1320,10 +1320,24 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
         else
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: unified
-                .take(50)
-                .map((c) => _UnifiedCommentTile(comment: c))
-                .toList(),
+            children: [
+              ...unified
+                  .take(100)
+                  .map((c) => _UnifiedCommentTile(comment: c)),
+              if (unified.length > 100)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 8),
+                  child: Text(
+                    'Showing 100 of ${unified.length} comments',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: KabukTheme.textTertiary,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ),
+            ],
           ),
       ],
     );
@@ -1527,16 +1541,19 @@ class _UnifiedCommentTileState extends State<_UnifiedCommentTile> {
         Container(
           margin: EdgeInsets.only(left: 16 + indent),
           padding: const EdgeInsets.fromLTRB(0, 10, 16, 10),
-          decoration: c.depth > 0
-              ? BoxDecoration(
-                  border: Border(
+          decoration: BoxDecoration(
+            color: c.depth > 0
+                ? KabukTheme.surfaceVariant.withAlpha(15)
+                : null,
+            border: c.depth > 0
+                ? Border(
                     left: BorderSide(
                       color: _threadColor(c.depth),
                       width: 2,
                     ),
-                  ),
-                )
-              : null,
+                  )
+                : null,
+          ),
           child: Padding(
             padding: EdgeInsets.only(left: c.depth > 0 ? 12 : 0),
             child: Opacity(
@@ -1630,7 +1647,7 @@ class _UnifiedCommentTileState extends State<_UnifiedCommentTile> {
                             ],
                           ],
                         ),
-                        const SizedBox(height: 3),
+                        const SizedBox(height: 8),
                         Text(
                           c.content,
                           style: TextStyle(
@@ -1681,22 +1698,41 @@ class _UnifiedCommentTileState extends State<_UnifiedCommentTile> {
           ),
         ),
         // Nested replies with proper threading.
-        if (_showReplies)
+        if (_showReplies) ...[
           ...c.redditReplies
-              .take(10)
+              .take(20)
               .map(
                 (r) =>
                     _UnifiedCommentTile(comment: _UnifiedComment.fromReddit(r)),
               ),
+          if (c.redditReplies.length > 20)
+            Padding(
+              padding: EdgeInsets.only(left: 16 + (c.depth + 1) * 16.0),
+              child: GestureDetector(
+                onTap: () {}, // placeholder — future deep-load
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Text(
+                    'Show ${c.redditReplies.length - 20} more replies…',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: KabukTheme.blueAccent,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ],
     );
   }
 
   static Color _threadColor(int depth) => switch (depth % 4) {
-    0 => KabukTheme.blueAccent.withAlpha(60),
-    1 => KabukTheme.purpleAccent.withAlpha(60),
-    2 => KabukTheme.accentGreen.withAlpha(60),
-    _ => KabukTheme.redditOrange.withAlpha(60),
+    0 => KabukTheme.blueAccent.withAlpha(80),
+    1 => KabukTheme.purpleAccent.withAlpha(80),
+    2 => KabukTheme.accentGreen.withAlpha(80),
+    _ => KabukTheme.redditOrange.withAlpha(80),
   };
 
   static Color _sourceColor(_CommentSource source) => switch (source) {
@@ -1925,8 +1961,8 @@ class _DetailGalleryCarouselState extends State<_DetailGalleryCarousel> {
                 ),
               ),
             ),
-            // Dot indicator row.
-            if (widget.images.length <= 12)
+            // Dot indicator row or compact counter.
+            if (widget.images.length <= 15)
               Positioned(
                 bottom: 8,
                 left: 0,
@@ -1947,6 +1983,30 @@ class _DetailGalleryCarouselState extends State<_DetailGalleryCarousel> {
                       ),
                     );
                   }),
+                ),
+              )
+            else
+              Positioned(
+                bottom: 8,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withAlpha(160),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '${_current + 1}/${widget.images.length}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
                 ),
               ),
           ],

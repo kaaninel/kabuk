@@ -1035,8 +1035,8 @@ class _GalleryCarouselState extends State<_GalleryCarousel> {
                 ),
               ),
             ),
-            // Dot indicator row.
-            if (widget.images.length <= 10)
+            // Dot indicator row or compact counter.
+            if (widget.images.length <= 15)
               Positioned(
                 bottom: 8,
                 left: 0,
@@ -1057,6 +1057,30 @@ class _GalleryCarouselState extends State<_GalleryCarousel> {
                       ),
                     );
                   }),
+                ),
+              )
+            else
+              Positioned(
+                bottom: 8,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withAlpha(160),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '${_current + 1}/${widget.images.length}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
                 ),
               ),
           ],

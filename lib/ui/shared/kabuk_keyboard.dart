@@ -443,7 +443,7 @@ class _KabukKeyboardState extends ConsumerState<KabukKeyboard> {
 
   Widget _buildPanel(KeyboardMode mode) => switch (mode) {
     KeyboardMode.none => const SizedBox.shrink(),
-    KeyboardMode.text => _TextKeyboardPanel(
+    KeyboardMode.text => TextKeyboardPanel(
       controller: widget.controller,
       onSend: widget.onSend,
       hasText: _hasText,
@@ -565,15 +565,112 @@ class _ModeButton extends StatelessWidget {
 }
 
 // =============================================================================
+// Keyboard attachment — reusable keyboard for any text field
+// =============================================================================
+
+/// A keyboard panel that attaches to an external [TextEditingController].
+///
+/// Unlike [KabukKeyboard] which wraps its own [TextField], this widget
+/// provides only the mode bar and keyboard panels. Use it when you have
+/// your own text fields (e.g. a document editor with title + body fields)
+/// and want to add the custom keyboard at the bottom.
+///
+/// The [controller] should point to whichever text field is currently active.
+class KabukKeyboardAttachment extends ConsumerWidget {
+  /// Creates a [KabukKeyboardAttachment].
+  const KabukKeyboardAttachment({
+    required this.controller,
+    this.onSend,
+    this.onMediaSelected,
+    this.onVoiceRecorded,
+    super.key,
+  });
+
+  /// The active [TextEditingController] to insert characters into.
+  final TextEditingController controller;
+
+  /// Called when the user taps send (return key in text mode).
+  final VoidCallback? onSend;
+
+  /// Called when the user picks media from the gallery panel.
+  final ValueChanged<List<String>>? onMediaSelected;
+
+  /// Called when a voice recording is completed.
+  final ValueChanged<String>? onVoiceRecorded;
+
+  static const _keyboardHeight = 220.0;
+  static const _emojiHeight = 270.0;
+  static const _galleryHeight = 300.0;
+  static const _voiceHeight = 180.0;
+
+  double _targetHeight(KeyboardMode mode) => switch (mode) {
+    KeyboardMode.none => 0,
+    KeyboardMode.text => _keyboardHeight,
+    KeyboardMode.emoji => _emojiHeight,
+    KeyboardMode.gallery => _galleryHeight,
+    KeyboardMode.voice => _voiceHeight,
+  };
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = ref.watch(keyboardModeProvider);
+    final panelHeight = _targetHeight(mode);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const KeyboardModeBar(),
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOutCubic,
+          height: panelHeight,
+          clipBehavior: Clip.hardEdge,
+          decoration: const BoxDecoration(),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: panelHeight > 0
+                ? KeyedSubtree(
+                    key: ValueKey(mode),
+                    child: _buildPanel(mode),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPanel(KeyboardMode mode) => switch (mode) {
+    KeyboardMode.none => const SizedBox.shrink(),
+    KeyboardMode.text => TextKeyboardPanel(
+      controller: controller,
+      onSend: onSend,
+      hasText: controller.text.trim().isNotEmpty,
+    ),
+    KeyboardMode.emoji => _EmojiPanel(controller: controller),
+    KeyboardMode.gallery => _GalleryPanel(
+      onMediaSelected: onMediaSelected,
+    ),
+    KeyboardMode.voice => _VoicePanel(onVoiceRecorded: onVoiceRecorded),
+  };
+}
+
+// =============================================================================
 // Text keyboard panel
 // =============================================================================
 
 /// Text keyboard panel with multi-language layout support.
-class _TextKeyboardPanel extends ConsumerStatefulWidget {
-  const _TextKeyboardPanel({
+///
+/// Can be used standalone via [KabukKeyboardAttachment] to attach the custom
+/// keyboard to any [TextEditingController] — not just [KabukKeyboard]'s own
+/// text field.
+class TextKeyboardPanel extends ConsumerStatefulWidget {
+  /// Creates a [TextKeyboardPanel].
+  const TextKeyboardPanel({
     required this.controller,
     this.onSend,
     this.hasText = false,
+    super.key,
   });
 
   final TextEditingController controller;
@@ -581,10 +678,10 @@ class _TextKeyboardPanel extends ConsumerStatefulWidget {
   final bool hasText;
 
   @override
-  ConsumerState<_TextKeyboardPanel> createState() => _TextKeyboardPanelState();
+  ConsumerState<TextKeyboardPanel> createState() => _TextKeyboardPanelState();
 }
 
-class _TextKeyboardPanelState extends ConsumerState<_TextKeyboardPanel> {
+class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
   bool _isShifted = false;
   bool _isSymbol = false;
 

@@ -127,7 +127,7 @@ List<RedditComment> _parseCommentList(
   List<dynamic> children, {
   required int depth,
 }) {
-  if (depth > 3) return [];
+  if (depth > 6) return [];
 
   final comments = <RedditComment>[];
   for (final child in children) {

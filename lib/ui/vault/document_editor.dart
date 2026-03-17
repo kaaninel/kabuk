@@ -21,6 +21,7 @@ import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/types/content_block.dart';
 import 'package:kabuk/knowledge/types/note.dart';
 import 'package:kabuk/ui/vault/vault_view.dart';
+import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
 import 'package:kabuk/ui/shared/markdown_editor.dart';
 import 'package:kabuk/ui/theme.dart';
 
@@ -57,6 +58,9 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
   final _bodyController = TextEditingController();
   final _bodyFocusNode = FocusNode();
 
+  /// Tracks which controller is currently focused for keyboard input.
+  late TextEditingController _activeController = _bodyController;
+
   bool _loading = true;
   NoteData? _note;
   List<ContentBlockData> _blocks = [];
@@ -66,18 +70,36 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
   @override
   void initState() {
     super.initState();
+    _titleFocusNode.addListener(_onFocusChange);
+    _bodyFocusNode.addListener(_onFocusChange);
     _loadDocument();
+    // Reset keyboard mode when entering editor.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(keyboardModeProvider.notifier).state = KeyboardMode.none;
+      }
+    });
   }
 
   @override
   void dispose() {
     _saveTimer?.cancel();
     if (_dirty) _saveImmediate();
+    _titleFocusNode.removeListener(_onFocusChange);
+    _bodyFocusNode.removeListener(_onFocusChange);
     _titleController.dispose();
     _titleFocusNode.dispose();
     _bodyController.dispose();
     _bodyFocusNode.dispose();
     super.dispose();
+  }
+
+  void _onFocusChange() {
+    if (_titleFocusNode.hasFocus) {
+      setState(() => _activeController = _titleController);
+    } else if (_bodyFocusNode.hasFocus) {
+      setState(() => _activeController = _bodyController);
+    }
   }
 
   Future<void> _loadDocument() async {
@@ -457,6 +479,8 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
                 controller: _titleController,
                 focusNode: _titleFocusNode,
                 onChanged: _onTitleChanged,
+                keyboardType: TextInputType.none,
+                showCursor: true,
                 style: const TextStyle(
                   color: KabukTheme.textPrimary,
                   fontSize: 26,
@@ -475,6 +499,10 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
                 ),
                 maxLines: 3,
                 textInputAction: TextInputAction.next,
+                onTap: () {
+                  ref.read(keyboardModeProvider.notifier).state =
+                      KeyboardMode.text;
+                },
                 onSubmitted: (_) => _bodyFocusNode.requestFocus(),
               ),
               if (_note?.dateModified != null)
@@ -503,12 +531,20 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
               focusNode: _bodyFocusNode,
               hintText: 'Start writing...',
               onChanged: _onBodyChanged,
+              onTap: () {
+                ref.read(keyboardModeProvider.notifier).state =
+                    KeyboardMode.text;
+              },
               minLines: 12,
+              suppressSystemKeyboard: true,
               showToolbar: true,
               showPreviewToggle: true,
             ),
           ),
         ),
+
+        // Custom keyboard attachment — routes input to the active field.
+        KabukKeyboardAttachment(controller: _activeController),
       ],
     );
   }
