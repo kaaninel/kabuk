@@ -330,8 +330,7 @@ class _SearchDialogState extends ConsumerState<SearchDialog> {
               Navigator.of(context).pop();
               pushArticleDetail(
                 context,
-                articles: _localResults,
-                initialIndex: index,
+                article: _localResults[index],
               );
             },
           );

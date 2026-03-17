@@ -29,21 +29,12 @@ class ArticleCard extends ConsumerWidget {
   const ArticleCard({
     required this.article,
     super.key,
-    this.articles,
-    this.index,
     this.onBeforeOpen,
     this.onReturnFromDetail,
   });
 
   /// The article data to display.
   final ArticleData article;
-
-  /// The full list of articles available for swipe navigation.
-  /// When provided alongside [index], the detail page enables prev/next.
-  final List<ArticleData>? articles;
-
-  /// This article's position in [articles].
-  final int? index;
 
   /// Called just before the detail page is pushed (used by the feed to
   /// record which article was opened for scroll-restoration on return).
@@ -358,14 +349,9 @@ class ArticleCard extends ConsumerWidget {
       store.markArticleRead(article.uri);
     }
     onBeforeOpen?.call();
-    final effectiveArticles = articles ?? [article];
-    // Compute index lazily to avoid stale values after animated list prepends.
-    final computedIndex = effectiveArticles.indexOf(article);
-    final effectiveIndex = computedIndex >= 0 ? computedIndex : (index ?? 0);
     pushArticleDetail(
       context,
-      articles: effectiveArticles,
-      initialIndex: effectiveIndex,
+      article: article,
     ).then((_) => onReturnFromDetail?.call());
   }
 

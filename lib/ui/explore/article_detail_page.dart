@@ -1,9 +1,8 @@
-/// Full-screen article detail page with vertical swipe navigation.
+/// Full-screen article detail page.
 ///
-/// Pushing this page freezes the background feed (no more rogue scrolls)
-/// and lets the user swipe up/down to navigate between posts without
-/// returning to the feed. Tapping images opens the in-app fullscreen viewer.
-/// The page slides up from the bottom for a smooth Reddit/Instagram feel.
+/// Shows a single article with full content, Nostr social bar, and
+/// discussion section. Slides up from the bottom; press back to return
+/// to the feed.
 library;
 
 import 'package:flutter/material.dart';
@@ -28,18 +27,16 @@ import 'package:url_launcher/url_launcher.dart';
 
 /// Navigation helper — pushes [ArticleDetailPage] on the navigator.
 ///
-/// [articles] is the full filtered list; [initialIndex] is the tapped item.
-/// Uses a slide-up transition for a smooth Reddit/Instagram-like feel.
+/// Uses a slide-up transition for a smooth Reddit-like feel.
 /// Returns the navigator's future so callers can react when the page is popped.
 Future<void> pushArticleDetail(
   BuildContext context, {
-  required List<ArticleData> articles,
-  required int initialIndex,
+  required ArticleData article,
 }) {
   return Navigator.of(context).push(
     PageRouteBuilder<void>(
       pageBuilder: (context, animation, secondaryAnimation) =>
-          ArticleDetailPage(articles: articles, initialIndex: initialIndex),
+          ArticleDetailPage(article: article),
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
         final tween = Tween(begin: const Offset(0, 1), end: Offset.zero)
             .chain(CurveTween(curve: Curves.easeOutCubic));
@@ -55,47 +52,16 @@ Future<void> pushArticleDetail(
 // ArticleDetailPage
 // =============================================================================
 
-/// Full-screen, vertically swipeable article detail page.
-class ArticleDetailPage extends ConsumerStatefulWidget {
+/// Full-screen article detail page.
+class ArticleDetailPage extends ConsumerWidget {
   /// Creates an [ArticleDetailPage].
-  const ArticleDetailPage({
-    required this.articles,
-    required this.initialIndex,
-    super.key,
-  });
+  const ArticleDetailPage({required this.article, super.key});
 
-  /// The full list of articles available to swipe through.
-  final List<ArticleData> articles;
-
-  /// The index of the article to show first.
-  final int initialIndex;
+  /// The article to display.
+  final ArticleData article;
 
   @override
-  ConsumerState<ArticleDetailPage> createState() => _ArticleDetailPageState();
-}
-
-class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
-  late final PageController _pageController;
-  // ignore: unused_field
-  late int _currentIndex;
-
-  @override
-  void initState() {
-    super.initState();
-    _currentIndex = widget.initialIndex;
-    _pageController = PageController(initialPage: widget.initialIndex);
-  }
-
-  @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final total = widget.articles.length;
-
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       backgroundColor: KabukTheme.background,
       appBar: AppBar(
@@ -107,26 +73,17 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
           tooltip: 'Back to feed',
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: null,
-        centerTitle: true,
-        actions: const [],
       ),
-      body: PageView.builder(
-        controller: _pageController,
-        scrollDirection: Axis.vertical,
-        itemCount: total,
-        onPageChanged: (i) => setState(() => _currentIndex = i),
-        itemBuilder: (_, i) => _ArticleDetailContent(
-          article: widget.articles[i],
-          onViewInBrowser: () {
-            final url = widget.articles[i].url;
-            if (url == null) return;
-            final uri = Uri.tryParse(url);
-            if (uri != null) {
-              launchUrl(uri, mode: LaunchMode.externalApplication).ignore();
-            }
-          },
-        ),
+      body: _ArticleDetailContent(
+        article: article,
+        onViewInBrowser: () {
+          final url = article.url;
+          if (url == null) return;
+          final uri = Uri.tryParse(url);
+          if (uri != null) {
+            launchUrl(uri, mode: LaunchMode.externalApplication).ignore();
+          }
+        },
       ),
     );
   }

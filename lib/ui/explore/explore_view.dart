@@ -697,8 +697,6 @@ class _ExploreViewState extends ConsumerState<ExploreView>
                     padding: const EdgeInsets.only(bottom: 10),
                     child: ArticleCard(
                       article: article,
-                      articles: session.articles,
-                      index: i,
                       onBeforeOpen: () {
                         _lastOpenedUri = article.uri;
                       },
@@ -1226,8 +1224,6 @@ class _ExploreViewState extends ConsumerState<ExploreView>
       padding: const EdgeInsets.only(bottom: 10),
       child: ArticleCard(
         article: article,
-        articles: _displayedArticles,
-        index: index,
         onBeforeOpen: () {
           _lastOpenedUri = article.uri;
         },
