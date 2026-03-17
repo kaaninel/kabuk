@@ -89,7 +89,25 @@ flutter run
 
 ## Project Status
 
-Phase 0 — Foundation. Setting up project structure and core abstractions.
+**Phase 5 / 6 — Communication & Ecosystem (Active Development)**
+
+Core foundation is complete and the app is running on iOS. Current working features:
+
+- ✅ Explore view — Reddit, RSS, Nostr (#hashtag) feeds with real-time data
+- ✅ Nostr social layer — Like/comment/repost any content via Nostr identity
+- ✅ Chat view — Nostr DMs + Kabuk AI (local LLM) as primary assistant
+- ✅ Vault view — Notes, camera/audio capture, document library
+- ✅ Apps view — Tools (Notes, Calendar, Contacts, Search, Settings), Developer panel
+- ✅ Identity system — Nostr key management, generate/import nsec
+- ✅ Relay management — 8/9 relays connected by default
+- ✅ RFW widget system — 7 widget libraries (core, notes, contacts, dashboard, media, etc.)
+- ✅ Agent system — 11 specialized agents (identity, messaging, feeds, discover, router, etc.)
+- ✅ Settings — LLM config, local models, service providers, encryption at rest
+- 🔄 Local LLM on-device inference (GGUF model support)
+- 🔄 External LLM API integration (OpenAI, Ollama)
+- 🔄 MCP (Model Context Protocol) server support
+- ⏳ App Marketplace
+- ⏳ 4chan / YouTube / Nostr profile feed sources
 
 ## License
 

@@ -753,7 +753,7 @@ The cost is serialization overhead for message passing. This is acceptable — `
 
 Traditional apps require users to learn navigation hierarchies, button layouts, and mental models for each feature. Chat inverts this — the user states intent in natural language, and the system figures out how to fulfill it.
 
-Chat-first doesn't mean chat-only. The four views (Explore, Chat, Create, Apps) provide visual interfaces for browsing, capturing, and extending. But the chat is always one swipe away, and it's always the fastest path to any capability.
+Chat-first doesn't mean chat-only. The four views (Explore, Chat, Vault, Apps) provide visual interfaces for browsing, capturing, and extending. But the chat is always one swipe away, and it's always the fastest path to any capability.
 
 ### Why a Virtual OS Layer?
 
