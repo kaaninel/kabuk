@@ -1,9 +1,9 @@
-/// Full-screen article detail page with horizontal swipe navigation.
+/// Full-screen article detail page with vertical swipe navigation.
 ///
-/// Replaces the old [ArticleDetailSheet] bottom-sheet approach.
 /// Pushing this page freezes the background feed (no more rogue scrolls)
-/// and lets the user swipe left/right to navigate between posts without
+/// and lets the user swipe up/down to navigate between posts without
 /// returning to the feed. Tapping images opens the in-app fullscreen viewer.
+/// The page slides up from the bottom for a smooth Reddit/Instagram feel.
 library;
 
 import 'package:flutter/material.dart';
@@ -12,9 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/knowledge/types/nostr_social.dart';
-import 'package:kabuk/ui/explore/article_detail_sheet.dart' show ArticleDetailSheet;
 import 'package:kabuk/ui/explore/browse_session.dart';
-import 'package:kabuk/ui/explore/explore_widgets.dart' show ArticleDetailSheet;
 import 'package:kabuk/ui/explore/fourchan_comments.dart';
 import 'package:kabuk/ui/explore/nostr_providers.dart';
 import 'package:kabuk/ui/explore/reddit_comments.dart';
@@ -31,6 +29,7 @@ import 'package:url_launcher/url_launcher.dart';
 /// Navigation helper — pushes [ArticleDetailPage] on the navigator.
 ///
 /// [articles] is the full filtered list; [initialIndex] is the tapped item.
+/// Uses a slide-up transition for a smooth Reddit/Instagram-like feel.
 /// Returns the navigator's future so callers can react when the page is popped.
 Future<void> pushArticleDetail(
   BuildContext context, {
@@ -38,10 +37,16 @@ Future<void> pushArticleDetail(
   required int initialIndex,
 }) {
   return Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      fullscreenDialog: false,
-      builder: (_) =>
+    PageRouteBuilder<void>(
+      pageBuilder: (context, animation, secondaryAnimation) =>
           ArticleDetailPage(articles: articles, initialIndex: initialIndex),
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        final tween = Tween(begin: const Offset(0, 1), end: Offset.zero)
+            .chain(CurveTween(curve: Curves.easeOutCubic));
+        return SlideTransition(position: animation.drive(tween), child: child);
+      },
+      transitionDuration: const Duration(milliseconds: 300),
+      reverseTransitionDuration: const Duration(milliseconds: 250),
     ),
   );
 }
@@ -50,7 +55,7 @@ Future<void> pushArticleDetail(
 // ArticleDetailPage
 // =============================================================================
 
-/// Full-screen, horizontally swipeable article detail page.
+/// Full-screen, vertically swipeable article detail page.
 class ArticleDetailPage extends ConsumerStatefulWidget {
   /// Creates an [ArticleDetailPage].
   const ArticleDetailPage({
@@ -71,6 +76,7 @@ class ArticleDetailPage extends ConsumerStatefulWidget {
 
 class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
   late final PageController _pageController;
+  // ignore: unused_field
   late int _currentIndex;
 
   @override
@@ -84,24 +90,6 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
   void dispose() {
     _pageController.dispose();
     super.dispose();
-  }
-
-  void _goToPrev() {
-    if (_currentIndex > 0) {
-      _pageController.previousPage(
-        duration: const Duration(milliseconds: 320),
-        curve: Curves.easeInOutCubic,
-      );
-    }
-  }
-
-  void _goToNext() {
-    if (_currentIndex < widget.articles.length - 1) {
-      _pageController.nextPage(
-        duration: const Duration(milliseconds: 320),
-        curve: Curves.easeInOutCubic,
-      );
-    }
   }
 
   @override
@@ -119,83 +107,25 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
           tooltip: 'Back to feed',
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: total > 1
-            ? Text(
-                '${_currentIndex + 1} / $total',
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: KabukTheme.textSecondary,
-                ),
-              )
-            : null,
+        title: null,
         centerTitle: true,
-        actions: [
-          if (_currentIndex > 0)
-            IconButton(
-              icon: const Icon(Icons.navigate_before_rounded, size: 28),
-              tooltip: 'Previous post',
-              onPressed: _goToPrev,
-            ),
-          if (_currentIndex < total - 1)
-            IconButton(
-              icon: const Icon(Icons.navigate_next_rounded, size: 28),
-              tooltip: 'Next post',
-              onPressed: _goToNext,
-            ),
-        ],
+        actions: const [],
       ),
-      body: Stack(
-        children: [
-          PageView.builder(
-            controller: _pageController,
-            itemCount: total,
-            onPageChanged: (i) => setState(() => _currentIndex = i),
-            itemBuilder: (_, i) => _ArticleDetailContent(
-              article: widget.articles[i],
-              onViewInBrowser: () {
-                final url = widget.articles[i].url;
-                if (url == null) return;
-                final uri = Uri.tryParse(url);
-                if (uri != null) {
-                  launchUrl(uri, mode: LaunchMode.externalApplication).ignore();
-                }
-              },
-            ),
-          ),
-          // Edge swipe hint arrows — appear only when there are neighbours.
-          if (total > 1) ...[
-            if (_currentIndex > 0) _buildEdgeArrow(left: true),
-            if (_currentIndex < total - 1) _buildEdgeArrow(left: false),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEdgeArrow({required bool left}) {
-    return Positioned(
-      top: 0,
-      bottom: 0,
-      left: left ? 0 : null,
-      right: left ? null : 0,
-      child: IgnorePointer(
-        child: Container(
-          width: 24,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: left ? Alignment.centerLeft : Alignment.centerRight,
-              end: left ? Alignment.centerRight : Alignment.centerLeft,
-              colors: [
-                KabukTheme.background.withAlpha(180),
-                Colors.transparent,
-              ],
-            ),
-          ),
-          child: Icon(
-            left ? Icons.chevron_left_rounded : Icons.chevron_right_rounded,
-            color: KabukTheme.textTertiary.withAlpha(140),
-            size: 20,
-          ),
+      body: PageView.builder(
+        controller: _pageController,
+        scrollDirection: Axis.vertical,
+        itemCount: total,
+        onPageChanged: (i) => setState(() => _currentIndex = i),
+        itemBuilder: (_, i) => _ArticleDetailContent(
+          article: widget.articles[i],
+          onViewInBrowser: () {
+            final url = widget.articles[i].url;
+            if (url == null) return;
+            final uri = Uri.tryParse(url);
+            if (uri != null) {
+              launchUrl(uri, mode: LaunchMode.externalApplication).ignore();
+            }
+          },
         ),
       ),
     );
