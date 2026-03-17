@@ -96,11 +96,9 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
   late int _currentIndex;
   late ArticleData _currentArticle;
   final _scrollController = ScrollController();
-  double _overscrollAmount = 0;
-  bool _showNextHint = false;
 
-  /// Direction of the last article transition for slide animation.
-  bool _slideUp = true;
+  /// True = slide from right (next), false = slide from left (previous).
+  bool _slideForward = true;
 
   bool get _hasNext =>
       widget.articles != null &&
@@ -130,11 +128,9 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
       store.markArticleRead(_currentArticle.uri);
     }
     setState(() {
-      _slideUp = true;
+      _slideForward = true;
       _currentIndex++;
       _currentArticle = widget.articles![_currentIndex];
-      _overscrollAmount = 0;
-      _showNextHint = false;
     });
     _scrollController.jumpTo(0);
   }
@@ -143,44 +139,25 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
     if (!_hasPrevious) return;
     HapticFeedback.mediumImpact();
     setState(() {
-      _slideUp = false;
+      _slideForward = false;
       _currentIndex--;
       _currentArticle = widget.articles![_currentIndex];
-      _overscrollAmount = 0;
-      _showNextHint = false;
     });
     _scrollController.jumpTo(0);
   }
 
-  bool _handleScrollNotification(ScrollNotification notification) {
-    if (widget.articles == null) return false;
-
-    if (notification is OverscrollNotification) {
-      if (notification.overscroll > 0 && _hasNext) {
-        _overscrollAmount += notification.overscroll;
-        if (_overscrollAmount > 100) {
-          _goToNextArticle();
-        }
-      } else if (notification.overscroll < 0 && _hasPrevious) {
-        _overscrollAmount += notification.overscroll.abs();
-        if (_overscrollAmount > 100) {
-          _goToPreviousArticle();
-        }
-      }
+  /// Handle horizontal swipe to navigate between articles.
+  void _onHorizontalDragEnd(DragEndDetails details) {
+    if (widget.articles == null) return;
+    final velocity = details.primaryVelocity ?? 0;
+    // Swipe left (negative velocity) → next article.
+    if (velocity < -300 && _hasNext) {
+      _goToNextArticle();
     }
-    if (notification is ScrollEndNotification) {
-      _overscrollAmount = 0;
+    // Swipe right (positive velocity) → previous article.
+    else if (velocity > 300 && _hasPrevious) {
+      _goToPreviousArticle();
     }
-    // Show "pull up for next" hint when near bottom.
-    if (notification is ScrollUpdateNotification &&
-        _scrollController.hasClients) {
-      final pos = _scrollController.position;
-      final nearBottom = pos.pixels >= pos.maxScrollExtent - 50;
-      if (nearBottom != _showNextHint && _hasNext) {
-        setState(() => _showNextHint = nearBottom);
-      }
-    }
-    return false;
   }
 
   @override
@@ -212,14 +189,15 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
             ),
         ],
       ),
-      body: NotificationListener<ScrollNotification>(
-        onNotification: _handleScrollNotification,
+      body: GestureDetector(
+        onHorizontalDragEnd: _onHorizontalDragEnd,
+        behavior: HitTestBehavior.translucent,
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 300),
           transitionBuilder: (child, animation) {
-            final begin = _slideUp
-                ? const Offset(0, 0.3)
-                : const Offset(0, -0.3);
+            final begin = _slideForward
+                ? const Offset(1, 0)
+                : const Offset(-1, 0);
             return SlideTransition(
               position: Tween<Offset>(begin: begin, end: Offset.zero)
                   .animate(CurvedAnimation(
@@ -233,10 +211,6 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
             key: ValueKey(_currentArticle.uri),
             article: _currentArticle,
             scrollController: _scrollController,
-            showNextHint: _showNextHint && _hasNext,
-            nextArticle: _hasNext
-                ? widget.articles![_currentIndex + 1]
-                : null,
             onViewInBrowser: () {
               final url = _currentArticle.url;
               if (url == null) return;
@@ -263,22 +237,14 @@ class _ArticleDetailContent extends ConsumerWidget {
     required this.article,
     required this.onViewInBrowser,
     this.scrollController,
-    this.showNextHint = false,
-    this.nextArticle,
     super.key,
   });
 
   final ArticleData article;
   final VoidCallback onViewInBrowser;
 
-  /// Scroll controller shared with the parent for overscroll detection.
+  /// Scroll controller shared with the parent.
   final ScrollController? scrollController;
-
-  /// Whether to show the "pull up for next" hint at the bottom.
-  final bool showNextHint;
-
-  /// The next article in the list (used for the hint label).
-  final ArticleData? nextArticle;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -618,40 +584,29 @@ class _ArticleDetailContent extends ConsumerWidget {
         _DiscussionSection(article: article),
 
         // ── Next-article hint ─────────────────────────────────────────────
-        if (showNextHint && nextArticle != null)
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            alignment: Alignment.center,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.keyboard_arrow_up,
-                  color: KabukTheme.textSecondary,
-                  size: 20,
+        // ── Swipe navigation hint ─────────────────────────────────────────
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          alignment: Alignment.center,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.swipe_rounded,
+                color: KabukTheme.textTertiary,
+                size: 16,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Swipe left/right for more articles',
+                style: TextStyle(
+                  color: KabukTheme.textTertiary,
+                  fontSize: 11,
                 ),
-                const Text(
-                  'Pull up for next',
-                  style: TextStyle(
-                    color: KabukTheme.textSecondary,
-                    fontSize: 12,
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Text(
-                    nextArticle!.name ?? '',
-                    style: const TextStyle(
-                      color: KabukTheme.textTertiary,
-                      fontSize: 11,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
+        ),
 
         const SizedBox(height: 48),
       ],

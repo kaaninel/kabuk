@@ -241,7 +241,7 @@ class AppsView extends ConsumerWidget {
           ),
           SliverToBoxAdapter(
             child: SizedBox(
-              height: 84,
+              height: 96,
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(
