@@ -169,11 +169,6 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
       appBar: _ArticleOmniBar(
         article: _currentArticle,
         onBack: () => Navigator.of(context).pop(),
-        onViewInBrowser: () {
-          final url = _currentArticle.url;
-          if (url == null) return;
-          QuickPeekSheet.show(context, url: url, title: _currentArticle.name);
-        },
       ),
       body: GestureDetector(
         onHorizontalDragEnd: _onHorizontalDragEnd,
@@ -244,12 +239,12 @@ class _ArticleDetailContent extends ConsumerWidget {
         // ── Media ──────────────────────────────────────────────────────────
         if (isVideo)
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
             child: VideoThumbnail(
               videoUrl: article.url ?? '',
               thumbnailUrl: article.image,
-              height: 260,
-              borderRadius: BorderRadius.circular(14),
+              height: 240,
+              borderRadius: BorderRadius.circular(12),
             ),
           )
         else if (hasImage)
@@ -260,24 +255,23 @@ class _ArticleDetailContent extends ConsumerWidget {
               tag: 'article_img_${article.uri}',
             ),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
               child: Hero(
                 tag: 'article_img_${article.uri}',
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(12),
                   child: Stack(
                     children: [
                       FeedImage(
                         imageUrl: article.image!,
-                        height: 260,
-                        borderRadius: BorderRadius.circular(14),
+                        height: 240,
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      // Zoom hint badge.
                       Positioned(
                         top: 8,
                         right: 8,
                         child: Container(
-                          padding: const EdgeInsets.all(6),
+                          padding: const EdgeInsets.all(5),
                           decoration: BoxDecoration(
                             color: Colors.black.withAlpha(130),
                             shape: BoxShape.circle,
@@ -285,7 +279,7 @@ class _ArticleDetailContent extends ConsumerWidget {
                           child: const Icon(
                             Icons.zoom_in_rounded,
                             color: Colors.white70,
-                            size: 16,
+                            size: 14,
                           ),
                         ),
                       ),
@@ -296,48 +290,70 @@ class _ArticleDetailContent extends ConsumerWidget {
             ),
           ),
 
-        // ── Title ──────────────────────────────────────────────────────────
+        // ── Title + date ─────────────────────────────────────────────────
         if (article.name != null)
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
             child: Text(
               _cleanTitle(article.name!),
               style: const TextStyle(
-                fontSize: 22,
+                fontSize: 20,
                 fontWeight: FontWeight.w700,
-                height: 1.3,
+                height: 1.25,
                 color: KabukTheme.textPrimary,
               ),
             ),
           ),
 
-        // ── Meta row (date only — author/source in omnibar) ─────────────
-        if (article.datePublished != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.schedule_rounded,
-                  size: 14,
-                  color: KabukTheme.textTertiary,
-                ),
-                const SizedBox(width: 4),
+        // ── Compact meta: date + source link ───────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+          child: Row(
+            children: [
+              if (article.datePublished != null) ...[
                 Text(
                   _formatDate(article.datePublished!),
                   style: const TextStyle(
-                    fontSize: 13,
-                    color: KabukTheme.textSecondary,
+                    fontSize: 12,
+                    color: KabukTheme.textTertiary,
                   ),
                 ),
               ],
-            ),
+              if (article.url != null && !_isInternalUrl(article.url!)) ...[
+                if (article.datePublished != null)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 6),
+                    child: Text('·',
+                        style: TextStyle(
+                            fontSize: 12, color: KabukTheme.textTertiary)),
+                  ),
+                GestureDetector(
+                  onTap: onViewInBrowser,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.open_in_new_rounded,
+                          size: 11, color: KabukTheme.textTertiary),
+                      const SizedBox(width: 3),
+                      Text(
+                        _truncateUrl(article.url!),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: KabukTheme.blueAccent,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
           ),
+        ),
 
         // ── Description ────────────────────────────────────────────────────
         if (article.description != null && article.description!.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
             child: _hasMarkdown(article.description!)
                 ? MarkdownBody(
                     data: _cleanDescription(_stripStatsLine(article.description!)),
@@ -419,60 +435,6 @@ class _ArticleDetailContent extends ConsumerWidget {
                       );
                     },
                   ),
-          ),
-
-        // ── Tags ───────────────────────────────────────────────────────────
-        if (article.tags.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: article.tags.map((tag) {
-                final isSubreddit = tag.startsWith('r/');
-                return GestureDetector(
-                  onTap: isSubreddit
-                      ? () {
-                          HapticFeedback.selectionClick();
-                          // Navigate in-app rather than opening external browser.
-                          final sub = tag.startsWith('r/') ? tag : 'r/$tag';
-                          ref
-                              .read(browseSessionProvider.notifier)
-                              .browse(sub, sub, 'reddit');
-                          Navigator.of(context).popUntil(
-                            (route) => route.isFirst,
-                          );
-                        }
-                      : null,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isSubreddit
-                          ? KabukTheme.redditOrange.withAlpha(20)
-                          : KabukTheme.accentGreen.withAlpha(25),
-                      borderRadius: BorderRadius.circular(12),
-                      border: isSubreddit
-                          ? Border.all(
-                              color: KabukTheme.redditOrange.withAlpha(60),
-                            )
-                          : null,
-                    ),
-                    child: Text(
-                      tag,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: isSubreddit
-                            ? KabukTheme.redditOrange
-                            : KabukTheme.accentGreen,
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
           ),
 
         // ── Unified discussion (Nostr + Reddit + 4chan) ────────────────────
@@ -631,24 +593,22 @@ class _ArticleDetailContent extends ConsumerWidget {
 }
 
 // =============================================================================
-// Article OmniBar — Chrome-like info bar in the AppBar
+// Article OmniBar — Breadcrumb navigation bar
 // =============================================================================
 
-/// Omnibar-style AppBar for article detail pages.
+/// Breadcrumb-style AppBar for article detail pages.
 ///
-/// Shows source icon + author (tappable → ChannelView) + channel/subreddit +
-/// domain in a compact, Chrome-address-bar-like layout. Replaces the old
-/// plain back-button-only AppBar and the in-body meta row.
-class _ArticleOmniBar extends StatelessWidget implements PreferredSizeWidget {
+/// Shows a left-to-right hierarchy from general to specific:
+/// `Source › Channel › Author › Title` — each segment is tappable and
+/// navigates to that context in Explore.
+class _ArticleOmniBar extends ConsumerWidget implements PreferredSizeWidget {
   const _ArticleOmniBar({
     required this.article,
     required this.onBack,
-    required this.onViewInBrowser,
   });
 
   final ArticleData article;
   final VoidCallback onBack;
-  final VoidCallback onViewInBrowser;
 
   @override
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
@@ -705,10 +665,11 @@ class _ArticleOmniBar extends StatelessWidget implements PreferredSizeWidget {
     final author = article.author;
     if (author == null) return '';
     if (_isReddit) {
-      return author.startsWith('u/') ? author : 'u/$author';
+      final name = author.startsWith('u/') ? author.substring(2) : author;
+      return name;
     }
     if (RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(author)) {
-      return '@${author.substring(0, 8)}…';
+      return '${author.substring(0, 8)}…';
     }
     return author;
   }
@@ -722,167 +683,202 @@ class _ArticleOmniBar extends StatelessWidget implements PreferredSizeWidget {
       final match = RegExp(r'/(\w+)/').firstMatch(article.url ?? '');
       if (match != null) return '/${match.group(1)}/';
     }
-    final source = article.feedSource ?? '';
-    if (source.isNotEmpty &&
-        !source.contains('reddit') &&
-        !source.contains('nostr')) {
-      return source;
-    }
     return null;
   }
 
+  String get _titleShort {
+    final name = article.name;
+    if (name == null || name.isEmpty) return '';
+    final cleaned = name
+        .replaceAll(RegExp(r'https?://\S+'), '')
+        .replaceAll(RegExp(r'\s{2,}'), ' ')
+        .trim();
+    if (cleaned.length <= 28) return cleaned;
+    return '${cleaned.substring(0, 26)}…';
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final channel = _channelDisplay;
     final author = _authorDisplay;
-    final hasUrl = article.url != null &&
-        !article.url!.startsWith('nostr:') &&
-        !article.url!.startsWith('kabuk:') &&
-        article.url!.isNotEmpty;
+    final title = _titleShort;
+    const chevron = _BreadcrumbChevron();
+
+    // Build breadcrumb segments: Source › Channel › Author › Title
+    final segments = <Widget>[];
+
+    // 1. Source (e.g. Reddit, Nostr, 4chan)
+    segments.add(
+      _BreadcrumbSegment(
+        icon: _sourceIcon,
+        label: _sourceName,
+        color: _sourceColor,
+        onTap: () {
+          // Clear any browse session and pop back to main Explore feed.
+          ref.read(browseSessionProvider.notifier).clear();
+          Navigator.of(context).popUntil((route) => route.isFirst);
+        },
+      ),
+    );
+
+    // 2. Channel (e.g. r/technology, /g/)
+    if (channel != null) {
+      segments.add(chevron);
+      segments.add(
+        _BreadcrumbSegment(
+          label: channel,
+          color: _sourceColor.withAlpha(210),
+          onTap: () {
+            if (_isReddit) {
+              final sub = channel.startsWith('r/') ? channel : 'r/$channel';
+              ref.read(browseSessionProvider.notifier).browse(sub, sub, 'reddit');
+            } else if (_isFourchan) {
+              final board = channel.replaceAll('/', '');
+              ref
+                  .read(browseSessionProvider.notifier)
+                  .browse('4chan://$board', channel, 'fourchan');
+            }
+            Navigator.of(context).popUntil((route) => route.isFirst);
+          },
+        ),
+      );
+    }
+
+    // 3. Author (e.g. u/kaan, @abcdef01…)
+    if (author.isNotEmpty) {
+      segments.add(chevron);
+      segments.add(
+        _BreadcrumbSegment(
+          label: _isReddit ? 'u/$author' : author,
+          color: KabukTheme.textSecondary,
+          onTap: () {
+            if (_isReddit) {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => ChannelView(
+                    author: author,
+                    sourceType: FeedSourceType.reddit,
+                  ),
+                ),
+              );
+            } else if (_isNostr && article.author != null) {
+              final pubkey = article.author!;
+              if (RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(pubkey)) {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => ProfileView(pubkey: pubkey),
+                  ),
+                );
+              }
+            }
+          },
+        ),
+      );
+    }
+
+    // 4. Article title (truncated, not tappable — already here)
+    if (title.isNotEmpty) {
+      segments.add(chevron);
+      segments.add(
+        Flexible(
+          child: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 12,
+              color: KabukTheme.textTertiary,
+              fontWeight: FontWeight.w400,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      );
+    }
 
     return AppBar(
       backgroundColor: KabukTheme.background,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
-      leadingWidth: 40,
+      leadingWidth: 36,
       leading: IconButton(
-        icon: const Icon(Icons.arrow_back_rounded, size: 22),
+        icon: const Icon(Icons.arrow_back_rounded, size: 20),
         tooltip: 'Back to feed',
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints(),
         onPressed: onBack,
       ),
-      titleSpacing: 4,
-      title: GestureDetector(
-        onTap: hasUrl ? onViewInBrowser : null,
-        child: Container(
-          height: 38,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          decoration: BoxDecoration(
-            color: KabukTheme.surfaceVariant,
-            borderRadius: BorderRadius.circular(19),
-          ),
-          child: Row(
-            children: [
-              // Source icon.
-              Icon(_sourceIcon, size: 15, color: _sourceColor),
-              const SizedBox(width: 6),
-
-              // Author (tappable).
-              if (author.isNotEmpty)
-                Flexible(
-                  child: _OmniBarAuthor(
-                    author: author,
-                    color: _sourceColor,
-                    article: article,
-                    isReddit: _isReddit,
-                    isNostr: _isNostr,
-                  ),
-                ),
-
-              // Separator dot.
-              if (author.isNotEmpty && (channel != null || hasUrl))
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 5),
-                  child: Container(
-                    width: 3,
-                    height: 3,
-                    decoration: const BoxDecoration(
-                      color: KabukTheme.textTertiary,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
-
-              // Channel or domain.
-              if (channel != null)
-                Text(
-                  channel,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: _sourceColor.withAlpha(200),
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                )
-              else if (hasUrl)
-                Flexible(
-                  child: Text(
-                    _sourceName,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: KabukTheme.textSecondary,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-
-              // External link icon.
-              if (hasUrl) ...[
-                const SizedBox(width: 4),
-                const Icon(
-                  Icons.open_in_new_rounded,
-                  size: 12,
-                  color: KabukTheme.textTertiary,
-                ),
-              ],
-            ],
-          ),
+      titleSpacing: 0,
+      title: Container(
+        height: 34,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          color: KabukTheme.surfaceVariant,
+          borderRadius: BorderRadius.circular(17),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: segments,
         ),
       ),
     );
   }
 }
 
-/// Tappable author name in the omnibar that navigates to ChannelView.
-class _OmniBarAuthor extends StatelessWidget {
-  const _OmniBarAuthor({
-    required this.author,
+/// A single tappable breadcrumb segment (icon + label).
+class _BreadcrumbSegment extends StatelessWidget {
+  const _BreadcrumbSegment({
+    required this.label,
     required this.color,
-    required this.article,
-    required this.isReddit,
-    required this.isNostr,
+    this.icon,
+    this.onTap,
   });
 
-  final String author;
+  final IconData? icon;
+  final String label;
   final Color color;
-  final ArticleData article;
-  final bool isReddit;
-  final bool isNostr;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {
-        if (isReddit) {
-          final name = author.startsWith('u/') ? author.substring(2) : author;
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => ChannelView(
-                author: name,
-                sourceType: FeedSourceType.reddit,
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 13, color: color),
+              const SizedBox(width: 3),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: color,
               ),
+              overflow: TextOverflow.ellipsis,
             ),
-          );
-        } else if (isNostr && article.author != null) {
-          final pubkey = article.author!;
-          if (RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(pubkey)) {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => ProfileView(pubkey: pubkey),
-              ),
-            );
-          }
-        }
-      },
-      child: Text(
-        author,
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          color: color,
+          ],
         ),
-        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+}
+
+/// Chevron separator between breadcrumb segments.
+class _BreadcrumbChevron extends StatelessWidget {
+  const _BreadcrumbChevron();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 3),
+      child: Icon(
+        Icons.chevron_right_rounded,
+        size: 14,
+        color: KabukTheme.textTertiary,
       ),
     );
   }
