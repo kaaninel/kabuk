@@ -2,7 +2,7 @@
 ///
 /// Full-screen dark recording interface with waveform visualization,
 /// timer, and recording controls. Designed to match the visual
-/// language of the camera-first Create view.
+/// language of the camera-first Vault view.
 library;
 
 import 'dart:async';

@@ -168,7 +168,7 @@ class AppsView extends ConsumerWidget {
           ),
 
           // ─── Recent Notes ─────────────────────────────────────────
-          // Shows the last 5 notes created via the agent or Create tab.
+          // Shows the last 5 notes created via the agent or Vault tab.
           recentNotes.when(
             data: (notes) => notes.isEmpty
                 ? const SliverToBoxAdapter(child: SizedBox.shrink())
@@ -1147,7 +1147,7 @@ class _NotesAppView extends ConsumerWidget {
             return const _EmptyAppState(
               icon: Icons.sticky_note_2_rounded,
               label: 'No notes yet',
-              hint: 'Create notes in the Create tab or via Chat',
+              hint: 'Create notes in the Vault tab or via Chat',
             );
           }
           return ListView.separated(

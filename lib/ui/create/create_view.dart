@@ -1,4 +1,4 @@
-/// Create view — Private vault for personal knowledge and media.
+/// Vault view — Private vault for personal knowledge and media.
 ///
 /// The Vault is a full-featured workspace for creating, organizing,
 /// and browsing personal content. It combines a document editor (with
@@ -66,7 +66,7 @@ final collectionsListProvider = FutureProvider<List<CollectionData>>((
 });
 
 // ---------------------------------------------------------------------------
-// Create view
+// Vault view
 // ---------------------------------------------------------------------------
 
 /// The main vault view — private storage for personal knowledge and media.
