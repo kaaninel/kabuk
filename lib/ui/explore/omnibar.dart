@@ -566,6 +566,13 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
     final clean = _hashtagName(hashtag);
     try {
       await followTopic(ref, clean);
+      ref.invalidate(subscriptionsProvider);
+      ref.invalidate(articlesProvider);
+      unawaited(
+        refreshAllFeeds(ref).then((_) {
+          if (mounted) ref.invalidate(articlesProvider);
+        }),
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Now following #$clean on Nostr')),

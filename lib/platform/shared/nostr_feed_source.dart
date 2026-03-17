@@ -114,21 +114,30 @@ class NostrFeedSource implements FeedSource {
       // Extract first image URL from content.
       final imageUrl = _extractImageUrl(event.content);
 
-      // Truncate long content for the title.
+      // Strip URLs before deriving title and description.
       final content = event.content.trim();
-      final titleEnd = content.indexOf('\n');
-      final title = titleEnd > 0 && titleEnd < 120
-          ? content.substring(0, titleEnd)
-          : content.length > 120
-          ? '${content.substring(0, 120)}…'
-          : content;
+      final stripped = content
+          .replaceAll(RegExp(r'https?://\S+'), '')
+          .replaceAll(RegExp(r'\s{2,}'), ' ')
+          .trim();
+
+      final titleEnd = stripped.indexOf('\n');
+      final title = stripped.isEmpty
+          ? 'Nostr post'
+          : titleEnd > 0 && titleEnd < 120
+              ? stripped.substring(0, titleEnd)
+              : stripped.length > 120
+                  ? '${stripped.substring(0, 120)}…'
+                  : stripped;
 
       return FeedItem(
         title: title,
         url: 'nostr:${event.id}',
-        description: content.length > 200
-            ? '${content.substring(0, 200)}…'
-            : content,
+        description: stripped.isEmpty || stripped == title
+            ? null
+            : stripped.length > 5000
+                ? '${stripped.substring(0, 5000)}…'
+                : stripped,
         author: _resolveAuthorName(event),
         imageUrl: imageUrl,
         datePublished: DateTime.fromMillisecondsSinceEpoch(
@@ -142,8 +151,7 @@ class NostrFeedSource implements FeedSource {
 
   /// Tries to extract a display name from the event.
   String? _resolveAuthorName(NostrEvent event) {
-    // Use the short hex pubkey as fallback.
-    return '${event.pubkey.substring(0, 8)}…';
+    return '@${event.pubkey.substring(0, 8)}';
   }
 
   /// Extracts the first image URL from note content.

@@ -6,6 +6,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as dev;
 
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -347,6 +348,8 @@ class ChatService {
       }
     } on LlmStreamException catch (e) {
       buffer.write('\n\nError: ${e.message}');
+    } catch (e, st) {
+      // ignore unexpected errors
     }
 
     _ref.read(streamingTextProvider.notifier).state = null;
@@ -388,11 +391,10 @@ class ChatService {
       try {
         final llm = _ref.read(llmServiceProvider);
         final request = LlmRequest(
-          messages: [
-            const LlmMessage.system(
+          systemPrompt:
               'Generate a short title (max 6 words) for this conversation. '
               'Reply with ONLY the title, no quotes, no punctuation at the end.',
-            ),
+          messages: [
             LlmMessage.user(userMessage),
             LlmMessage.assistant(agentResponse),
           ],

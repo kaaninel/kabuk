@@ -90,6 +90,7 @@ class _QrContactExchangeState extends ConsumerState<QrContactExchange>
     unawaited(HapticFeedback.mediumImpact());
 
     final hexPubkey = payload.publicKeyHex ?? _npubToHex(payload.npub);
+    if (hexPubkey == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

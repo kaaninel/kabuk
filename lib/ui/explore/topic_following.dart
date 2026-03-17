@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:kabuk/config/providers.dart';
+import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/knowledge/types/saved_search.dart';
 import 'package:kabuk/services/nostr.dart';
 import 'package:kabuk/services/nostr_utils.dart';
@@ -71,26 +72,44 @@ final topicFeedProvider = FutureProvider<List<NostrEvent>>((ref) async {
 
 /// Follows a hashtag topic.
 ///
-/// Creates a SavedSearch with `source: 'nostr_hashtag'` in the
-/// knowledge store.
+/// Creates a [SavedSearch] with `source: 'nostr_hashtag'` and a
+/// [FeedSubscription] with `feedType: 'nostr'` so that [refreshAllFeeds]
+/// can fetch Nostr notes for the hashtag and display them in the feed.
 Future<void> followTopic(WidgetRef ref, String hashtag) async {
   final store = ref.read(knowledgeStoreProvider);
   final normalized = hashtag.toLowerCase().replaceAll('#', '');
+
+  // Persist the followed topic as a SavedSearch (used for UI chips).
   await store.createSavedSearch(
     name: '#$normalized',
     queryText: normalized,
     source: 'nostr_hashtag',
   );
+
+  // Also create a FeedSubscription so refreshAllFeeds can fetch articles.
+  final feedUrl = 'nostr:t/$normalized';
+  final existing = await store.listFeedSubscriptions();
+  final alreadySubscribed = existing.any((s) => s.feedUrl == feedUrl);
+  if (!alreadySubscribed) {
+    await store.createFeedSubscription(
+      name: '#$normalized',
+      feedUrl: feedUrl,
+      feedType: 'nostr',
+    );
+  }
+
   ref.invalidate(followedTopicsProvider);
 }
 
 /// Unfollows a hashtag topic.
 ///
-/// Deletes the matching SavedSearch from the knowledge store.
-/// Returns silently if the topic is not found (already unfollowed).
+/// Deletes both the [SavedSearch] and the [FeedSubscription] for the
+/// hashtag from the knowledge store. Returns silently if not found.
 Future<void> unfollowTopic(WidgetRef ref, String hashtag) async {
   final store = ref.read(knowledgeStoreProvider);
   final normalized = hashtag.toLowerCase().replaceAll('#', '');
+
+  // Remove the SavedSearch entry.
   final topics = await store.listSavedSearches();
   final match = topics
       .where(
@@ -98,8 +117,14 @@ Future<void> unfollowTopic(WidgetRef ref, String hashtag) async {
             s.source == 'nostr_hashtag' && s.query?.toLowerCase() == normalized,
       )
       .firstOrNull;
-  if (match == null) return; // Already unfollowed or never followed.
-  await store.deleteSavedSearch(match.uri);
+  if (match != null) await store.deleteSavedSearch(match.uri);
+
+  // Remove the matching FeedSubscription.
+  final feedUrl = 'nostr:t/$normalized';
+  final subs = await store.listFeedSubscriptions();
+  final subMatch = subs.where((s) => s.feedUrl == feedUrl).firstOrNull;
+  if (subMatch != null) await store.deleteFeedSubscription(subMatch.uri);
+
   ref.invalidate(followedTopicsProvider);
 }
 

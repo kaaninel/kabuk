@@ -69,8 +69,8 @@ class _FullscreenImageViewerState extends State<FullscreenImageViewer> {
       final x = -(size.width * (scale - 1) / 2);
       final y = -(size.height * (scale - 1) / 2);
       _transformController.value = Matrix4.identity()
-        ..scaleByDouble(scale)
-        ..translateByDouble(x / scale, y / scale);
+        ..scaleByDouble(scale, scale, scale, 1.0)
+        ..translateByDouble(x / scale, y / scale, 0.0, 1.0);
     }
   }
 

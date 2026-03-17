@@ -61,7 +61,10 @@ class ArticleCard extends ConsumerWidget {
     final isGif = _isGif(article);
     final hasGallery = article.galleryImages.length > 1;
 
-    return Dismissible(
+    return GestureDetector(
+      onTap: () => _openDetail(context, ref),
+      onLongPress: () => _quickPeek(context, ref),
+      child: Dismissible(
       key: ValueKey(article.uri),
       direction: DismissDirection.horizontal,
       // Swipe right → bookmark
@@ -144,10 +147,7 @@ class ArticleCard extends ConsumerWidget {
         }
         return false; // keep the card in the list
       },
-      child: GestureDetector(
-        onTap: () => _openDetail(context, ref),
-        onLongPress: () => _quickPeek(context, ref),
-        child: Container(
+      child: Container(
           decoration: BoxDecoration(
             color: KabukTheme.cardColor,
             borderRadius: BorderRadius.circular(16),
@@ -164,7 +164,7 @@ class ArticleCard extends ConsumerWidget {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
                   child: Text(
-                    article.name!,
+                    _cleanTitle(article.name!),
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
@@ -289,12 +289,23 @@ class ArticleCard extends ConsumerWidget {
 
   String _cleanDescription(String desc) {
     return desc
+        .replaceAll(RegExp(r'https?://\S+'), '') // strip raw URLs
         .replaceAll(
           RegExp(r'\s*[·|]?\s*⬆\s*[\d,]+\s*([·|]\s*💬\s*[\d,]+)?\s*$'),
           '',
         )
         .replaceAll(RegExp(r'\s*[·|]?\s*💬\s*[\d,]+\s*$'), '')
+        .replaceAll(RegExp(r'\s{2,}'), ' ')
         .trim();
+  }
+
+  /// Strips raw URLs from a title string for clean display.
+  String _cleanTitle(String title) {
+    final cleaned = title
+        .replaceAll(RegExp(r'https?://\S+'), '')
+        .replaceAll(RegExp(r'\s{2,}'), ' ')
+        .trim();
+    return cleaned.isEmpty ? 'Nostr post' : cleaned;
   }
 
   void _openDetail(BuildContext context, WidgetRef ref) {
@@ -406,7 +417,7 @@ class _SourceHeader extends StatelessWidget {
                           ? (author.startsWith('u/')
                               ? author
                               : 'u/$author')
-                          : author,
+                          : _formatNostrAuthor(author),
                       style: TextStyle(
                         fontSize: 11,
                         color: isReddit
@@ -442,13 +453,30 @@ class _SourceHeader extends StatelessWidget {
     );
   }
 
-  /// Extracts subreddit name (e.g. `r/flutter`) from tags or feed source.
+  /// Formats a Nostr author (hex pubkey) for display with `@` prefix.
+  String _formatNostrAuthor(String author) {
+    if (author.startsWith('@')) return author;
+    final base = author.endsWith('…') ? author.substring(0, author.length - 1) : author;
+    if (RegExp(r'^[0-9a-fA-F]{8,}$').hasMatch(base)) {
+      return '@${base.length > 8 ? '${base.substring(0, 8)}…' : base}';
+    }
+    return author;
+  }
+
+  /// Extracts subreddit name (e.g. `r/flutter`) or Nostr topic from tags.
   String _subredditName(ArticleData article) {
     final tags = article.tags;
     for (final tag in tags) {
       if (tag.startsWith('r/')) return tag;
     }
-    return article.feedSource?.split('/').last ?? 'Feed';
+    // Return first Nostr topic tag (e.g. "flutter" → "#flutter").
+    for (final tag in tags) {
+      if (tag.isNotEmpty && !tag.startsWith('kabuk:')) return '#$tag';
+    }
+    // Fall back: if feedSource is a kabuk URI, show "Nostr" instead of the UUID.
+    final source = article.feedSource ?? '';
+    if (source.startsWith('kabuk:') || source.isEmpty) return 'Nostr';
+    return source.split('/').last.isNotEmpty ? source.split('/').last : 'Feed';
   }
 
   /// Opens the subreddit in the quick-peek in-app WebView.

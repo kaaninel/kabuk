@@ -29,7 +29,7 @@ class LocalModelConfig {
   /// Creates a [LocalModelConfig].
   const LocalModelConfig({
     required this.modelPath,
-    this.nGpuLayers = 999,
+    this.nGpuLayers = 0,
     this.contextSize = 4096,
     this.maxTokens = 1024,
     this.threads = 0,
@@ -43,9 +43,12 @@ class LocalModelConfig {
   /// Absolute path to the `.gguf` model file on disk.
   final String modelPath;
 
-  /// Number of layers to offload to GPU (Metal/CUDA).
+  /// Number of layers to offload to GPU (Metal on Apple Silicon, CUDA on NVIDIA).
   ///
-  /// Use `999` to offload all layers. Set to `0` for CPU-only.
+  /// Defaults to `0` (CPU-only) for maximum compatibility across all devices
+  /// and simulators. Set to `999` to offload all layers for maximum GPU
+  /// performance on supported hardware. Users can adjust this in
+  /// Settings > Local Models.
   final int nGpuLayers;
 
   /// Context window size in tokens.
@@ -93,7 +96,7 @@ class LocalModelConfig {
   factory LocalModelConfig.fromJson(Map<String, dynamic> json) {
     return LocalModelConfig(
       modelPath: json['modelPath'] as String,
-      nGpuLayers: (json['nGpuLayers'] as num?)?.toInt() ?? 999,
+      nGpuLayers: (json['nGpuLayers'] as num?)?.toInt() ?? 0,
       contextSize: (json['contextSize'] as num?)?.toInt() ?? 4096,
       maxTokens: (json['maxTokens'] as num?)?.toInt() ?? 1024,
       threads: (json['threads'] as num?)?.toInt() ?? 0,
@@ -240,20 +243,24 @@ class LocalLlmService implements LlmService {
     final messages = _buildMessages(request);
     final params = _buildGenParams(request);
 
-    await for (final chunk in _engine!.create(messages, params: params)) {
-      for (final choice in chunk.choices) {
-        if (choice.delta.content != null) {
-          yield LlmStreamEvent.textDelta(choice.delta.content!);
-        }
-        if (choice.delta.toolCalls != null) {
-          for (final tc in _extractToolCalls(choice.delta.toolCalls!)) {
-            yield LlmStreamEvent.toolCall(tc);
+    try {
+      await for (final chunk in _engine!.create(messages, params: params)) {
+        for (final choice in chunk.choices) {
+          if (choice.delta.content != null) {
+            yield LlmStreamEvent.textDelta(choice.delta.content!);
+          }
+          if (choice.delta.toolCalls != null) {
+            for (final tc in _extractToolCalls(choice.delta.toolCalls!)) {
+              yield LlmStreamEvent.toolCall(tc);
+            }
+          }
+          if (choice.finishReason != null) {
+            yield const LlmStreamEvent.done();
           }
         }
-        if (choice.finishReason != null) {
-          yield const LlmStreamEvent.done();
-        }
       }
+    } on Object catch (e) {
+      throw LlmStreamException('Local LLM inference error: $e');
     }
   }
 
@@ -282,40 +289,39 @@ class LocalLlmService implements LlmService {
 
   /// Converts an [LlmRequest] into a list of [LlamaChatMessage]s
   /// suitable for [LlamaEngine.create].
+  ///
+  /// The Hermes/Mistral chat template requires exactly one system message and
+  /// it must be the very first message. All system-level content (the agent
+  /// system prompt and any tool-use instructions) is therefore merged into a
+  /// single leading system message.
   List<LlamaChatMessage> _buildMessages(LlmRequest request) {
     final messages = <LlamaChatMessage>[];
 
-    // System prompt.
-    if (request.systemPrompt != null) {
+    // Merge system prompt and tool-use instructions into one system message so
+    // the Hermes chat template constraint ("system message must be first") is
+    // satisfied even when tools are present.
+    final systemParts = <String>[
+      if (request.systemPrompt != null) request.systemPrompt!,
+      if (request.tools != null && request.tools!.isNotEmpty)
+        _buildToolSystemPrompt(request.tools!),
+    ];
+    if (systemParts.isNotEmpty) {
       messages.add(
         LlamaChatMessage.fromText(
           role: LlamaChatRole.system,
-          text: request.systemPrompt!,
+          text: systemParts.join('\n\n'),
         ),
       );
     }
 
-    // If tools are declared, inject a tool-use system prompt so the
-    // local model can attempt structured tool calls via JSON.
-    if (request.tools != null && request.tools!.isNotEmpty) {
-      messages.add(
-        LlamaChatMessage.fromText(
-          role: LlamaChatRole.system,
-          text: _buildToolSystemPrompt(request.tools!),
-        ),
-      );
-    }
-
-    // Conversation history.
+    // Conversation history — skip any SystemLlmMessage entries here because
+    // system content is already merged above; emitting a system role mid-
+    // conversation would violate the Hermes template constraint.
     for (final msg in request.messages) {
       switch (msg) {
-        case SystemLlmMessage(:final content):
-          messages.add(
-            LlamaChatMessage.fromText(
-              role: LlamaChatRole.system,
-              text: content,
-            ),
-          );
+        case SystemLlmMessage():
+          // Intentionally ignored — system content is handled above.
+          break;
         case UserLlmMessage(:final content):
           messages.add(
             LlamaChatMessage.fromText(role: LlamaChatRole.user, text: content),

@@ -39,10 +39,17 @@ enum _SortMode {
 /// [activeDocumentProvider] to open a document when tapped.
 class DocumentListView extends ConsumerStatefulWidget {
   /// Creates a [DocumentListView].
-  const DocumentListView({super.key, required this.onRefresh});
+  const DocumentListView({
+    super.key,
+    required this.onRefresh,
+    required this.onNewDocument,
+  });
 
   /// Called when the list should be refreshed after an external action.
   final VoidCallback onRefresh;
+
+  /// Called when the user wants to create a new document.
+  final VoidCallback onNewDocument;
 
   @override
   ConsumerState<DocumentListView> createState() => _DocumentListViewState();
@@ -129,6 +136,7 @@ class _DocumentListViewState extends ConsumerState<DocumentListView> {
               if (sorted.isEmpty) {
                 return _EmptyState(
                   hasFilter: _searchController.text.isNotEmpty,
+                  onNewDocument: widget.onNewDocument,
                 );
               }
               return RefreshIndicator(
@@ -586,9 +594,10 @@ class _TagChip extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.hasFilter});
+  const _EmptyState({required this.hasFilter, required this.onNewDocument});
 
   final bool hasFilter;
+  final VoidCallback onNewDocument;
 
   @override
   Widget build(BuildContext context) {
@@ -668,31 +677,38 @@ class _EmptyState extends StatelessWidget {
               ),
             ),
             const SizedBox(height: KabukTheme.spacingLg),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-              decoration: BoxDecoration(
-                color: KabukTheme.warmAccent.withAlpha(20),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: KabukTheme.warmAccent.withAlpha(50)),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.add_rounded,
-                    size: 22,
-                    color: KabukTheme.warmAccent,
-                  ),
-                  SizedBox(width: 12),
-                  Text(
-                    'Tap + to create your first document',
-                    style: TextStyle(
+            GestureDetector(
+              onTap: onNewDocument,
+              child: Semantics(
+                button: true,
+                label: 'Create new document',
+                child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                decoration: BoxDecoration(
+                  color: KabukTheme.warmAccent.withAlpha(20),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: KabukTheme.warmAccent.withAlpha(50)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.add_rounded,
+                      size: 22,
                       color: KabukTheme.warmAccent,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
                     ),
-                  ),
-                ],
+                    SizedBox(width: 12),
+                    Text(
+                      'Tap + to create your first document',
+                      style: TextStyle(
+                        color: KabukTheme.warmAccent,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               ),
             ),
           ],

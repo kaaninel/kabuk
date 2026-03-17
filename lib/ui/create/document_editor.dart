@@ -442,71 +442,70 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
           ),
         ),
 
-        // Body — scrollable title + editor.
+        // Title + date — compact fixed header above the editor.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            KabukTheme.spacingMd,
+            KabukTheme.spacingSm,
+            KabukTheme.spacingMd,
+            0,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: _titleController,
+                focusNode: _titleFocusNode,
+                onChanged: _onTitleChanged,
+                style: const TextStyle(
+                  color: KabukTheme.textPrimary,
+                  fontSize: 26,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                ),
+                decoration: const InputDecoration(
+                  hintText: 'Untitled',
+                  hintStyle: TextStyle(
+                    color: KabukTheme.textTertiary,
+                    fontSize: 26,
+                    fontWeight: FontWeight.w800,
+                  ),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                maxLines: 3,
+                textInputAction: TextInputAction.next,
+                onSubmitted: (_) => _bodyFocusNode.requestFocus(),
+              ),
+              if (_note?.dateModified != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, bottom: 4),
+                  child: Text(
+                    'Last modified ${_formatDate(_note!.dateModified!)}',
+                    style: const TextStyle(
+                      color: KabukTheme.textTertiary,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+
+        // Body editor — fills remaining space, scrolls internally.
         Expanded(
-          child: SingleChildScrollView(
+          child: Padding(
             padding: const EdgeInsets.symmetric(
               horizontal: KabukTheme.spacingMd,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: KabukTheme.spacingSm),
-
-                // Title field.
-                TextField(
-                  controller: _titleController,
-                  focusNode: _titleFocusNode,
-                  onChanged: _onTitleChanged,
-                  style: const TextStyle(
-                    color: KabukTheme.textPrimary,
-                    fontSize: 26,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.5,
-                  ),
-                  decoration: const InputDecoration(
-                    hintText: 'Untitled',
-                    hintStyle: TextStyle(
-                      color: KabukTheme.textTertiary,
-                      fontSize: 26,
-                      fontWeight: FontWeight.w800,
-                    ),
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                  maxLines: null,
-                  textInputAction: TextInputAction.next,
-                  onSubmitted: (_) => _bodyFocusNode.requestFocus(),
-                ),
-
-                const SizedBox(height: KabukTheme.spacingXs),
-
-                // Date info.
-                if (_note?.dateModified != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Text(
-                      'Last modified ${_formatDate(_note!.dateModified!)}',
-                      style: const TextStyle(
-                        color: KabukTheme.textTertiary,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ),
-
-                // Markdown body editor.
-                MarkdownEditor(
-                  controller: _bodyController,
-                  focusNode: _bodyFocusNode,
-                  hintText: 'Start writing...',
-                  onChanged: _onBodyChanged,
-                  minLines: 20,
-                  showToolbar: true,
-                  showPreviewToggle: true,
-                ),
-
-                const SizedBox(height: 120),
-              ],
+            child: MarkdownEditor(
+              controller: _bodyController,
+              focusNode: _bodyFocusNode,
+              hintText: 'Start writing...',
+              onChanged: _onBodyChanged,
+              minLines: 12,
+              showToolbar: true,
+              showPreviewToggle: true,
             ),
           ),
         ),

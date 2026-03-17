@@ -153,11 +153,26 @@ class _CreateViewState extends ConsumerState<CreateView> {
 
   Future<void> _createNewDocument() async {
     unawaited(HapticFeedback.mediumImpact());
-    final store = ref.read(knowledgeStoreProvider);
-    final collection = ref.read(activeCollectionProvider);
-    final uri = await store.createNote(title: '', parentCollection: collection);
-    ref.read(activeDocumentProvider.notifier).state = uri;
-    _refreshData();
+    try {
+      final store = ref.read(knowledgeStoreProvider);
+      final collection = ref.read(activeCollectionProvider);
+      final uri = await store.createNote(
+        title: '',
+        parentCollection: collection,
+      );
+      if (!mounted) return;
+      ref.read(activeDocumentProvider.notifier).state = uri;
+      _refreshData();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not create document: $e'),
+          backgroundColor: Colors.red.shade800,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   @override
@@ -235,7 +250,7 @@ class _WorkspaceShell extends ConsumerWidget {
           padding: EdgeInsets.fromLTRB(
             KabukTheme.spacingMd,
             topPadding + 8,
-            60,
+            80,
             0,
           ),
           child: Row(
@@ -295,7 +310,7 @@ class _WorkspaceShell extends ConsumerWidget {
           child: IndexedStack(
             index: currentTab,
             children: [
-              DocumentListView(onRefresh: onRefresh),
+              DocumentListView(onRefresh: onRefresh, onNewDocument: onNewDocument),
               MediaGalleryView(
                 onCapturePhoto: onShowCamera,
                 onRecordAudio: onShowAudio,
@@ -418,6 +433,7 @@ class _QuickActionButton extends StatelessWidget {
       child: Tooltip(
         message: tooltip,
         child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onTap: () {
             HapticFeedback.lightImpact();
             onTap();

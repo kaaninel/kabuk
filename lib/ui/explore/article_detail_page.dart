@@ -281,7 +281,7 @@ class _ArticleDetailContent extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: Text(
-              article.name!,
+              _cleanTitle(article.name!),
               style: const TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.w700,
@@ -319,7 +319,7 @@ class _ArticleDetailContent extends ConsumerWidget {
                             ? (article.author!.startsWith('u/')
                                 ? article.author!
                                 : 'u/${article.author!}')
-                            : article.author!,
+                            : _formatAuthor(article.author!),
                         style: TextStyle(
                           fontSize: 13,
                           color: _isRedditArticle(article)
@@ -358,7 +358,7 @@ class _ArticleDetailContent extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: _hasMarkdown(article.description!)
                 ? MarkdownBody(
-                    data: _stripStatsLine(article.description!),
+                    data: _cleanDescription(_stripStatsLine(article.description!)),
                     styleSheet: MarkdownStyleSheet(
                       p: const TextStyle(
                         fontSize: 15,
@@ -415,7 +415,7 @@ class _ArticleDetailContent extends ConsumerWidget {
                     },
                   )
                 : _RedditLinkText(
-                    text: article.description!,
+                    text: _cleanDescription(article.description!),
                     onSubredditTap: (sub) {
                       final uri = Uri.tryParse('https://www.reddit.com/r/$sub');
                       if (uri != null) {
@@ -494,19 +494,32 @@ class _ArticleDetailContent extends ConsumerWidget {
             ),
           ),
 
-        // ── Action buttons ─────────────────────────────────────────────────
-        if (article.url != null)
+        // ── Source link (external web/RSS only, not for Nostr/internal) ───
+        if (article.url != null && !_isInternalUrl(article.url!))
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
-            child: FilledButton.icon(
-              onPressed: onViewInBrowser,
-              icon: const Icon(Icons.open_in_new_rounded, size: 18),
-              label: const Text('Open Article'),
-              style: FilledButton.styleFrom(
-                backgroundColor: KabukTheme.accentGreen,
-                foregroundColor: Colors.black,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                minimumSize: const Size.fromHeight(48),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+            child: GestureDetector(
+              onTap: onViewInBrowser,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.open_in_new_rounded,
+                    size: 13,
+                    color: KabukTheme.textTertiary,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _truncateUrl(article.url!),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: KabukTheme.textTertiary,
+                      decoration: TextDecoration.underline,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
             ),
           ),
@@ -550,6 +563,55 @@ class _ArticleDetailContent extends ConsumerWidget {
         lower.contains('youtu.be') ||
         lower.endsWith('.mp4') ||
         lower.endsWith('.webm');
+  }
+
+  /// Returns true for Nostr or other internal URLs that have no external web page.
+  bool _isInternalUrl(String url) {
+    return url.startsWith('nostr:') ||
+        url.startsWith('kabuk:') ||
+        url.isEmpty;
+  }
+
+  /// Formats an author for display — prefixes hex pubkeys with `@`.
+  String _formatAuthor(String author) {
+    if (author.startsWith('@')) return author; // already formatted
+    // Strip trailing ellipsis before checking for hex pubkey pattern.
+    final base = author.endsWith('…') ? author.substring(0, author.length - 1) : author;
+    if (RegExp(r'^[0-9a-fA-F]{8,}$').hasMatch(base)) {
+      return '@${base.length > 8 ? '${base.substring(0, 8)}…' : base}';
+    }
+    return author;
+  }
+
+  /// Strips raw URLs from a title for clean display.
+  String _cleanTitle(String title) {
+    final cleaned = title
+        .replaceAll(RegExp(r'https?://\S+'), '')
+        .replaceAll(RegExp(r'\s{2,}'), ' ')
+        .trim();
+    return cleaned.isEmpty ? 'Nostr post' : cleaned;
+  }
+
+  /// Strips raw URLs and normalises whitespace in description text.
+  String _cleanDescription(String text) {
+    return text
+        .replaceAll(RegExp(r'https?://\S+'), '')
+        .replaceAll(RegExp(r'\s{2,}'), ' ')
+        .trim();
+  }
+
+  /// Truncates a URL for compact display (shows domain + path prefix).
+  String _truncateUrl(String url) {
+    try {
+      final uri = Uri.parse(url);
+      final host = uri.host.replaceFirst('www.', '');
+      final path = uri.path.length > 20
+          ? '${uri.path.substring(0, 20)}…'
+          : uri.path;
+      return '$host$path';
+    } catch (_) {
+      return url.length > 40 ? '${url.substring(0, 40)}…' : url;
+    }
   }
 
   String _formatDate(DateTime date) {

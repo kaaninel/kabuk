@@ -304,7 +304,7 @@ class ConversationList extends ConsumerWidget {
                       updatedAt: Value(DateTime.now()),
                     ),
                   );
-                  if (ctx.mounted) unawaited(Navigator.of(ctx).pop());
+                  if (ctx.mounted) Navigator.of(ctx).pop();
                   if (context.mounted) {
                     unawaited(Navigator.of(context).push(
                       MaterialPageRoute<void>(
@@ -614,7 +614,7 @@ class ConversationList extends ConsumerWidget {
                   return;
                 }
                 final name = nameCtrl.text.trim().isEmpty
-                    ? '${pubkey.substring(0, 8)}...'
+                    ? '@${pubkey.substring(0, 8)}'
                     : nameCtrl.text.trim();
                 Navigator.of(ctx).pop();
                 await _startNostrDm(context, ref, pubkey, name);
@@ -1027,6 +1027,17 @@ class _ConversationTile extends ConsumerWidget {
 
   bool get _isNostrDm => conversation.type == 'nostr_dm';
 
+  /// Returns a user-friendly display name for the conversation.
+  /// If the stored title looks like a raw hex pubkey fragment (e.g. "ee5149c8..."),
+  /// it's prefixed with "@" for readability.
+  String get _displayTitle {
+    final title = conversation.title;
+    if (RegExp(r'^[0-9a-f]{8,}\.\.\.$', caseSensitive: false).hasMatch(title)) {
+      return '@${title.replaceAll('...', '')}';
+    }
+    return title;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Dismissible(
@@ -1048,7 +1059,7 @@ class _ConversationTile extends ConsumerWidget {
         leading: _isNostrDm && conversation.nostrPubkey != null
             ? _NostrDmAvatar(
                 pubkeyHex: conversation.nostrPubkey!,
-                displayName: conversation.title,
+                displayName: _displayTitle,
               )
             : conversation.type == 'nostr_channel'
             ? CircleAvatar(
@@ -1070,7 +1081,7 @@ class _ConversationTile extends ConsumerWidget {
                 ),
               ),
         title: Text(
-          conversation.title,
+          _displayTitle,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
@@ -1149,7 +1160,7 @@ class _ConversationTile extends ConsumerWidget {
           builder: (_) => NostrChatDetail(
             conversationId: conversation.id,
             recipientPubkey: conversation.nostrPubkey!,
-            displayName: conversation.title,
+            displayName: _displayTitle,
           ),
         ),
       );

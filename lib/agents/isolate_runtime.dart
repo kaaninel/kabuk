@@ -792,6 +792,7 @@ class _ProxyLlmService implements LlmService {
         break;
       }
     }
+  
   }
 
   @override
@@ -1114,6 +1115,17 @@ class IsolateAgentRuntime implements AgentRuntime {
     SendPort? isolateSendPort;
 
     StreamSubscription<dynamic>? hostSub;
+
+    // Track whether cleanup is already handled (e.g. by streaming path).
+    var cleanupHandled = false;
+    void cleanup() {
+      if (cleanupHandled) return;
+      cleanupHandled = true;
+      hostSub?.cancel();
+      resultPort.close();
+      hostPort.close();
+    }
+
     try {
       // Build the serializable bootstrap — no closures cross the boundary.
       final descriptor = _AgentDescriptor.fromAgent(agent);
@@ -1165,7 +1177,7 @@ class IsolateAgentRuntime implements AgentRuntime {
               sendPort.send(_LlmStreamEventResponse(req.id, event));
             }
             sendPort.send(_LlmStreamEndResponse(req.id));
-          } on Object catch (e) {
+          } on Object catch (e, st) {
             sendPort.send(
               _IsolateErrorResponse(
                 req.id,
@@ -1309,15 +1321,31 @@ class IsolateAgentRuntime implements AgentRuntime {
 
         // Listen for remaining stream events.
         late final StreamSubscription<dynamic> streamSub;
-        streamSub = resultBroadcast.listen((msg) {
-          if (msg is _AgentStreamEventMessage) {
-            controller.add(msg.event);
-          } else if (msg is _AgentStreamDone) {
-            controller.close();
-            streamSub.cancel();
-          }
-        });
+        streamSub = resultBroadcast.listen(
+          (msg) {
+            if (msg is _AgentStreamEventMessage) {
+              controller.add(msg.event);
+            } else if (msg is _AgentStreamDone) {
+              controller.close();
+              streamSub.cancel();
+              cleanup(); // Close ports now that the stream is done.
+            }
+          },
+          onDone: () {
+            // resultPort was closed (e.g., by an error path) before
+            // _AgentStreamDone arrived — make sure the controller closes.
+            if (!controller.isClosed) controller.close();
+            cleanup();
+          },
+          onError: (_) {
+            if (!controller.isClosed) controller.close();
+            cleanup();
+          },
+        );
 
+        // Prevent the finally block from closing ports — the streaming
+        // path above handles cleanup when the stream is fully consumed.
+        cleanupHandled = true;
         return AgentResponse.streaming(controller.stream);
       }
 
@@ -1333,9 +1361,7 @@ class IsolateAgentRuntime implements AgentRuntime {
 
       return const AgentResponse.error('Unexpected isolate result type');
     } finally {
-      await hostSub?.cancel();
-      resultPort.close();
-      hostPort.close();
+      cleanup();
     }
   }
 }
