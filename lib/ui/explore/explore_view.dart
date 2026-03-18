@@ -97,6 +97,56 @@ enum FeedSort { newest, hot, top }
 /// Currently selected sort mode.
 final feedSortProvider = StateProvider<FeedSort>((ref) => FeedSort.newest);
 
+// =============================================================================
+// Content filters
+// =============================================================================
+
+/// Blocked keywords — articles whose title or description contain any of
+/// these strings (case-insensitive) are hidden from the feed.
+final blockedKeywordsProvider = StateProvider<List<String>>((ref) => []);
+
+/// Whether NSFW content is hidden.
+final hideNsfwProvider = StateProvider<bool>((ref) => true);
+
+/// Feed source URIs that are temporarily muted (hidden from All view).
+final mutedSourcesProvider = StateProvider<Set<String>>((ref) => {});
+
+/// Applies content filters to an article list.
+List<ArticleData> applyContentFilters(
+  List<ArticleData> articles,
+  List<String> blockedKeywords,
+  bool hideNsfw,
+  Set<String> mutedSources,
+) {
+  if (blockedKeywords.isEmpty && !hideNsfw && mutedSources.isEmpty) {
+    return articles;
+  }
+  final lowerKeywords = blockedKeywords.map((k) => k.toLowerCase()).toList();
+  return articles.where((a) {
+    // Muted sources.
+    if (a.feedSource != null && mutedSources.contains(a.feedSource)) {
+      return false;
+    }
+    // NSFW check (simple heuristic — tag or title contains 'nsfw').
+    if (hideNsfw) {
+      final tags = a.tags;
+      final hasNsfwTag = tags.any(
+        (t) => t.toLowerCase() == 'nsfw' || t.toLowerCase() == 'over18',
+      );
+      final titleNsfw = (a.name ?? '').toLowerCase().contains('nsfw');
+      if (hasNsfwTag || titleNsfw) return false;
+    }
+    // Blocked keywords.
+    if (lowerKeywords.isNotEmpty) {
+      final text = '${a.name ?? ''} ${a.description ?? ''}'.toLowerCase();
+      for (final kw in lowerKeywords) {
+        if (kw.isNotEmpty && text.contains(kw)) return false;
+      }
+    }
+    return true;
+  }).toList();
+}
+
 /// Whether a network refresh is currently in progress.
 final _feedRefreshingProvider = StateProvider<bool>((ref) => false);
 
@@ -132,6 +182,8 @@ Future<int> refreshAllFeeds(WidgetRef ref, {bool force = false}) async {
   final futures = <Future<List<ArticleData>>>[];
   for (final sub in subs) {
     if (sub.feedUrl == null) continue;
+    // Web page subscriptions are one-time AI-parsed — skip automatic refresh.
+    if (sub.feedType == 'web') continue;
     futures.add(
       _fetchFeed(store, feedService, sub,
           redditSort: redditSort, force: force),
@@ -1085,6 +1137,14 @@ class _ExploreViewState extends ConsumerState<ExploreView>
     // Apply client-side sort based on the selected sort mode.
     articles = _sortArticles(List.of(articles), sort);
 
+    // Apply content filters (blocked keywords, NSFW, muted sources).
+    articles = applyContentFilters(
+      articles,
+      ref.watch(blockedKeywordsProvider),
+      ref.watch(hideNsfwProvider),
+      ref.watch(mutedSourcesProvider),
+    );
+
     // Sync the displayed list with the provider data.
     // Insert new articles at the top with animation.
     _syncDisplayedArticles(articles);
@@ -1220,6 +1280,8 @@ class _ExploreViewState extends ConsumerState<ExploreView>
             Icons.trending_up_rounded,
             currentSort,
           ),
+          const SizedBox(width: 8),
+          _filterButton(context),
           const Spacer(),
           if (_lastRefreshedAt != null)
             Text(
@@ -1297,6 +1359,67 @@ class _ExploreViewState extends ConsumerState<ExploreView>
           ],
         ),
       ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Content filter button + sheet
+  // ---------------------------------------------------------------------------
+
+  Widget _filterButton(BuildContext context) {
+    final keywords = ref.watch(blockedKeywordsProvider);
+    final nsfw = ref.watch(hideNsfwProvider);
+    final muted = ref.watch(mutedSourcesProvider);
+    final hasFilters = keywords.isNotEmpty || nsfw || muted.isNotEmpty;
+
+    return GestureDetector(
+      onTap: () => _showFilterSheet(context),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: hasFilters
+              ? KabukTheme.warmAccent.withAlpha(30)
+              : KabukTheme.cardColor,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: hasFilters
+                ? KabukTheme.warmAccent.withAlpha(120)
+                : KabukTheme.divider,
+          ),
+        ),
+        child: Icon(
+          hasFilters
+              ? Icons.filter_alt_rounded
+              : Icons.filter_alt_outlined,
+          size: 14,
+          color: hasFilters
+              ? KabukTheme.warmAccent
+              : KabukTheme.textTertiary,
+        ),
+      ),
+    );
+  }
+
+  void _showFilterSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: KabukTheme.cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => _ContentFilterSheet(
+        blockedKeywords: ref.read(blockedKeywordsProvider),
+        hideNsfw: ref.read(hideNsfwProvider),
+        mutedSources: ref.read(mutedSourcesProvider),
+        subscriptions: ref.read(subscriptionsProvider).valueOrNull ?? [],
+        onApply: (keywords, nsfw, muted) {
+          ref.read(blockedKeywordsProvider.notifier).state = keywords;
+          ref.read(hideNsfwProvider.notifier).state = nsfw;
+          ref.read(mutedSourcesProvider.notifier).state = muted;
+        },
       ),
     );
   }
@@ -1556,6 +1679,254 @@ class _SkeletonCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: color,
         borderRadius: BorderRadius.circular(radius),
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// Content filter bottom sheet
+// =============================================================================
+
+class _ContentFilterSheet extends StatefulWidget {
+  const _ContentFilterSheet({
+    required this.blockedKeywords,
+    required this.hideNsfw,
+    required this.mutedSources,
+    required this.subscriptions,
+    required this.onApply,
+  });
+
+  final List<String> blockedKeywords;
+  final bool hideNsfw;
+  final Set<String> mutedSources;
+  final List<FeedSubscriptionData> subscriptions;
+  final void Function(List<String> keywords, bool nsfw, Set<String> muted)
+      onApply;
+
+  @override
+  State<_ContentFilterSheet> createState() => _ContentFilterSheetState();
+}
+
+class _ContentFilterSheetState extends State<_ContentFilterSheet> {
+  late final List<String> _keywords;
+  late bool _hideNsfw;
+  late final Set<String> _muted;
+  final _keywordController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _keywords = List.of(widget.blockedKeywords);
+    _hideNsfw = widget.hideNsfw;
+    _muted = Set.of(widget.mutedSources);
+  }
+
+  @override
+  void dispose() {
+    _keywordController.dispose();
+    super.dispose();
+  }
+
+  void _addKeyword() {
+    final text = _keywordController.text.trim();
+    if (text.isNotEmpty && !_keywords.contains(text)) {
+      setState(() => _keywords.add(text));
+      _keywordController.clear();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 12,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 12,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Handle
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: KabukTheme.divider,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Title + apply
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Content Filters',
+                    style: TextStyle(
+                      color: KabukTheme.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    widget.onApply(_keywords, _hideNsfw, _muted);
+                    Navigator.pop(context);
+                  },
+                  child: const Text('Apply'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // NSFW toggle
+            _switchRow('Hide NSFW content', _hideNsfw, (v) {
+              setState(() => _hideNsfw = v);
+            }),
+            const SizedBox(height: 16),
+
+            // Blocked keywords
+            const Text(
+              'Blocked keywords',
+              style: TextStyle(
+                color: KabukTheme.textSecondary,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _keywordController,
+                    style: const TextStyle(
+                      color: KabukTheme.textPrimary,
+                      fontSize: 14,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'Add keyword…',
+                      hintStyle: TextStyle(
+                        color: KabukTheme.textTertiary.withAlpha(120),
+                      ),
+                      filled: true,
+                      fillColor: KabukTheme.surface,
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                    onSubmitted: (_) => _addKeyword(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.add_circle_outline_rounded, size: 22),
+                  color: KabukTheme.accentGreen,
+                  onPressed: _addKeyword,
+                ),
+              ],
+            ),
+            if (_keywords.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: _keywords
+                    .map(
+                      (kw) => Chip(
+                        label: Text(
+                          kw,
+                          style: const TextStyle(
+                            color: KabukTheme.textPrimary,
+                            fontSize: 12,
+                          ),
+                        ),
+                        deleteIcon: const Icon(Icons.close, size: 14),
+                        onDeleted: () =>
+                            setState(() => _keywords.remove(kw)),
+                        backgroundColor: KabukTheme.surface,
+                        side: BorderSide.none,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ],
+
+            // Muted sources
+            if (widget.subscriptions.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              const Text(
+                'Muted sources',
+                style: TextStyle(
+                  color: KabukTheme.textSecondary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ...widget.subscriptions.map(
+                (sub) => _switchRow(
+                  sub.name ?? sub.uri,
+                  !_muted.contains(sub.uri),
+                  (visible) {
+                    setState(() {
+                      if (visible) {
+                        _muted.remove(sub.uri);
+                      } else {
+                        _muted.add(sub.uri);
+                      }
+                    });
+                  },
+                ),
+              ),
+            ],
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _switchRow(String label, bool value, ValueChanged<bool> onChanged) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: KabukTheme.textPrimary,
+                fontSize: 14,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          SizedBox(
+            height: 28,
+            child: Switch.adaptive(
+              value: value,
+              onChanged: onChanged,
+              activeColor: KabukTheme.accentGreen,
+            ),
+          ),
+        ],
       ),
     );
   }

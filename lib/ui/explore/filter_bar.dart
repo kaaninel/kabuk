@@ -59,17 +59,22 @@ class FilterBar extends StatelessWidget {
           ...subscriptions.map((sub) {
             final isReddit = sub.feedType == 'reddit';
             final isNostr = sub.feedType == 'nostr';
+            final isWeb = sub.feedType == 'web';
             return _chip(
               label: sub.name ?? sub.feedUrl ?? 'Feed',
               icon: isNostr
                   ? Icons.bolt_rounded
                   : isReddit
                   ? Icons.reddit
+                  : isWeb
+                  ? Icons.auto_stories_rounded
                   : Icons.rss_feed_rounded,
               color: isNostr
                   ? KabukTheme.purpleAccent
                   : isReddit
                   ? KabukTheme.redditOrange
+                  : isWeb
+                  ? KabukTheme.warmAccent
                   : KabukTheme.blueAccent,
               isSelected: selected == sub.uri,
               onTap: () => onSelected(sub.uri),
@@ -130,7 +135,12 @@ class FilterBar extends StatelessWidget {
   /// Shows a context menu for the given feed subscription.
   void _showFeedContextMenu(BuildContext context, FeedSubscriptionData sub) {
     final isReddit = sub.feedType == 'reddit';
-    final color = isReddit ? KabukTheme.redditOrange : KabukTheme.blueAccent;
+    final isWeb = sub.feedType == 'web';
+    final color = isReddit
+        ? KabukTheme.redditOrange
+        : isWeb
+        ? KabukTheme.warmAccent
+        : KabukTheme.blueAccent;
 
     showModalBottomSheet<void>(
       context: context,

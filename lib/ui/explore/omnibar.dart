@@ -31,9 +31,11 @@ import 'package:kabuk/ui/explore/discovery_providers.dart';
 import 'package:kabuk/ui/explore/explore_view.dart';
 import 'package:kabuk/ui/explore/feed_management_sheet.dart';
 import 'package:kabuk/ui/explore/profile_view.dart';
+import 'package:kabuk/ui/explore/reader_view.dart';
 import 'package:kabuk/ui/explore/topic_following.dart';
 import 'package:kabuk/ui/shared/feed_image.dart';
 import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
+import 'package:kabuk/services/reader_mode.dart';
 import 'package:kabuk/ui/theme.dart';
 
 // =============================================================================
@@ -598,7 +600,8 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
     if (q.isEmpty) return;
 
     if (_isUrlQuery(q)) {
-      _openExternal(q);
+      // Parse URL with AI reader mode and create a channel.
+      _readAndSubscribe(q);
     } else if (_isBrowseableQuery(q)) {
       // Cancel pending debounce and navigate immediately.
       _browseDebounce?.cancel();
@@ -614,6 +617,56 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
       openUrl = 'https://$openUrl';
     }
     openUrlSmart(context, openUrl);
+  }
+
+  /// Parses a URL with AI reader mode, stores it as an article, creates
+  /// a subscription channel, and navigates to the reader view.
+  Future<void> _readAndSubscribe(String url) async {
+    var feedUrl = url.trim();
+    if (!feedUrl.startsWith('http://') && !feedUrl.startsWith('https://')) {
+      feedUrl = 'https://$feedUrl';
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Reading page with AI…')),
+    );
+
+    try {
+      final service = ref.read(readerModeServiceProvider);
+      final articleUri = await service.processUrl(feedUrl);
+
+      // Create a subscription so the page appears as a channel.
+      final store = ref.read(knowledgeStoreProvider);
+      final domain = Uri.tryParse(feedUrl)?.host ?? feedUrl;
+      final existing = await store.listFeedSubscriptions();
+      if (!existing.any((s) => s.feedUrl == feedUrl)) {
+        await store.createFeedSubscription(
+          name: domain,
+          feedUrl: feedUrl,
+          feedType: 'web',
+        );
+      }
+
+      ref.invalidate(subscriptionsProvider);
+      ref.invalidate(articlesProvider);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        // Navigate to the reader view for the parsed article.
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => ReaderView(articleUri: articleUri, url: feedUrl),
+          ),
+        );
+      }
+    } on Object catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to read page: $e')),
+        );
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1519,6 +1572,15 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
     if (_isUrlQuery(_query)) {
       actions.add(
         _actionTile(
+          icon: Icons.auto_stories_rounded,
+          iconColor: KabukTheme.warmAccent,
+          title: 'Read & Subscribe',
+          subtitle: 'Parse with AI and create a channel',
+          onTap: () => _readAndSubscribe(_query),
+        ),
+      );
+      actions.add(
+        _actionTile(
           icon: Icons.open_in_new_rounded,
           iconColor: KabukTheme.accentGreen,
           title: 'Open link',
@@ -1530,7 +1592,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
         _actionTile(
           icon: Icons.rss_feed_rounded,
           iconColor: KabukTheme.blueAccent,
-          title: 'Subscribe as feed',
+          title: 'Subscribe as RSS feed',
           subtitle: 'Subscribe to updates from this URL',
           onTap: () => _subscribeToRss(_query),
         ),
