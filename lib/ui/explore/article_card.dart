@@ -139,19 +139,37 @@ class ArticleCard extends ConsumerWidget {
         if (direction == DismissDirection.startToEnd) {
           final url = article.url;
           if (url != null && url.isNotEmpty) {
-            await store.createBookmark(
-              name: article.name ?? url,
-              url: url,
-              description: article.description,
-            );
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Saved to bookmarks'),
-                  duration: Duration(seconds: 2),
-                  behavior: SnackBarBehavior.floating,
-                ),
+            // Toggle: remove if already bookmarked, add otherwise.
+            final existing = await store.listBookmarks();
+            final match = existing.where((b) => b.url == url).firstOrNull;
+            if (match != null) {
+              await store.deleteBookmark(match.uri);
+              ref.invalidate(bookmarkStatusProvider(url));
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Bookmark removed'),
+                    duration: Duration(seconds: 2),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            } else {
+              await store.createBookmark(
+                name: article.name ?? url,
+                url: url,
+                description: article.description,
               );
+              ref.invalidate(bookmarkStatusProvider(url));
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Saved to bookmarks'),
+                    duration: Duration(seconds: 2),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
             }
           }
         } else {
@@ -644,20 +662,50 @@ class _SourceHeader extends StatelessWidget {
 }
 
 // =============================================================================
+// Bookmark status provider
+// =============================================================================
+
+/// Checks whether a URL is already bookmarked in the knowledge store.
+///
+/// Returns the bookmark URI if found, `null` otherwise.
+/// Invalidate this provider after bookmark mutations to refresh state.
+final bookmarkStatusProvider =
+    FutureProvider.family<String?, String>((ref, url) async {
+  final store = ref.watch(knowledgeStoreProvider);
+  final bookmarks = await store.listBookmarks();
+  for (final b in bookmarks) {
+    if (b.url == url) return b.uri;
+  }
+  return null;
+});
+
+// =============================================================================
 // Action Bar
 // =============================================================================
 
 /// Bottom action row with inline Nostr social interactions on every article.
-class _ActionBar extends ConsumerWidget {
+class _ActionBar extends ConsumerStatefulWidget {
   const _ActionBar({required this.article});
 
   final ArticleData article;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ActionBar> createState() => _ActionBarState();
+}
+
+class _ActionBarState extends ConsumerState<_ActionBar> {
+  @override
+  Widget build(BuildContext context) {
+    final article = widget.article;
     final stats = _parseStats(article.description);
     final articleUrl = article.url;
     final hasUrl = articleUrl != null && articleUrl.isNotEmpty;
+
+    // Watch bookmark status for this article's URL.
+    final bookmarkAsync =
+        hasUrl ? ref.watch(bookmarkStatusProvider(articleUrl)) : null;
+    final isBookmarked =
+        bookmarkAsync?.whenOrNull(data: (uri) => uri != null) ?? false;
 
     final nostrStats = hasUrl
         ? ref.watch(nostrSocialStatsForUrlProvider(articleUrl))
@@ -688,7 +736,7 @@ class _ActionBar extends ConsumerWidget {
                       : KabukTheme.textTertiary,
                 ) ??
                 KabukTheme.textTertiary,
-            onTap: hasUrl ? () => _handleReaction(context, ref) : null,
+            onTap: hasUrl ? () => _handleReaction(context) : null,
           ),
           _socialButton(
             context: context,
@@ -699,7 +747,7 @@ class _ActionBar extends ConsumerWidget {
             ),
             semanticLabel: 'Comment',
             color: KabukTheme.textTertiary,
-            onTap: hasUrl ? () => _handleComment(context, ref) : null,
+            onTap: hasUrl ? () => _handleComment(context) : null,
           ),
           _socialButton(
             context: context,
@@ -722,17 +770,22 @@ class _ActionBar extends ConsumerWidget {
                       : KabukTheme.textTertiary,
                 ) ??
                 KabukTheme.textTertiary,
-            onTap: hasUrl ? () => _handleRepost(context, ref) : null,
+            onTap: hasUrl ? () => _handleRepost(context) : null,
           ),
           const Spacer(),
           IconButton(
-            icon: const Icon(
-              Icons.bookmark_add_outlined,
+            icon: Icon(
+              isBookmarked
+                  ? Icons.bookmark_rounded
+                  : Icons.bookmark_outlined,
               size: 18,
-              color: KabukTheme.textTertiary,
+              color: isBookmarked
+                  ? KabukTheme.warmAccent
+                  : KabukTheme.textTertiary,
             ),
-            tooltip: 'Save to bookmarks',
-            onPressed: () => _saveBookmark(context, ref),
+            tooltip:
+                isBookmarked ? 'Remove bookmark' : 'Save to bookmarks',
+            onPressed: () => _saveBookmark(context),
             visualDensity: VisualDensity.compact,
           ),
         ],
@@ -787,9 +840,9 @@ class _ActionBar extends ConsumerWidget {
     return null;
   }
 
-  Future<void> _handleReaction(BuildContext context, WidgetRef ref) async {
+  Future<void> _handleReaction(BuildContext context) async {
     unawaited(HapticFeedback.lightImpact());
-    final url = article.url;
+    final url = widget.article.url;
     if (url == null) return;
     final success = await reactToUrl(ref, url: url);
     if (context.mounted && !success) {
@@ -802,7 +855,7 @@ class _ActionBar extends ConsumerWidget {
     }
   }
 
-  Future<void> _handleComment(BuildContext context, WidgetRef ref) async {
+  Future<void> _handleComment(BuildContext context) async {
     unawaited(HapticFeedback.lightImpact());
     final controller = TextEditingController();
     final comment = await showDialog<String>(
@@ -834,7 +887,7 @@ class _ActionBar extends ConsumerWidget {
     controller.dispose();
 
     if (comment != null && comment.trim().isNotEmpty && context.mounted) {
-      final url = article.url;
+      final url = widget.article.url;
       if (url == null) return;
       final success = await commentOnUrl(
         ref,
@@ -861,9 +914,9 @@ class _ActionBar extends ConsumerWidget {
     }
   }
 
-  Future<void> _handleRepost(BuildContext context, WidgetRef ref) async {
+  Future<void> _handleRepost(BuildContext context) async {
     unawaited(HapticFeedback.lightImpact());
-    final url = article.url;
+    final url = widget.article.url;
     if (url == null) return;
     final success = await repostUrl(ref, url: url);
     if (context.mounted && !success) {
@@ -897,22 +950,42 @@ class _ActionBar extends ConsumerWidget {
     return count.toString();
   }
 
-  Future<void> _saveBookmark(BuildContext context, WidgetRef ref) async {
-    final url = article.url;
+  Future<void> _saveBookmark(BuildContext context) async {
+    final url = widget.article.url;
     if (url == null || url.isEmpty) return;
+    unawaited(HapticFeedback.mediumImpact());
     final store = ref.read(knowledgeStoreProvider);
-    await store.createBookmark(
-      name: article.name ?? url,
-      url: url,
-      description: article.description,
-    );
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Saved to bookmarks'),
-          duration: Duration(seconds: 2),
-        ),
+
+    // Check if already bookmarked — toggle off if so.
+    final existing = await store.listBookmarks();
+    final match = existing.where((b) => b.url == url).firstOrNull;
+
+    if (match != null) {
+      await store.deleteBookmark(match.uri);
+      ref.invalidate(bookmarkStatusProvider(url));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Bookmark removed'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } else {
+      await store.createBookmark(
+        name: widget.article.name ?? url,
+        url: url,
+        description: widget.article.description,
       );
+      ref.invalidate(bookmarkStatusProvider(url));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Saved to bookmarks'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
     }
   }
 }

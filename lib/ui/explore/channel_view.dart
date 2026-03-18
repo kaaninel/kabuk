@@ -259,7 +259,10 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
 
     return Scaffold(
       backgroundColor: KabukTheme.background,
-      body: CustomScrollView(
+      body: RefreshIndicator(
+        onRefresh: _loadChannel,
+        color: color,
+        child: CustomScrollView(
         slivers: [
           // --- Header ---
           SliverAppBar(
@@ -412,6 +415,7 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
           // Bottom padding.
           const SliverToBoxAdapter(child: SizedBox(height: 48)),
         ],
+      ),
       ),
     );
   }

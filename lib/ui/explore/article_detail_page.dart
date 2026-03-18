@@ -13,9 +13,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/types/article.dart';
+import 'package:kabuk/knowledge/types/bookmark.dart';
 import 'package:kabuk/knowledge/types/nostr_social.dart';
 import 'package:kabuk/services/feed.dart';
 import 'package:kabuk/services/media_cache.dart';
+import 'package:kabuk/ui/explore/article_card.dart' show bookmarkStatusProvider;
 import 'package:kabuk/ui/explore/browse_session.dart';
 import 'package:kabuk/ui/explore/explore_view.dart' show friendlyError;
 import 'package:kabuk/ui/explore/fourchan_comments.dart';
@@ -1386,22 +1388,9 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
           onTap: () => repostUrl(ref, url: url),
         ),
         const Spacer(),
-        IconButton(
-          icon: const Icon(Icons.bookmark_add_outlined, size: 18),
-          color: KabukTheme.textTertiary,
-          onPressed: () {
-            // TODO: Save to Vault / bookmarks when implemented.
-            HapticFeedback.lightImpact();
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Bookmarks coming soon'),
-                duration: Duration(seconds: 2),
-              ),
-            );
-          },
-          visualDensity: VisualDensity.compact,
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(),
+        _BookmarkButton(
+          article: widget.article,
+          url: url,
         ),
         const SizedBox(width: 12),
         IconButton(
@@ -1472,6 +1461,73 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
     final match = RegExp(pattern).firstMatch(description);
     if (match == null) return null;
     return int.tryParse(match.group(1)!.replaceAll(',', ''));
+  }
+}
+
+// =============================================================================
+// Bookmark button (detail page)
+// =============================================================================
+
+/// Bookmark toggle button that reflects saved state in the knowledge store.
+class _BookmarkButton extends ConsumerWidget {
+  const _BookmarkButton({required this.article, required this.url});
+
+  final ArticleData article;
+  final String url;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bookmarkAsync = ref.watch(bookmarkStatusProvider(url));
+    final isBookmarked =
+        bookmarkAsync.whenOrNull(data: (uri) => uri != null) ?? false;
+
+    return IconButton(
+      icon: Icon(
+        isBookmarked ? Icons.bookmark_rounded : Icons.bookmark_outlined,
+        size: 18,
+      ),
+      color: isBookmarked ? KabukTheme.warmAccent : KabukTheme.textTertiary,
+      onPressed: () => _toggleBookmark(context, ref),
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(),
+    );
+  }
+
+  Future<void> _toggleBookmark(BuildContext context, WidgetRef ref) async {
+    HapticFeedback.mediumImpact();
+    final store = ref.read(knowledgeStoreProvider);
+
+    final existing = await store.listBookmarks();
+    final match = existing.where((b) => b.url == url).firstOrNull;
+
+    if (match != null) {
+      await store.deleteBookmark(match.uri);
+      ref.invalidate(bookmarkStatusProvider(url));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Bookmark removed'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } else {
+      await store.createBookmark(
+        name: article.name ?? url,
+        url: url,
+        description: article.description,
+      );
+      ref.invalidate(bookmarkStatusProvider(url));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Saved to bookmarks'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
   }
 }
 
