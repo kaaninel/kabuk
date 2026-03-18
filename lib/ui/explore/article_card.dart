@@ -274,7 +274,17 @@ class ArticleCard extends ConsumerWidget {
                             height: 200,
                             color: KabukTheme.surfaceVariant,
                           ),
-                          errorWidget: (_, _, _) => const SizedBox.shrink(),
+                          errorWidget: (_, _, _) => Container(
+                            height: 200,
+                            color: KabukTheme.surfaceVariant,
+                            child: const Center(
+                              child: Icon(
+                                Icons.broken_image_outlined,
+                                color: KabukTheme.textTertiary,
+                                size: 32,
+                              ),
+                            ),
+                          ),
                         ),
                         // GIF badge.
                         const Positioned(

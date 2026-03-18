@@ -179,17 +179,25 @@ class RedditFeedSource implements FeedSource {
     }
 
     // Extract video URL for video posts.
-    // Reddit hosted videos have `is_video: true` with a
-    // `media.reddit_video.fallback_url` pointing to the MP4.
-    // External video links (YouTube, v.redd.it crosspost) appear in `post['url']`.
+    // Reddit hosted videos have `is_video: true` with both:
+    //   - `media.reddit_video.hls_url`      → HLS (M3U8, preferred on iOS)
+    //   - `media.reddit_video.fallback_url`  → DASH MP4 (lacks byte-range headers)
+    // iOS AVPlayer requires proper Content-Length / byte-range support, so we
+    // prefer the HLS stream which is natively supported.
     String? videoUrl;
     final isVideo = post['is_video'] as bool? ?? false;
     if (isVideo) {
       final media = post['media'] as Map<String, dynamic>?;
       final redditVideo = media?['reddit_video'] as Map<String, dynamic>?;
-      final fallback = redditVideo?['fallback_url'] as String?;
-      if (fallback != null) {
-        videoUrl = fallback.replaceAll('&amp;', '&');
+      // Prefer HLS for iOS compatibility.
+      final hlsUrl = redditVideo?['hls_url'] as String?;
+      if (hlsUrl != null) {
+        videoUrl = hlsUrl.replaceAll('&amp;', '&');
+      } else {
+        final fallback = redditVideo?['fallback_url'] as String?;
+        if (fallback != null) {
+          videoUrl = fallback.replaceAll('&amp;', '&');
+        }
       }
     }
     // Also check `post['url']` for external video hosts.
