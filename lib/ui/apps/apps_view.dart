@@ -800,13 +800,14 @@ class _BookmarkTile extends StatelessWidget {
               const SizedBox(height: 6),
               Text(
                 bookmark.name ?? '',
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                   color: KabukTheme.textPrimary,
+                  height: 1.2,
                 ),
               ),
             ],

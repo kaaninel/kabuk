@@ -520,7 +520,7 @@ class _ArticleDetailContent extends ConsumerWidget {
                 size: 16,
               ),
               const SizedBox(width: 6),
-              Text(
+              const Text(
                 'Swipe left/right for more articles',
                 style: TextStyle(
                   color: KabukTheme.textTertiary,
