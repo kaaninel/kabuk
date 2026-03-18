@@ -1,19 +1,16 @@
 /// Video thumbnail widget with play button overlay.
 ///
 /// Shows a preview image for video content with a centered play icon.
-/// Tapping opens the video in a full-screen player or external browser
-/// depending on the video URL type.
+/// Tapping opens the video in a full-screen native player that resolves
+/// YouTube streams via youtube_explode_dart.
 library;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:kabuk/ui/explore/quick_peek_sheet.dart';
 import 'package:kabuk/ui/shared/feed_image.dart';
 import 'package:kabuk/ui/theme.dart';
 import 'package:video_player/video_player.dart';
-import 'package:webview_flutter/webview_flutter.dart';
-import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 /// Whether a URL points to a directly playable video file.
 bool isDirectVideoUrl(String url) {
@@ -169,61 +166,98 @@ class VideoThumbnail extends StatelessWidget {
   }
 
   void _openVideo(BuildContext context) {
-    if (isDirectVideoUrl(videoUrl)) {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => _InlineVideoPlayer(videoUrl: videoUrl),
-          fullscreenDialog: true,
-        ),
-      );
-    } else {
-      // Try to extract a YouTube video ID for in-app playback.
-      final youtubeId = extractYoutubeVideoId(videoUrl);
-      if (youtubeId != null) {
-        Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => _YoutubePlayerPage(videoId: youtubeId),
-            fullscreenDialog: true,
-          ),
-        );
-      } else {
-        // Other external video — open in-app via QuickPeekSheet.
-        QuickPeekSheet.show(context, url: videoUrl);
-      }
-    }
+    // All videos go through the native player — it resolves YouTube
+    // streams via youtube_explode_dart at playback time.
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _NativeVideoPlayer(videoUrl: videoUrl),
+        fullscreenDialog: true,
+      ),
+    );
   }
 }
 
-/// Full-screen inline video player for direct video URLs.
-class _InlineVideoPlayer extends StatefulWidget {
-  const _InlineVideoPlayer({required this.videoUrl});
+/// Unified full-screen native video player.
+///
+/// Handles all video types:
+/// - Direct URLs (MP4, WebM, HLS) → plays immediately via [VideoPlayerController]
+/// - YouTube URLs → resolves direct stream via `youtube_explode_dart`, then plays natively
+/// - Other URLs → attempts direct playback
+class _NativeVideoPlayer extends StatefulWidget {
+  const _NativeVideoPlayer({required this.videoUrl});
 
   final String videoUrl;
 
   @override
-  State<_InlineVideoPlayer> createState() => _InlineVideoPlayerState();
+  State<_NativeVideoPlayer> createState() => _NativeVideoPlayerState();
 }
 
-class _InlineVideoPlayerState extends State<_InlineVideoPlayer> {
-  late VideoPlayerController _controller;
+class _NativeVideoPlayerState extends State<_NativeVideoPlayer> {
+  VideoPlayerController? _controller;
   bool _initialized = false;
   bool _showControls = true;
+  String? _error;
+  bool _resolving = false;
 
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
+    _initPlayer();
+  }
+
+  Future<void> _initPlayer() async {
+    final youtubeId = extractYoutubeVideoId(widget.videoUrl);
+    if (youtubeId != null) {
+      // Resolve YouTube stream URL via youtube_explode.
+      setState(() => _resolving = true);
+      try {
+        final yt = YoutubeExplode();
+        try {
+          final manifest = await yt.videos.streamsClient.getManifest(youtubeId);
+          // Prefer muxed streams (video+audio) for simplicity.
+          final muxed = manifest.muxed.sortByVideoQuality();
+          if (muxed.isNotEmpty) {
+            _startPlayback(muxed.last.url.toString());
+          } else {
+            // Fall back to video-only stream.
+            final videoOnly = manifest.videoOnly.sortByVideoQuality();
+            if (videoOnly.isNotEmpty) {
+              _startPlayback(videoOnly.last.url.toString());
+            } else {
+              if (mounted) setState(() => _error = 'No playable stream found');
+            }
+          }
+        } finally {
+          yt.close();
+        }
+      } on Object catch (e) {
+        if (mounted) {
+          setState(() => _error = 'Could not load video: $e');
+        }
+      }
+    } else {
+      // Direct URL — play immediately.
+      _startPlayback(widget.videoUrl);
+    }
+  }
+
+  void _startPlayback(String url) {
+    if (!mounted) return;
+    setState(() => _resolving = false);
+    _controller = VideoPlayerController.networkUrl(Uri.parse(url))
       ..initialize().then((_) {
         if (mounted) {
           setState(() => _initialized = true);
-          _controller.play();
+          _controller?.play();
         }
-      }).ignore();
+      }).catchError((Object e) {
+        if (mounted) setState(() => _error = 'Playback error: $e');
+      });
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
@@ -235,8 +269,6 @@ class _InlineVideoPlayerState extends State<_InlineVideoPlayer> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      // Never extend behind the appbar — ensures Center aligns the video to
-      // the visible, non-occluded portion of the screen.
       extendBodyBehindAppBar: false,
       appBar: _showControls
           ? AppBar(
@@ -253,19 +285,47 @@ class _InlineVideoPlayerState extends State<_InlineVideoPlayer> {
         onTap: _toggleControls,
         child: SizedBox.expand(
           child: Center(
-            child: _initialized
-                ? AspectRatio(
-                    aspectRatio: _controller.value.aspectRatio,
-                    child: Stack(
-                      alignment: Alignment.bottomCenter,
+            child: _error != null
+                ? Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        VideoPlayer(_controller),
-                        if (_showControls)
-                          _VideoControlsOverlay(controller: _controller),
+                        const Icon(Icons.error_outline, color: Colors.white54, size: 48),
+                        const SizedBox(height: 12),
+                        Text(
+                          _error!,
+                          style: const TextStyle(color: Colors.white70, fontSize: 14),
+                          textAlign: TextAlign.center,
+                        ),
                       ],
                     ),
                   )
-                : const CircularProgressIndicator(color: Colors.white),
+                : _initialized && _controller != null
+                    ? AspectRatio(
+                        aspectRatio: _controller!.value.aspectRatio,
+                        child: Stack(
+                          alignment: Alignment.bottomCenter,
+                          children: [
+                            VideoPlayer(_controller!),
+                            if (_showControls)
+                              _VideoControlsOverlay(controller: _controller!),
+                          ],
+                        ),
+                      )
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const CircularProgressIndicator(color: Colors.white),
+                          if (_resolving) ...[
+                            const SizedBox(height: 12),
+                            const Text(
+                              'Resolving video stream…',
+                              style: TextStyle(color: Colors.white54, fontSize: 13),
+                            ),
+                          ],
+                        ],
+                      ),
           ),
         ),
       ),
@@ -331,63 +391,5 @@ class _VideoControlsOverlay extends StatelessWidget {
     final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return '$minutes:$seconds';
-  }
-}
-
-/// Full-screen YouTube video player using the mobile YouTube website.
-///
-/// Loads the YouTube mobile watch page in a [WebViewWidget] so the user
-/// can watch videos without leaving the app. Uses the full mobile site
-/// instead of the embed API to avoid Error 153 issues with WebView.
-class _YoutubePlayerPage extends StatefulWidget {
-  const _YoutubePlayerPage({required this.videoId});
-
-  final String videoId;
-
-  @override
-  State<_YoutubePlayerPage> createState() => _YoutubePlayerPageState();
-}
-
-class _YoutubePlayerPageState extends State<_YoutubePlayerPage> {
-  late final WebViewController _webController;
-
-  @override
-  void initState() {
-    super.initState();
-
-    // Use WebKit-specific params on iOS for inline media playback.
-    late final PlatformWebViewControllerCreationParams params;
-    if (defaultTargetPlatform == TargetPlatform.iOS) {
-      params = WebKitWebViewControllerCreationParams(
-        allowsInlineMediaPlayback: true,
-        mediaTypesRequiringUserAction: const <PlaybackMediaTypes>{},
-      );
-    } else {
-      params = const PlatformWebViewControllerCreationParams();
-    }
-
-    final watchUrl = 'https://m.youtube.com/watch?v=${widget.videoId}';
-    _webController = WebViewController.fromPlatformCreationParams(params)
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Colors.black)
-      ..loadRequest(Uri.parse(watchUrl));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      extendBodyBehindAppBar: false,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        systemOverlayStyle: const SystemUiOverlayStyle(
-          statusBarColor: Colors.black,
-          statusBarIconBrightness: Brightness.light,
-        ),
-      ),
-      body: WebViewWidget(controller: _webController),
-    );
   }
 }

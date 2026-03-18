@@ -263,6 +263,9 @@ abstract final class NS {
   /// `kabuk:videoUrl` — direct video URL for video posts.
   static const String kabukVideoUrl = '${kabuk}videoUrl';
 
+  /// `kabuk:streamUrl` — resolved direct stream URL for native playback.
+  static const String kabukStreamUrl = '${kabuk}streamUrl';
+
   /// `kabuk:nostrEventId` — Nostr event ID associated with an entity.
   static const String kabukNostrEventId = '${kabuk}nostrEventId';
 
