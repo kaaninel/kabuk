@@ -550,10 +550,7 @@ class _ExploreViewState extends ConsumerState<ExploreView>
     } on Object catch (_) {
       // Swallow — individual feed errors handled inside each function.
     }
-    if (!mounted) {
-      ref.read(_feedRefreshingProvider.notifier).state = false;
-      return;
-    }
+    if (!mounted) return;
     ref.read(_feedRefreshingProvider.notifier).state = false;
     // Absorb the new articles into the main list.
     // The articlesProvider re-reads from the knowledge store where

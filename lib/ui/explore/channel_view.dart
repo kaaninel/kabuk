@@ -19,11 +19,8 @@ import 'package:kabuk/knowledge/store.dart';
 import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/services/feed.dart';
 import 'package:kabuk/ui/explore/article_card.dart';
-import 'package:kabuk/ui/explore/article_detail_page.dart';
 import 'package:kabuk/ui/explore/explore_view.dart';
-import 'package:kabuk/ui/explore/nostr_providers.dart';
 import 'package:kabuk/ui/explore/profile_view.dart';
-import 'package:kabuk/ui/shared/feed_image.dart';
 import 'package:kabuk/ui/theme.dart';
 
 // =============================================================================
@@ -339,7 +336,7 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
         }
 
         final uri = await store.createArticle(
-          title: item.title ?? 'Untitled',
+          title: item.title,
           description: item.description,
           url: item.url,
           videoUrl: item.videoUrl,
@@ -469,7 +466,7 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
                         const SizedBox(height: 2),
                         Text(
                           '${_articles.length} posts · ${widget.sourceType.name}',
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: KabukTheme.textTertiary,
                             fontSize: 13,
                           ),
@@ -507,15 +504,15 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.error_outline_rounded,
                       size: 48,
                       color: KabukTheme.textTertiary,
                     ),
                     const SizedBox(height: KabukTheme.spacingMd),
-                    Text(
+                    const Text(
                       'Could not load content',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: KabukTheme.textSecondary,
                         fontSize: 16,
                       ),

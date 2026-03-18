@@ -153,6 +153,7 @@ class _DocumentListViewState extends ConsumerState<DocumentListView> {
                 backgroundColor: KabukTheme.surface,
                 onRefresh: () async {
                   ref.invalidate(notesListProvider);
+                  await ref.read(notesListProvider.future);
                   widget.onRefresh();
                 },
                 child: ListView.separated(

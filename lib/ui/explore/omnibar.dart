@@ -31,7 +31,6 @@ import 'package:kabuk/ui/explore/discovery_providers.dart';
 import 'package:kabuk/ui/explore/explore_view.dart';
 import 'package:kabuk/ui/explore/feed_management_sheet.dart';
 import 'package:kabuk/ui/explore/profile_view.dart';
-import 'package:kabuk/ui/explore/quick_peek_sheet.dart';
 import 'package:kabuk/ui/explore/topic_following.dart';
 import 'package:kabuk/ui/shared/feed_image.dart';
 import 'package:kabuk/ui/shared/kabuk_keyboard.dart';

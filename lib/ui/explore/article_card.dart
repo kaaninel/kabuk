@@ -20,7 +20,6 @@ import 'package:kabuk/ui/explore/article_detail_page.dart';
 import 'package:kabuk/ui/explore/nostr_providers.dart';
 import 'package:kabuk/ui/explore/channel_view.dart';
 import 'package:kabuk/ui/explore/profile_view.dart';
-import 'package:kabuk/ui/explore/quick_peek_sheet.dart';
 import 'package:kabuk/ui/shared/feed_image.dart';
 import 'package:kabuk/ui/shared/video_thumbnail.dart';
 import 'package:kabuk/ui/theme.dart';

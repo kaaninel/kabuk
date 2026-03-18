@@ -389,7 +389,14 @@ class _ConversationDetailState extends ConsumerState<ConversationDetail> {
           message: msg,
           onTapInfo: () => _showMessageInfo(context, msg),
           onRetry: msg.status == 'failed'
-              ? () => _sendMessage(msg.content)
+              ? () {
+                  // Remove the failed optimistic message before resending
+                  // to avoid duplicates.
+                  setState(() => _pendingOptimistic.removeWhere(
+                    (m) => m.id == msg.id,
+                  ));
+                  _sendMessage(msg.content);
+                }
               : null,
         );
         if (isOptimistic) {

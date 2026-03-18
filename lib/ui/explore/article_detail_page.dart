@@ -5,6 +5,8 @@
 /// to the feed.
 library;
 
+import 'dart:async' show unawaited;
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -19,7 +21,6 @@ import 'package:kabuk/services/feed.dart';
 import 'package:kabuk/services/media_cache.dart';
 import 'package:kabuk/ui/explore/article_card.dart' show bookmarkStatusProvider;
 import 'package:kabuk/ui/explore/browse_session.dart';
-import 'package:kabuk/ui/explore/explore_view.dart' show friendlyError;
 import 'package:kabuk/ui/explore/fourchan_comments.dart';
 import 'package:kabuk/ui/explore/channel_view.dart';
 import 'package:kabuk/ui/explore/nostr_providers.dart';
@@ -587,17 +588,6 @@ class _ArticleDetailContent extends ConsumerWidget {
         url.isEmpty;
   }
 
-  /// Formats an author for display — prefixes hex pubkeys with `@`.
-  String _formatAuthor(String author) {
-    if (author.startsWith('@')) return author; // already formatted
-    // Strip trailing ellipsis before checking for hex pubkey pattern.
-    final base = author.endsWith('…') ? author.substring(0, author.length - 1) : author;
-    if (RegExp(r'^[0-9a-fA-F]{8,}$').hasMatch(base)) {
-      return '@${base.length > 8 ? '${base.substring(0, 8)}…' : base}';
-    }
-    return author;
-  }
-
   /// Strips raw URLs from a title for clean display.
   String _cleanTitle(String title) {
     final cleaned = title
@@ -641,24 +631,6 @@ class _ArticleDetailContent extends ConsumerWidget {
       'Dec',
     ];
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
-  }
-
-  bool _isRedditArticle(ArticleData article) {
-    final source = article.feedSource ?? '';
-    return source.contains('reddit') ||
-        (article.url ?? '').contains('reddit.com');
-  }
-
-  void _openUserProfile(BuildContext context, String author) {
-    final name = author.startsWith('u/') ? author.substring(2) : author;
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => ChannelView(
-          author: name,
-          sourceType: FeedSourceType.reddit,
-        ),
-      ),
-    );
   }
 }
 
@@ -1185,18 +1157,45 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
 
     final hasActivity = unified.isNotEmpty ||
         mergedReactCount > 0 ||
+        mergedReplyCount > 0 ||
         stats.repostCount > 0;
 
-    // When no activity and not expanded, show collapsed "Add a comment" button.
-    if (!hasActivity && !_expanded && !isLoading) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 20),
+    final showComments = hasActivity || _expanded || isLoading;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 16),
+
+        // ── Engagement stats bar (always visible) ──────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+          child: statsAsync.when(
+            skipLoadingOnRefresh: true,
+            data: (s) => _buildStatsBar(
+              context, ref, url, s,
+              redditUpvotes: redditUpvotes,
+              redditComments: redditComments,
+            ),
+            loading: () => _buildStatsBar(
+              context, ref, url, const NostrSocialStats(),
+              redditUpvotes: redditUpvotes,
+              redditComments: redditComments,
+            ),
+            error: (e, _) => _buildStatsBar(
+              context, ref, url, const NostrSocialStats(),
+              redditUpvotes: redditUpvotes,
+              redditComments: redditComments,
+            ),
+          ),
+        ),
+
+        // ── Collapsed "Add a comment" when no activity ─────────────────────
+        if (!showComments)
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
             child: GestureDetector(
-              onTap: () => setState(() => _expanded = true),
+              onTap: _focusCommentInput,
               child: Row(
                 children: [
                   Icon(
@@ -1216,42 +1215,9 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
               ),
             ),
           ),
-        ],
-      );
-    }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 16),
-
-        // ── Engagement stats bar (merged Nostr + Reddit) ───────────────────
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-          child: statsAsync.when(
-            skipLoadingOnRefresh: true,
-            data: (s) => _buildStatsBar(
-              context, ref, url, s,
-              redditUpvotes: redditUpvotes,
-              redditComments: redditComments,
-            ),
-            loading: () => _buildStatsBar(
-              context, ref, url, const NostrSocialStats(),
-              redditUpvotes: redditUpvotes,
-              redditComments: redditComments,
-            ),
-            error: (e, _) => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Text(
-                friendlyError(e),
-                style: const TextStyle(
-                  color: KabukTheme.textTertiary,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-          ),
-        ),
+        // ── Full discussion section ────────────────────────────────────────
+        if (showComments) ...[
 
         // ── Discussion header ──────────────────────────────────────────────
         Padding(
@@ -1259,7 +1225,7 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
           child: Row(
             children: [
               Text(
-                '${unified.length > 0 ? unified.length : ''} '
+                '${unified.isNotEmpty ? unified.length : ''} '
                     'Comment${unified.length != 1 ? 's' : ''}',
                 style: const TextStyle(
                   fontSize: 13,
@@ -1386,6 +1352,8 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
                 ),
             ],
           ),
+
+        ], // end showComments
       ],
     );
   }
@@ -1540,7 +1508,7 @@ class _BookmarkButton extends ConsumerWidget {
   }
 
   Future<void> _toggleBookmark(BuildContext context, WidgetRef ref) async {
-    HapticFeedback.mediumImpact();
+    unawaited(HapticFeedback.mediumImpact());
     final store = ref.read(knowledgeStoreProvider);
 
     final existing = await store.listBookmarks();
