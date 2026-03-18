@@ -1331,8 +1331,33 @@ class _NoteDetailView extends StatelessWidget {
 }
 
 /// Calendar app view.
-class _CalendarAppView extends ConsumerWidget {
+class _CalendarAppView extends ConsumerStatefulWidget {
   const _CalendarAppView();
+
+  @override
+  ConsumerState<_CalendarAppView> createState() => _CalendarAppViewState();
+}
+
+class _CalendarAppViewState extends ConsumerState<_CalendarAppView> {
+  int _refreshKey = 0;
+
+  static String _formatEventDate(DateTime dt) {
+    final now = DateTime.now();
+    final isToday = dt.year == now.year && dt.month == now.month && dt.day == now.day;
+    final tomorrow = now.add(const Duration(days: 1));
+    final isTomorrow = dt.year == tomorrow.year && dt.month == tomorrow.month && dt.day == tomorrow.day;
+
+    final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+    final minute = dt.minute.toString().padLeft(2, '0');
+    final ampm = dt.hour >= 12 ? 'PM' : 'AM';
+    final time = '$hour:$minute $ampm';
+
+    if (isToday) return 'Today at $time';
+    if (isTomorrow) return 'Tomorrow at $time';
+    return '${days[dt.weekday - 1]}, ${months[dt.month - 1]} ${dt.day} at $time';
+  }
 
   void _showAddEventDialog(BuildContext context, WidgetRef ref) {
     final nameController = TextEditingController();
@@ -1376,15 +1401,45 @@ class _CalendarAppView extends ConsumerWidget {
             onPressed: () async {
               final name = nameController.text.trim();
               if (name.isEmpty) return;
+              final description = descController.text.trim().isNotEmpty
+                  ? descController.text.trim()
+                  : null;
+
+              // Close the dialog first.
+              Navigator.pop(ctx);
+
+              // Show date picker.
+              final pickedDate = await showDatePicker(
+                context: context,
+                initialDate: DateTime.now(),
+                firstDate: DateTime(2000),
+                lastDate: DateTime(2100),
+              );
+              if (pickedDate == null || !context.mounted) return;
+
+              // Show time picker.
+              final pickedTime = await showTimePicker(
+                context: context,
+                initialTime: TimeOfDay.now(),
+              );
+              if (pickedTime == null || !context.mounted) return;
+
+              // Combine date + time.
+              final selectedDateTime = DateTime(
+                pickedDate.year,
+                pickedDate.month,
+                pickedDate.day,
+                pickedTime.hour,
+                pickedTime.minute,
+              );
+
               final store = ref.read(knowledgeStoreProvider);
               await store.createEvent(
                 name: name,
-                description: descController.text.trim().isNotEmpty
-                    ? descController.text.trim()
-                    : null,
-                startDate: DateTime.now(),
+                description: description,
+                startDate: selectedDateTime,
               );
-              if (ctx.mounted) Navigator.pop(ctx);
+              if (context.mounted) setState(() => _refreshKey++);
             },
             child: const Text('Add'),
           ),
@@ -1394,7 +1449,7 @@ class _CalendarAppView extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final store = ref.watch(knowledgeStoreProvider);
 
     return Scaffold(
@@ -1405,6 +1460,7 @@ class _CalendarAppView extends ConsumerWidget {
         child: const Icon(Icons.add_rounded),
       ),
       body: FutureBuilder<List<EventData>>(
+        key: ValueKey(_refreshKey),
         future: store.listEvents(limit: 100),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
@@ -1464,7 +1520,7 @@ class _CalendarAppView extends ConsumerWidget {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            event.startDate.toString(),
+                            _formatEventDate(event.startDate!),
                             style: TextStyle(
                               color: KabukTheme.purpleAccent.withAlpha(200),
                               fontSize: 12,

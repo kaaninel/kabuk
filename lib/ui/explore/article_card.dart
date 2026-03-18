@@ -323,15 +323,16 @@ class ArticleCard extends ConsumerWidget {
   }
 
   bool _isVideoContent(ArticleData article) {
-    // Prefer the dedicated videoUrl field (parsed from Reddit API etc.).
     if (article.videoUrl != null && article.videoUrl!.isNotEmpty) return true;
     final url = (article.url ?? '').toLowerCase();
-    return url.contains('v.redd.it') ||
-        url.contains('youtube.com') ||
-        url.contains('youtu.be') ||
-        url.endsWith('.mp4') ||
-        url.endsWith('.webm') ||
-        url.endsWith('.gifv'); // gifv is mp4 wrapped in a .gifv extension
+    return url.isNotEmpty && (
+      url.contains('v.redd.it') ||
+      url.contains('youtube.com') ||
+      url.contains('youtu.be') ||
+      url.endsWith('.mp4') ||
+      url.endsWith('.webm') ||
+      url.endsWith('.gifv')
+    );
   }
 
   bool _isGif(ArticleData article) {

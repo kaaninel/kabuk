@@ -20,6 +20,7 @@ import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/services/feed.dart';
 import 'package:kabuk/ui/explore/article_card.dart';
 import 'package:kabuk/ui/explore/article_detail_page.dart';
+import 'package:kabuk/ui/explore/explore_view.dart';
 import 'package:kabuk/ui/explore/nostr_providers.dart';
 import 'package:kabuk/ui/explore/profile_view.dart';
 import 'package:kabuk/ui/shared/feed_image.dart';
@@ -326,6 +327,11 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
                       ],
                     ),
                   ),
+                  _FollowButton(
+                    author: widget.author,
+                    sourceType: widget.sourceType,
+                    color: color,
+                  ),
                 ],
               ),
             ),
@@ -417,6 +423,133 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
         ],
       ),
       ),
+    );
+  }
+}
+
+// =============================================================================
+// Follow / Subscribe button
+// =============================================================================
+
+/// A button that toggles follow state for a channel author.
+///
+/// Checks existing feed subscriptions to determine initial state and
+/// creates/deletes a subscription on tap.
+class _FollowButton extends ConsumerStatefulWidget {
+  const _FollowButton({
+    required this.author,
+    required this.sourceType,
+    required this.color,
+  });
+
+  final String author;
+  final FeedSourceType sourceType;
+  final Color color;
+
+  @override
+  ConsumerState<_FollowButton> createState() => _FollowButtonState();
+}
+
+class _FollowButtonState extends ConsumerState<_FollowButton> {
+  bool _isFollowing = false;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkFollowState();
+  }
+
+  Future<void> _checkFollowState() async {
+    final store = ref.read(knowledgeStoreProvider);
+    final subs = await store.listFeedSubscriptions();
+    final feedUrl = _authorFeedUrl(widget.author, widget.sourceType);
+    final isFollowing = subs.any(
+      (s) =>
+          s.feedUrl == feedUrl ||
+          s.name == widget.author ||
+          s.name == _authorDisplayName(widget.author, widget.sourceType),
+    );
+    if (mounted) {
+      setState(() {
+        _isFollowing = isFollowing;
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _toggleFollow() async {
+    final store = ref.read(knowledgeStoreProvider);
+
+    if (_isFollowing) {
+      // Unfollow: find and delete the subscription.
+      final subs = await store.listFeedSubscriptions();
+      final feedUrl = _authorFeedUrl(widget.author, widget.sourceType);
+      final match = subs.cast<FeedSubscriptionData?>().firstWhere(
+            (s) =>
+                s!.feedUrl == feedUrl ||
+                s.name == widget.author ||
+                s.name ==
+                    _authorDisplayName(widget.author, widget.sourceType),
+            orElse: () => null,
+          );
+      if (match != null) {
+        await store.deleteFeedSubscription(match.uri);
+      }
+    } else {
+      // Follow: create a new feed subscription.
+      final feedUrl = _authorFeedUrl(widget.author, widget.sourceType);
+      if (feedUrl == null) return;
+      await store.createFeedSubscription(
+        name: widget.author,
+        feedUrl: feedUrl,
+        feedType: widget.sourceType.name,
+      );
+    }
+
+    ref.invalidate(subscriptionsProvider);
+    if (mounted) {
+      setState(() => _isFollowing = !_isFollowing);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const SizedBox(
+        width: 24,
+        height: 24,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    }
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      child: _isFollowing
+          ? OutlinedButton.icon(
+              onPressed: _toggleFollow,
+              icon: const Icon(Icons.check_rounded, size: 16),
+              label: const Text('Following'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: widget.color,
+                side: BorderSide(color: widget.color),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                visualDensity: VisualDensity.compact,
+              ),
+            )
+          : FilledButton.icon(
+              onPressed: _toggleFollow,
+              icon: const Icon(Icons.add_rounded, size: 16),
+              label: const Text('Follow'),
+              style: FilledButton.styleFrom(
+                backgroundColor: widget.color,
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
     );
   }
 }

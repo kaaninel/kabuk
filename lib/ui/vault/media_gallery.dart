@@ -290,9 +290,118 @@ class _MediaTile extends StatelessWidget {
 
   final MediaData media;
 
+  void _openPreview(BuildContext context) {
+    switch (media.type) {
+      case MediaType.image:
+        if (media.contentUrl != null) {
+          // Local file images — show in a fullscreen dialog with basic viewer.
+          final file = File(media.contentUrl!);
+          if (file.existsSync()) {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                fullscreenDialog: true,
+                builder: (_) => Scaffold(
+                  backgroundColor: Colors.black,
+                  appBar: AppBar(
+                    backgroundColor: Colors.black.withAlpha(160),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    leading: IconButton(
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    title: media.name != null ? Text(media.name!) : null,
+                  ),
+                  body: InteractiveViewer(
+                    minScale: 0.5,
+                    maxScale: 5.0,
+                    child: Center(
+                      child: Image.file(file, fit: BoxFit.contain),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }
+        }
+      case MediaType.video:
+        _showMediaInfoSheet(context, Icons.videocam_rounded);
+      case MediaType.audio:
+        _showMediaInfoSheet(context, Icons.audiotrack_rounded);
+      case MediaType.other:
+        _showMediaInfoSheet(context, Icons.insert_drive_file_rounded);
+    }
+  }
+
+  /// Fallback preview sheet for video, audio, and other media types.
+  void _showMediaInfoSheet(BuildContext context, IconData icon) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: KabukTheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(KabukTheme.radiusXl),
+        ),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(KabukTheme.spacingLg),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 48, color: KabukTheme.accentGreen),
+            const SizedBox(height: KabukTheme.spacingMd),
+            if (media.name != null)
+              Text(
+                media.name!,
+                style: const TextStyle(
+                  color: KabukTheme.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            if (media.duration != null) ...[
+              const SizedBox(height: KabukTheme.spacingSm),
+              Text(
+                'Duration: ${media.duration}',
+                style: const TextStyle(
+                  color: KabukTheme.textSecondary,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+            if (media.contentSize != null) ...[
+              const SizedBox(height: KabukTheme.spacingXs),
+              Text(
+                'Size: ${media.contentSize}',
+                style: const TextStyle(
+                  color: KabukTheme.textSecondary,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+            if (media.encodingFormat != null) ...[
+              const SizedBox(height: KabukTheme.spacingXs),
+              Text(
+                'Format: ${media.encodingFormat}',
+                style: const TextStyle(
+                  color: KabukTheme.textSecondary,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+            const SizedBox(height: KabukTheme.spacingLg),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
+    return GestureDetector(
+      onTap: () => _openPreview(context),
+      child: ClipRRect(
       borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
       child: Container(
         color: KabukTheme.surface,
@@ -370,6 +479,7 @@ class _MediaTile extends StatelessWidget {
           ],
         ),
       ),
+    ),
     );
   }
 

@@ -151,6 +151,7 @@ class _ConversationDetailState extends ConsumerState<ConversationDetail> {
 
     return PopScope(
       onPopInvokedWithResult: (_, _) {
+        ref.read(streamingTextProvider.notifier).state = null;
         if (widget.isNewChat) {
           ref.read(activeConversationProvider.notifier).state = null;
         }
