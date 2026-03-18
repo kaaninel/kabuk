@@ -54,7 +54,11 @@ class RedditFeedSource implements FeedSource {
 
     final response = await _mesh.get(
       Uri.parse(jsonUrl),
-      headers: {'Accept': 'application/json', 'User-Agent': _userAgent},
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': _userAgent,
+        'Cookie': 'over18=1',
+      },
     );
 
     if (response.statusCode != 200) {
@@ -230,7 +234,11 @@ class RedditFeedSource implements FeedSource {
       final jsonUrl = _toJsonUrl(url);
       final response = await _mesh.get(
         Uri.parse(jsonUrl),
-        headers: {'Accept': 'application/json', 'User-Agent': _userAgent},
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': _userAgent,
+          'Cookie': 'over18=1',
+        },
       );
       if (response.statusCode != 200) return false;
       final json = jsonDecode(response.body);

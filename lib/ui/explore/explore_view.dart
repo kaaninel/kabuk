@@ -114,7 +114,7 @@ final _feedRefreshingProvider = StateProvider<bool>((ref) => false);
 ///
 /// Reddit feeds use the current [feedSortProvider] value to choose the
 /// appropriate server-side sort endpoint (`/new.json`, `/hot.json`, etc.).
-Future<int> refreshAllFeeds(WidgetRef ref) async {
+Future<int> refreshAllFeeds(WidgetRef ref, {bool force = false}) async {
   final store = ref.read(knowledgeStoreProvider);
   final feedService = ref.read(feedServiceProvider);
   final subs = await store.listFeedSubscriptions();
@@ -132,7 +132,10 @@ Future<int> refreshAllFeeds(WidgetRef ref) async {
   final futures = <Future<List<ArticleData>>>[];
   for (final sub in subs) {
     if (sub.feedUrl == null) continue;
-    futures.add(_fetchFeed(store, feedService, sub, redditSort: redditSort));
+    futures.add(
+      _fetchFeed(store, feedService, sub,
+          redditSort: redditSort, force: force),
+    );
   }
 
   final results = await Future.wait(futures);
@@ -149,12 +152,15 @@ Future<List<ArticleData>> _fetchFeed(
   FeedService feedService,
   FeedSubscriptionData sub, {
   String redditSort = 'hot',
+  bool force = false,
 }) async {
   // Skip if the feed was fetched more recently than its configured interval.
-  final last = sub.lastFetched;
-  if (last != null) {
-    final age = DateTime.now().difference(last);
-    if (age < Duration(minutes: sub.refreshInterval)) return [];
+  if (!force) {
+    final last = sub.lastFetched;
+    if (last != null) {
+      final age = DateTime.now().difference(last);
+      if (age < Duration(minutes: sub.refreshInterval)) return [];
+    }
   }
 
   try {
@@ -531,8 +537,9 @@ class _ExploreViewState extends ConsumerState<ExploreView>
     try {
       if (online) {
         // Refresh traditional feeds and Nostr in parallel.
+        // Force bypasses per-feed refresh interval so stale feeds get retried.
         await Future.wait([
-          refreshAllFeeds(ref),
+          refreshAllFeeds(ref, force: true),
           refreshNostrFeed(ref, limit: 30),
         ]);
         _lastRefreshedAt = DateTime.now();
