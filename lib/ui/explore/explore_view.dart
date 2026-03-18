@@ -1216,9 +1216,26 @@ class _ExploreViewState extends ConsumerState<ExploreView>
             Icons.trending_up_rounded,
             currentSort,
           ),
+          const Spacer(),
+          if (_lastRefreshedAt != null)
+            Text(
+              _formatRefreshTime(_lastRefreshedAt!),
+              style: const TextStyle(
+                color: KabukTheme.textTertiary,
+                fontSize: 11,
+              ),
+            ),
         ],
       ),
     );
+  }
+
+  /// Formats the last refresh timestamp as a relative time string.
+  String _formatRefreshTime(DateTime time) {
+    final diff = DateTime.now().difference(time);
+    if (diff.inSeconds < 60) return 'Updated just now';
+    if (diff.inMinutes < 60) return 'Updated ${diff.inMinutes}m ago';
+    return 'Updated ${diff.inHours}h ago';
   }
 
   Widget _sortChip(

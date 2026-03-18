@@ -351,7 +351,7 @@ class ChatService {
     } on LlmStreamException catch (e) {
       buffer.write('\n\nError: ${e.message}');
     } catch (e) {
-      // ignore unexpected errors
+      buffer.write('\n\nUnexpected error: $e');
     }
 
     _ref.read(streamingTextProvider.notifier).state = null;
@@ -420,6 +420,9 @@ class ChatService {
         // Heuristic fallback: extract first meaningful phrase from user msg.
         title = _heuristicTitle(userMessage);
       }
+
+      // Final fallback if heuristic also returns empty.
+      if (title.trim().isEmpty) title = 'Chat ${DateTime.now().toString().substring(0, 16)}';
 
       // Cap length.
       if (title.length > 60) title = '${title.substring(0, 57)}...';
