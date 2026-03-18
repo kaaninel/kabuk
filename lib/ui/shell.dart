@@ -281,18 +281,18 @@ class _NavIndicatorBar extends StatelessWidget {
       onTap: onTap,
       onHorizontalDragEnd: (details) {
         final velocity = details.primaryVelocity ?? 0;
-        // Follow finger direction: swipe right → next, swipe left → prev.
-        if (velocity > 100) {
+        // Swipe left → next tab, swipe right → prev tab (page-turn style).
+        if (velocity < -100) {
           onSwitchTab(selectedTab + 1);
-        } else if (velocity < -100) {
+        } else if (velocity > 100) {
           onSwitchTab(selectedTab - 1);
         }
       },
       child: Container(
         // Full-width gesture target pinned to the absolute bottom.
         padding: EdgeInsets.only(
-          top: 8,
-          bottom: bottomPadding > 0 ? bottomPadding : 4,
+          top: 16,
+          bottom: bottomPadding > 0 ? bottomPadding : 8,
         ),
         color: Colors.transparent,
         alignment: Alignment.center,
