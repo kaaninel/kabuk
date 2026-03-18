@@ -209,7 +209,7 @@ class KabukKeyboard extends ConsumerStatefulWidget {
 }
 
 class _KabukKeyboardState extends ConsumerState<KabukKeyboard> {
-  static const _keyboardHeight = 220.0;
+  static const _keyboardHeight = 235.0;
   static const _emojiHeight = 270.0;
   static const _galleryHeight = 300.0;
   static const _voiceHeight = 180.0;
@@ -609,7 +609,7 @@ class KabukKeyboardAttachment extends ConsumerWidget {
   /// Focus node to refocus after formatting actions.
   final FocusNode? markdownFocusNode;
 
-  static const _keyboardHeight = 220.0;
+  static const _keyboardHeight = 235.0;
   static const _emojiHeight = 270.0;
   static const _galleryHeight = 300.0;
   static const _voiceHeight = 180.0;
@@ -749,14 +749,14 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
     final isRtl = lang == KeyboardLanguage.ar;
 
     return Container(
-      color: KabukTheme.surface,
+      decoration: const BoxDecoration(
+        color: Color(0xFF1C1C1E),
+        border: Border(top: BorderSide(color: Colors.white10, width: 0.5)),
+      ),
       child: Directionality(
         textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
         child: Column(
           children: [
-            // Quick emoji strip.
-            _QuickEmojiStrip(onInsert: _insertChar),
-            const Divider(height: 1, color: KabukTheme.divider),
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
@@ -833,6 +833,7 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
                   : Icons.keyboard_arrow_up,
               onTap: () => setState(() => _isShifted = !_isShifted),
               isActive: _isShifted,
+              isSpecial: true,
             ),
           ),
           ...row3
@@ -854,6 +855,7 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
                 widget.controller.clear();
                 HapticFeedback.heavyImpact();
               },
+              isSpecial: true,
             ),
           ),
         ],
@@ -878,6 +880,7 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
             child: _KeyButton(
               icon: Icons.backspace_outlined,
               onTap: _backspace,
+              isSpecial: true,
             ),
           ),
         ],
@@ -941,33 +944,42 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
               label: _isSymbol ? 'ABC' : '123',
               onTap: () => setState(() => _isSymbol = !_isSymbol),
               fontSize: 13,
+              isSpecial: true,
             ),
+          ),
+          // Emoji button.
+          SizedBox(
+            width: 40,
+            child: _KeyButton(
+              icon: Icons.emoji_emotions_outlined,
+              onTap: () {
+                ref.read(keyboardModeProvider.notifier).state =
+                    KeyboardMode.emoji;
+              },
+            ),
+          ),
+          // Comma key.
+          SizedBox(
+            width: 36,
+            child: _KeyButton(label: ',', onTap: () => _insertChar(',')),
           ),
           // Language selector.
           SizedBox(
             width: 36,
             child: _KeyButton(icon: Icons.language, onTap: _showLanguagePicker),
           ),
-          // Clipboard menu (paste / copy / cut / select all).
-          SizedBox(
-            width: 36,
-            child: _KeyButton(
-              icon: Icons.content_paste_rounded,
-              onTap: _paste,
-              onLongPress: () => _showClipboardMenu(context),
-            ),
-          ),
-          // Space bar.
+          // Space bar (long-press for clipboard menu).
           Expanded(
             child: _KeyButton(
               label: lang.code,
               onTap: () => _insertChar(' '),
+              onLongPress: () => _showClipboardMenu(context),
               fontSize: 12,
             ),
           ),
           // Period.
           SizedBox(
-            width: 32,
+            width: 36,
             child: _KeyButton(label: '.', onTap: () => _insertChar('.')),
           ),
           // Send / return key.
@@ -1156,45 +1168,8 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
   }
 }
 
-/// A horizontal strip of frequently used emojis above the keyboard.
-class _QuickEmojiStrip extends StatelessWidget {
-  const _QuickEmojiStrip({required this.onInsert});
 
-  final ValueChanged<String> onInsert;
-
-  static const _quickEmojis = [
-    '😂', '❤️', '👍', '🔥', '😭', '🥺', '✨', '😊',
-    '🙏', '💀', '👀', '🤔', '😍', '💯', '🎉', '👏',
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 32,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        itemCount: _quickEmojis.length,
-        itemBuilder: (_, i) {
-          final emoji = _quickEmojis[i];
-          return GestureDetector(
-            onTap: () {
-              HapticFeedback.selectionClick();
-              onInsert(emoji);
-            },
-            child: Container(
-              width: 32,
-              alignment: Alignment.center,
-              child: Text(emoji, style: const TextStyle(fontSize: 18)),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-/// A single keyboard key button with press animation.
+/// A single keyboard key button with press animation and GBoard-style depth.
 class _KeyButton extends StatefulWidget {
   const _KeyButton({
     this.label,
@@ -1202,7 +1177,8 @@ class _KeyButton extends StatefulWidget {
     required this.onTap,
     this.onLongPress,
     this.isActive = false,
-    this.fontSize = 15,
+    this.isSpecial = false,
+    this.fontSize = 17,
   });
 
   final String? label;
@@ -1210,6 +1186,9 @@ class _KeyButton extends StatefulWidget {
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
   final bool isActive;
+
+  /// Whether this is a special key (shift, backspace, 123) with darker bg.
+  final bool isSpecial;
   final double fontSize;
 
   @override
@@ -1221,8 +1200,16 @@ class _KeyButtonState extends State<_KeyButton> {
 
   @override
   Widget build(BuildContext context) {
+    final bgColor = _pressed
+        ? const Color(0xFF5A5A5C)
+        : widget.isActive
+            ? KabukTheme.accentGreen.withAlpha(40)
+            : widget.isSpecial
+                ? const Color(0xFF2C2C2E)
+                : const Color(0xFF3A3A3C);
+
     return Padding(
-      padding: const EdgeInsets.all(1.5),
+      padding: const EdgeInsets.all(2.0),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTapDown: (_) => setState(() => _pressed = true),
@@ -1235,18 +1222,23 @@ class _KeyButtonState extends State<_KeyButton> {
         onLongPress: widget.onLongPress,
         onLongPressEnd: (_) => setState(() => _pressed = false),
         child: AnimatedScale(
-          scale: _pressed ? 0.88 : 1.0,
+          scale: _pressed ? 0.95 : 1.0,
           duration: Duration(milliseconds: _pressed ? 40 : 120),
           curve: _pressed ? Curves.easeIn : Curves.easeOutBack,
           child: AnimatedContainer(
             duration: Duration(milliseconds: _pressed ? 40 : 100),
             decoration: BoxDecoration(
-              color: _pressed
-                  ? KabukTheme.accentGreen.withAlpha(30)
-                  : widget.isActive
-                  ? KabukTheme.accentGreen.withAlpha(40)
-                  : KabukTheme.surfaceVariant,
-              borderRadius: BorderRadius.circular(6),
+              color: bgColor,
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: _pressed
+                  ? null
+                  : const [
+                      BoxShadow(
+                        color: Colors.black26,
+                        offset: Offset(0, 1),
+                        blurRadius: 0,
+                      ),
+                    ],
             ),
             child: Center(
               child: widget.icon != null
@@ -1264,7 +1256,7 @@ class _KeyButtonState extends State<_KeyButton> {
                             ? KabukTheme.accentGreen
                             : KabukTheme.textPrimary,
                         fontSize: widget.fontSize,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: FontWeight.w400,
                       ),
                     ),
             ),
