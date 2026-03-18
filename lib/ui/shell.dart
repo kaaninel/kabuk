@@ -269,15 +269,11 @@ class _NavIndicatorBar extends StatelessWidget {
   /// Height of the visible indicator pill.
   static const double _pillHeight = 5.0;
 
-  /// Width of the sliding pill indicator.
-  static const double _pillWidth = 120.0;
-
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final bottomPadding = MediaQuery.of(context).viewPadding.bottom;
-    // Position pill: slide across the full width based on active tab.
-    final pillLeft = (screenWidth - _pillWidth) * (selectedTab / 3);
+    final pillWidth = screenWidth / 4;
     final color = _tabColors[selectedTab];
 
     return GestureDetector(
@@ -285,37 +281,36 @@ class _NavIndicatorBar extends StatelessWidget {
       onTap: onTap,
       onHorizontalDragEnd: (details) {
         final velocity = details.primaryVelocity ?? 0;
-        if (velocity < -100) {
+        // Follow finger direction: swipe right → next, swipe left → prev.
+        if (velocity > 100) {
           onSwitchTab(selectedTab + 1);
-        } else if (velocity > 100) {
+        } else if (velocity < -100) {
           onSwitchTab(selectedTab - 1);
         }
       },
       child: Container(
-        // Generous tap area: pill + padding + bottom inset.
+        // Full-width gesture target pinned to the absolute bottom.
         padding: EdgeInsets.only(
-          top: 8,
-          bottom: bottomPadding > 0 ? bottomPadding : 8,
+          top: 6,
+          bottom: bottomPadding > 0 ? bottomPadding : 4,
         ),
         color: Colors.transparent,
         alignment: Alignment.center,
         child: SizedBox(
           height: _pillHeight,
-          width: screenWidth * 0.6,
+          width: screenWidth,
           child: Stack(
-            clipBehavior: Clip.none,
             children: [
-              // Sliding pill indicator.
+              // Centered sliding pill — 1/4 of screen width.
               AnimatedPositioned(
                 duration: const Duration(milliseconds: 300),
                 curve: Curves.easeInOut,
-                left: (screenWidth * 0.6 - _pillWidth) *
-                    (selectedTab / 3),
+                left: (screenWidth - pillWidth) / 2,
                 top: 0,
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 300),
                   curve: Curves.easeInOut,
-                  width: _pillWidth,
+                  width: pillWidth,
                   height: _pillHeight,
                   decoration: BoxDecoration(
                     color: color,

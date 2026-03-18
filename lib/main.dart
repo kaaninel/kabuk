@@ -23,8 +23,12 @@ import 'package:kabuk/platform/shared/background_refresh_impl.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Enable fullscreen kiosk mode — hide system navigation and status bars.
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  // Enable fullscreen kiosk mode — edge-to-edge rendering.
+  // On iOS, KabukViewController handles home-indicator hiding and
+  // bottom-edge gesture deferral natively.
+  SystemChrome.setEnabledSystemUIMode(
+    SystemUiMode.edgeToEdge,
+  );
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     systemNavigationBarColor: Colors.transparent,
