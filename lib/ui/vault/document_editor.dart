@@ -85,11 +85,14 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
   @override
   void dispose() {
     _saveTimer?.cancel();
-    // Fire-and-forget save: synchronous portion (ref.read, controller access)
-    // runs before _disposed is set and controllers are disposed. Post-await
-    // code in _saveImmediate is guarded by _disposed.
-    if (_dirty) _saveImmediate();
     _disposed = true;
+    if (_dirty) {
+      // Capture text synchronously before controllers are disposed.
+      _saveImmediate(
+        titleText: _titleController.text,
+        bodyText: _bodyController.text,
+      );
+    }
     _titleFocusNode.removeListener(_onFocusChange);
     _bodyFocusNode.removeListener(_onFocusChange);
     _titleController.dispose();
@@ -181,14 +184,18 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
     _saveTimer = Timer(const Duration(seconds: 2), _saveImmediate);
   }
 
-  Future<void> _saveImmediate() async {
-    if (!_dirty || _disposed) return;
+  Future<void> _saveImmediate({String? titleText, String? bodyText}) async {
+    if (!_dirty) return;
+    // If disposed and no pre-captured text, controllers are gone — bail out.
+    if (_disposed && (titleText == null || bodyText == null)) return;
     _dirty = false;
 
     try {
       final store = ref.read(knowledgeStoreProvider);
-      final title = _titleController.text.trim();
-      final body = _bodyController.text.trim();
+      // Use pre-captured text when provided (dispose path), otherwise read
+      // from controllers synchronously before any await.
+      final title = (titleText ?? _titleController.text).trim();
+      final body = (bodyText ?? _bodyController.text).trim();
 
       // Auto-generate title from body when user hasn't set one.
       final hasUserTitle = title.isNotEmpty && title != 'Untitled';

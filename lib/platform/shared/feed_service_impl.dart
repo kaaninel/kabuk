@@ -32,7 +32,8 @@ class SharedFeedService implements FeedService {
 
   @override
   Future<List<FeedItem>> fetchItems(String url, {FeedSourceType? type}) async {
-    final sourceType = type ?? await detectType(url);
+    final sourceType =
+        type ?? await detectType(url).timeout(const Duration(seconds: 10), onTimeout: () => null);
     if (sourceType == null) {
       throw const FeedDetectionException(
         'Could not detect feed type. Please specify the type explicitly.',

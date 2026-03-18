@@ -84,6 +84,9 @@ class _CapturePreviewState extends ConsumerState<CapturePreview> {
       if (mounted) setState(() {});
     } on Object catch (e, st) {
       debugPrint('Video init failed: $e\n$st');
+      // Dispose the controller to avoid leaking native resources.
+      _videoController?.dispose();
+      _videoController = null;
       // Still set state so the UI shows a placeholder instead of spinner.
       if (mounted) setState(() {});
     }

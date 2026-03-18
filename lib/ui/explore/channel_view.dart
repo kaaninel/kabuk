@@ -286,11 +286,12 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
 
     final newArticles = <ArticleData>[];
     for (final item in items) {
-      if (existingUrls.contains(item.url)) continue;
+      // Check global store first to avoid cross-session duplicates.
       if (globalUrls.containsKey(item.url)) {
         newArticles.add(globalUrls[item.url]!);
         continue;
       }
+      if (existingUrls.contains(item.url)) continue;
 
       final uri = await store.createArticle(
         title: item.title,

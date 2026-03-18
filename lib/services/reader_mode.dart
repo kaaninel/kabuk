@@ -65,7 +65,12 @@ class ReaderModeService {
     WebExtraction? preExtracted,
     String? feedSource,
   }) async {
-    final extraction = preExtracted ?? await WebExtractor.fromUrl(url);
+    final extraction =
+        preExtracted ??
+        await WebExtractor.fromUrl(url).timeout(
+          const Duration(seconds: 15),
+          onTimeout: () => WebExtraction(url: url, title: '', textContent: ''),
+        );
     return _pipeline(extraction, feedSource: feedSource);
   }
 

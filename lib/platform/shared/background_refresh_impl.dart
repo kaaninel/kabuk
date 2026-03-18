@@ -9,7 +9,6 @@
 /// without starting the Flutter UI.
 library;
 
-import 'dart:async';
 import 'dart:developer' as dev;
 
 import 'package:drift_flutter/drift_flutter.dart';
@@ -48,6 +47,7 @@ void callbackDispatcher() {
           error: e,
           stackTrace: st,
         );
+        return Future.value(false);
       }
     } else if (taskName == kDmPollTaskName) {
       try {
@@ -60,6 +60,7 @@ void callbackDispatcher() {
           error: e,
           stackTrace: st,
         );
+        return Future.value(false);
       }
     }
 
@@ -155,7 +156,7 @@ Future<void> _runFeedRefresh() async {
       }
     }
   } finally {
-    unawaited(store.close());
+    await store.close();
     await db.close();
   }
 

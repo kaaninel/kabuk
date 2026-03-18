@@ -504,7 +504,7 @@ class _ArticleDetailContent extends ConsumerWidget {
           ),
 
         // ── Unified discussion (Nostr + Reddit + 4chan) ────────────────────
-        _DiscussionSection(article: article),
+        _DiscussionSection(key: ValueKey(article.uri), article: article),
 
         // ── Next-article hint ─────────────────────────────────────────────
         // ── Swipe navigation hint ─────────────────────────────────────────
@@ -1080,7 +1080,7 @@ class _UnifiedComment {
 /// replies (for 4chan posts) into a single chronological stream.
 /// Each comment is badged with its source icon.
 class _DiscussionSection extends ConsumerStatefulWidget {
-  const _DiscussionSection({required this.article});
+  const _DiscussionSection({super.key, required this.article});
 
   final ArticleData article;
 

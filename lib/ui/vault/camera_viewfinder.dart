@@ -89,7 +89,11 @@ class _CameraViewfinderState extends ConsumerState<CameraViewfinder>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _recordingTimer?.cancel();
-    _controller?.dispose();
+    // Null-out before disposing to prevent double-dispose if a lifecycle
+    // event races with widget disposal.
+    final c = _controller;
+    _controller = null;
+    c?.dispose();
     super.dispose();
   }
 
@@ -99,8 +103,8 @@ class _CameraViewfinderState extends ConsumerState<CameraViewfinder>
     if (controller == null || !controller.value.isInitialized) return;
 
     if (state == AppLifecycleState.inactive) {
-      controller.dispose();
       _controller = null;
+      controller.dispose();
     } else if (state == AppLifecycleState.resumed) {
       _initCamera();
     }
@@ -142,6 +146,7 @@ class _CameraViewfinderState extends ConsumerState<CameraViewfinder>
 
   Future<void> _setupController(CameraDescription camera) async {
     final previous = _controller;
+    _controller = null;
     if (previous != null) {
       await previous.dispose();
     }
@@ -157,7 +162,11 @@ class _CameraViewfinderState extends ConsumerState<CameraViewfinder>
 
     try {
       await controller.initialize();
-      await controller.setFlashMode(ref.read(flashModeProvider));
+      // Re-apply flash mode — best-effort since some cameras (e.g. front)
+      // may not support it.
+      try {
+        await controller.setFlashMode(ref.read(flashModeProvider));
+      } catch (_) {}
 
       if (mounted) {
         setState(() => _isInitializing = false);

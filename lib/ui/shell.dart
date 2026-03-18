@@ -104,7 +104,7 @@ class _KabukShellState extends ConsumerState<KabukShell>
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeInOut,
         )
-        .then((_) => _animating = false);
+        .whenComplete(() => _animating = false);
   }
 
   @override
@@ -168,7 +168,7 @@ class _KabukShellState extends ConsumerState<KabukShell>
       // Keep PageView in sync when selectedTabProvider changes externally.
       if (!_animating &&
           _pageController.hasClients &&
-          _pageController.page?.round() != next) {
+          (_pageController.page?.round() ?? -1) != next) {
         _animating = true;
         _pageController
             .animateToPage(
@@ -176,7 +176,7 @@ class _KabukShellState extends ConsumerState<KabukShell>
               duration: const Duration(milliseconds: 300),
               curve: Curves.easeInOut,
             )
-            .then((_) => _animating = false);
+            .whenComplete(() => _animating = false);
       }
     });
 

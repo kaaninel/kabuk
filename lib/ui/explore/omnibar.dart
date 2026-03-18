@@ -57,9 +57,26 @@ bool _isHashtagQuery(String q) {
 /// Detects if a query looks like a URL.
 bool _isUrlQuery(String q) {
   final trimmed = q.trim();
-  return trimmed.startsWith('http://') ||
-      trimmed.startsWith('https://') ||
-      (trimmed.contains('.') && !trimmed.contains(' ') && trimmed.length > 4);
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return true;
+  }
+  // Only treat as URL if it has a recognized TLD and no spaces.
+  if (trimmed.contains(' ')) return false;
+  const tlds = {
+    '.com', '.org', '.net', '.io', '.co', '.dev', '.app', '.edu', '.gov',
+    '.me', '.info', '.xyz', '.news', '.blog', '.tech', '.ai', '.tv', '.uk',
+    '.de', '.fr', '.jp', '.ru', '.nl', '.se', '.no', '.fi', '.us', '.ca',
+    '.au', '.br', '.in', '.it', '.es', '.pt', '.pl', '.cz', '.be', '.ch',
+    '.at', '.eu',
+  };
+  final lower = trimmed.toLowerCase();
+  return tlds.any((tld) {
+    final idx = lower.indexOf(tld);
+    // TLD must appear at end or be followed by a path separator.
+    return idx > 0 &&
+        (idx + tld.length == lower.length ||
+            lower[idx + tld.length] == '/');
+  });
 }
 
 /// Extracts a clean subreddit name from a query (e.g. "r/flutter" → "flutter").
