@@ -25,6 +25,7 @@ import 'package:kabuk/knowledge/types/saved_search.dart';
 import 'package:kabuk/services/nip19.dart';
 import 'package:kabuk/services/nostr.dart';
 import 'package:kabuk/services/nostr_utils.dart';
+import 'package:kabuk/ui/explore/article_detail_page.dart' show openUrlSmart;
 import 'package:kabuk/ui/explore/browse_session.dart';
 import 'package:kabuk/ui/explore/discovery_providers.dart';
 import 'package:kabuk/ui/explore/explore_view.dart';
@@ -607,13 +608,13 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
     // For plain text queries the results list is already visible.
   }
 
-  /// Opens a URL in-app via [QuickPeekSheet].
+  /// Opens a URL in-app, routing Reddit URLs to native views.
   void _openExternal(String url) {
     var openUrl = url.trim();
     if (!openUrl.startsWith('http://') && !openUrl.startsWith('https://')) {
       openUrl = 'https://$openUrl';
     }
-    QuickPeekSheet.show(context, url: openUrl);
+    openUrlSmart(context, openUrl);
   }
 
   // ---------------------------------------------------------------------------

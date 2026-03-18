@@ -36,6 +36,45 @@ import 'package:kabuk/ui/theme.dart';
 // Route helper
 // =============================================================================
 
+/// Regex patterns for detecting in-app navigable URLs.
+final _redditSubPattern = RegExp(r'reddit\.com/r/(\w+)', caseSensitive: false);
+final _redditUserPattern = RegExp(r'reddit\.com/u(?:ser)?/(\w+)', caseSensitive: false);
+
+/// Opens a URL intelligently: routes Reddit subreddit/user URLs to native
+/// ChannelView, and everything else to the in-app browser (QuickPeekSheet).
+void openUrlSmart(BuildContext context, String url, {String? title}) {
+  // Reddit subreddit → native ChannelView
+  final subMatch = _redditSubPattern.firstMatch(url);
+  if (subMatch != null) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ChannelView(
+          channel: subMatch.group(1)!,
+          sourceType: FeedSourceType.reddit,
+        ),
+      ),
+    );
+    return;
+  }
+
+  // Reddit user → native ChannelView
+  final userMatch = _redditUserPattern.firstMatch(url);
+  if (userMatch != null) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ChannelView(
+          author: userMatch.group(1)!,
+          sourceType: FeedSourceType.reddit,
+        ),
+      ),
+    );
+    return;
+  }
+
+  // Everything else → in-app browser
+  QuickPeekSheet.show(context, url: url, title: title);
+}
+
 /// Navigation helper — pushes [ArticleDetailPage] on the navigator.
 ///
 /// Uses a slide-up transition for a smooth Reddit-like feel.
@@ -435,22 +474,19 @@ class _ArticleDetailContent extends ConsumerWidget {
                     ),
                     onTapLink: (text, href, title) {
                       if (href == null) return;
-                      QuickPeekSheet.show(
-                        context,
-                        url: href,
-                        title: text.isNotEmpty ? text : null,
-                      );
+                      openUrlSmart(context, href, title: text.isNotEmpty ? text : null);
                     },
                   )
                 : _RedditLinkText(
                     text: _cleanDescription(_stripStatsLine(article.description!)),
                     onSubredditTap: (sub) {
-                      // Navigate in-app to the subreddit rather than opening browser.
-                      ref
-                          .read(browseSessionProvider.notifier)
-                          .browse('r/$sub', 'r/$sub', 'reddit');
-                      Navigator.of(context).popUntil(
-                        (route) => route.isFirst,
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => ChannelView(
+                            channel: sub,
+                            sourceType: FeedSourceType.reddit,
+                          ),
+                        ),
                       );
                     },
                     onUserTap: (user) {
@@ -764,15 +800,24 @@ class _ArticleOmniBar extends ConsumerWidget implements PreferredSizeWidget {
           color: _sourceColor.withAlpha(210),
           onTap: () {
             if (_isReddit) {
-              final sub = channel.startsWith('r/') ? channel : 'r/$channel';
-              ref.read(browseSessionProvider.notifier).browse(sub, sub, 'reddit');
+              final sub = channel.startsWith('r/')
+                  ? channel.substring(2)
+                  : channel;
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => ChannelView(
+                    channel: sub,
+                    sourceType: FeedSourceType.reddit,
+                  ),
+                ),
+              );
             } else if (_isFourchan) {
               final board = channel.replaceAll('/', '');
               ref
                   .read(browseSessionProvider.notifier)
                   .browse('4chan://$board', channel, 'fourchan');
+              Navigator.of(context).popUntil((route) => route.isFirst);
             }
-            Navigator.of(context).popUntil((route) => route.isFirst);
           },
         ),
       );

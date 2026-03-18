@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/types/follow.dart';
 import 'package:kabuk/services/feed.dart';
+import 'package:kabuk/ui/explore/article_detail_page.dart' show openUrlSmart;
 import 'package:kabuk/ui/shared/feed_image.dart';
 import 'package:kabuk/ui/theme.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -97,7 +98,7 @@ class _QuickPeekSheetState extends State<QuickPeekSheet> {
       style.textContent = ':root { color-scheme: dark; }';
       document.head && document.head.appendChild(style);
     }
-  } catch(e) {}
+  } catch (e) {}
 })();
 ''').ignore();
             }
@@ -544,7 +545,7 @@ class _PeekUrlDialogState extends State<PeekUrlDialog> {
       url = 'https://$url';
     }
 
-    QuickPeekSheet.show(context, url: url);
+    openUrlSmart(context, url);
   }
 
   @override

@@ -108,17 +108,21 @@ class _ConversationDetailState extends ConsumerState<ConversationDetail> {
     _scrollScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollScheduled = false;
-      if (_scrollController.hasClients) {
+      if (!_scrollController.hasClients) return;
+      try {
+        final target = _scrollController.position.maxScrollExtent;
         if (animated) {
           _scrollController.animateTo(
-            _scrollController.position.maxScrollExtent,
+            target,
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeOut,
           );
         } else {
-          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+          _scrollController.jumpTo(target);
         }
         _isNearBottom = true;
+      } catch (_) {
+        // Scroll position may be invalid during rapid state changes.
       }
     });
   }

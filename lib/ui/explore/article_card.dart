@@ -446,7 +446,7 @@ class ArticleCard extends ConsumerWidget {
     if (!article.read) {
       store.markArticleRead(article.uri);
     }
-    QuickPeekSheet.show(context, url: url, title: article.name);
+    openUrlSmart(context, url, title: article.name);
   }
 }
 
@@ -615,15 +615,18 @@ class _SourceHeader extends StatelessWidget {
     return source.split('/').last.isNotEmpty ? source.split('/').last : 'Feed';
   }
 
-  /// Opens the subreddit in the quick-peek in-app WebView.
+  /// Opens the subreddit natively via [ChannelView].
   void _openSubreddit(BuildContext context, String subreddit) {
     final name = subreddit.startsWith('r/')
         ? subreddit.substring(2)
         : subreddit;
-    QuickPeekSheet.show(
-      context,
-      url: 'https://www.reddit.com/r/$name',
-      title: subreddit,
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ChannelView(
+          channel: name,
+          sourceType: FeedSourceType.reddit,
+        ),
+      ),
     );
   }
 

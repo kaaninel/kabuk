@@ -111,6 +111,13 @@ class _DocumentListViewState extends ConsumerState<DocumentListView> {
         );
     }
 
+    // Pinned documents always appear first.
+    result.sort((a, b) {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      return 0;
+    });
+
     return result;
   }
 
@@ -510,14 +517,25 @@ class _DocumentCard extends StatelessWidget {
                         if (note.tags.isNotEmpty) ...[
                           const SizedBox(width: 8),
                           Expanded(
-                            child: SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: Row(
-                                children: note.tags
+                            child: Row(
+                              children: [
+                                ...note.tags
                                     .take(3)
-                                    .map((tag) => _TagChip(tag: tag))
-                                    .toList(),
-                              ),
+                                    .map((tag) => _TagChip(tag: tag)),
+                                if (note.tags.length > 3)
+                                  Padding(
+                                    padding: const EdgeInsets.only(left: 4),
+                                    child: Text(
+                                      '+${note.tags.length - 3}',
+                                      style: TextStyle(
+                                        color: KabukTheme.textTertiary
+                                            .withAlpha(150),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
                         ],

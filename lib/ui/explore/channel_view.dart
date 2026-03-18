@@ -39,6 +39,15 @@ String? _authorFeedUrl(String author, FeedSourceType source) {
   };
 }
 
+/// Builds the feed URL to fetch a channel's content from a given source.
+String? _channelFeedUrl(String channel, FeedSourceType source) {
+  return switch (source) {
+    FeedSourceType.reddit =>
+      'https://www.reddit.com/r/$channel/hot.json?limit=50&raw_json=1',
+    _ => null,
+  };
+}
+
 /// Returns the display prefix for an author from a given source.
 String _authorDisplayName(String author, FeedSourceType source) {
   return switch (source) {
@@ -94,15 +103,25 @@ IconData _sourceIcon(FeedSourceType source) {
 /// ));
 /// ```
 class ChannelView extends ConsumerStatefulWidget {
-  /// Creates a [ChannelView] for the given [author] and [sourceType].
+  /// Creates a [ChannelView] for the given [author] or [channel].
+  ///
+  /// Provide [author] for user profiles, or [channel] for
+  /// subreddit / feed channels. At least one must be provided.
   const ChannelView({
-    required this.author,
+    this.author,
+    this.channel,
     required this.sourceType,
     super.key,
-  });
+  }) : assert(author != null || channel != null);
 
   /// The author identifier (username, pubkey, etc.).
-  final String author;
+  final String? author;
+
+  /// The channel identifier (subreddit name, etc.).
+  final String? channel;
+
+  /// Whether this view is showing a channel (not an author).
+  bool get isChannel => channel != null;
 
   /// The content source type.
   final FeedSourceType sourceType;
@@ -132,22 +151,40 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
       final store = ref.read(knowledgeStoreProvider);
       final feedService = ref.read(feedServiceProvider);
 
-      // First, show any articles we already have from this author.
-      final existing = await store.listArticles(
-        author: widget.author,
-        limit: 200,
-      );
+      if (widget.isChannel) {
+        // Channel mode: load articles from the knowledge store by tag.
+        final tag = 'r/${widget.channel}';
+        final all = await store.listArticles(limit: 200);
+        final existing = all
+            .where((a) => a.tags.contains(tag))
+            .toList();
 
-      if (mounted) {
-        setState(() {
-          _articles = existing;
-          // If we have cached articles, stop showing full-screen loader.
-          if (existing.isNotEmpty) _isLoading = false;
-        });
+        if (mounted) {
+          setState(() {
+            _articles = existing;
+            if (existing.isNotEmpty) _isLoading = false;
+          });
+        }
+
+        // Fetch fresh content from the subreddit.
+        await _fetchChannelContent(store, feedService);
+      } else {
+        // Author mode: load articles from the knowledge store by author.
+        final existing = await store.listArticles(
+          author: widget.author,
+          limit: 200,
+        );
+
+        if (mounted) {
+          setState(() {
+            _articles = existing;
+            if (existing.isNotEmpty) _isLoading = false;
+          });
+        }
+
+        // Then fetch fresh content from the source.
+        await _fetchAuthorContent(store, feedService);
       }
-
-      // Then fetch fresh content from the source.
-      await _fetchAuthorContent(store, feedService);
     } on Object catch (e, st) {
       dev.log(
         'Channel load failed: $e',
@@ -168,7 +205,7 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
     KnowledgeStore store,
     FeedService feedService,
   ) async {
-    final feedUrl = _authorFeedUrl(widget.author, widget.sourceType);
+    final feedUrl = _authorFeedUrl(widget.author!, widget.sourceType);
     if (feedUrl == null) {
       // No remote feed URL for this source type — just show cached articles.
       if (mounted) setState(() => _isLoading = false);
@@ -209,7 +246,7 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
           description: item.description,
           url: item.url,
           videoUrl: item.videoUrl,
-          author: item.author ?? widget.author,
+          author: item.author ?? widget.author!,
           image: item.imageUrl,
           datePublished: item.datePublished,
           tags: item.categories,
@@ -222,7 +259,7 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
           description: item.description,
           url: item.url,
           videoUrl: item.videoUrl,
-          author: item.author ?? widget.author,
+          author: item.author ?? widget.author!,
           image: item.imageUrl,
           datePublished: item.datePublished,
           tags: item.categories,
@@ -232,19 +269,23 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
 
       if (mounted && newArticles.isNotEmpty) {
         setState(() {
-          // Merge and sort by date, newest first.
-          final merged = {..._articles, ...newArticles}.toList()
-            ..sort((a, b) {
-              final da = a.datePublished ?? DateTime(2000);
-              final db = b.datePublished ?? DateTime(2000);
-              return db.compareTo(da);
-            });
+          final seen = <String>{};
+          final merged = <ArticleData>[];
+          for (final a in [..._articles, ...newArticles]) {
+            final key = a.url ?? a.uri;
+            if (seen.add(key)) merged.add(a);
+          }
+          merged.sort((a, b) {
+            final da = a.datePublished ?? DateTime(2000);
+            final db = b.datePublished ?? DateTime(2000);
+            return db.compareTo(da);
+          });
           _articles = merged;
         });
       }
     } on Object catch (e) {
       dev.log(
-        'Channel fetch failed for ${widget.author}: $e',
+        'Channel fetch failed for ${widget.author ?? widget.channel}: $e',
         name: 'ChannelView',
       );
       // Non-fatal — we still show cached articles.
@@ -253,10 +294,102 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
     if (mounted) setState(() => _isLoading = false);
   }
 
+  /// Fetches subreddit/channel content from the source.
+  Future<void> _fetchChannelContent(
+    KnowledgeStore store,
+    FeedService feedService,
+  ) async {
+    final feedUrl = _channelFeedUrl(widget.channel!, widget.sourceType);
+    if (feedUrl == null) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
+
+    try {
+      final items = await feedService.fetchItems(
+        feedUrl,
+        type: widget.sourceType,
+      );
+
+      final existingUrls = {
+        for (final a in _articles)
+          if (a.url != null) a.url!,
+      };
+
+      final allExisting = await store.listArticles(limit: 2000);
+      final globalUrls = {
+        for (final a in allExisting)
+          if (a.url != null) a.url!: a,
+      };
+
+      final newArticles = <ArticleData>[];
+      for (final item in items) {
+        if (existingUrls.contains(item.url)) continue;
+        if (globalUrls.containsKey(item.url)) {
+          newArticles.add(globalUrls[item.url]!);
+          continue;
+        }
+
+        final uri = await store.createArticle(
+          title: item.title ?? 'Untitled',
+          description: item.description,
+          url: item.url,
+          videoUrl: item.videoUrl,
+          author: item.author ?? '',
+          feedSource: widget.sourceType.name,
+          image: item.imageUrl,
+          datePublished: item.datePublished,
+          tags: item.categories,
+          galleryImages: item.galleryImages,
+        );
+
+        newArticles.add(ArticleData(
+          uri: uri,
+          name: item.title,
+          description: item.description,
+          url: item.url,
+          videoUrl: item.videoUrl,
+          author: item.author ?? '',
+          image: item.imageUrl,
+          datePublished: item.datePublished,
+          tags: item.categories,
+          galleryImages: item.galleryImages,
+        ));
+      }
+
+      if (mounted && newArticles.isNotEmpty) {
+        setState(() {
+          // Deduplicate by URL, keeping existing articles first.
+          final seen = <String>{};
+          final merged = <ArticleData>[];
+          for (final a in [..._articles, ...newArticles]) {
+            final key = a.url ?? a.uri;
+            if (seen.add(key)) merged.add(a);
+          }
+          merged.sort((a, b) {
+            final da = a.datePublished ?? DateTime(2000);
+            final db = b.datePublished ?? DateTime(2000);
+            return db.compareTo(da);
+          });
+          _articles = merged;
+        });
+      }
+    } on Object catch (e) {
+      dev.log(
+        'Channel fetch failed for r/${widget.channel}: $e',
+        name: 'ChannelView',
+      );
+    }
+
+    if (mounted) setState(() => _isLoading = false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final color = _sourceColor(widget.sourceType);
-    final displayName = _authorDisplayName(widget.author, widget.sourceType);
+    final displayName = widget.isChannel
+        ? 'r/${widget.channel}'
+        : _authorDisplayName(widget.author!, widget.sourceType);
 
     return Scaffold(
       backgroundColor: KabukTheme.background,
@@ -329,6 +462,7 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
                   ),
                   _FollowButton(
                     author: widget.author,
+                    channel: widget.channel,
                     sourceType: widget.sourceType,
                     color: color,
                   ),
@@ -437,14 +571,22 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
 /// creates/deletes a subscription on tap.
 class _FollowButton extends ConsumerStatefulWidget {
   const _FollowButton({
-    required this.author,
+    this.author,
+    this.channel,
     required this.sourceType,
     required this.color,
   });
 
-  final String author;
+  final String? author;
+  final String? channel;
   final FeedSourceType sourceType;
   final Color color;
+
+  /// The display name for this follow target.
+  String get displayName {
+    if (channel != null) return 'r/$channel';
+    return author ?? '';
+  }
 
   @override
   ConsumerState<_FollowButton> createState() => _FollowButtonState();
@@ -463,7 +605,9 @@ class _FollowButtonState extends ConsumerState<_FollowButton> {
   Future<void> _checkFollowState() async {
     final store = ref.read(knowledgeStoreProvider);
     final subs = await store.listFeedSubscriptions();
-    final feedUrl = _authorFeedUrl(widget.author, widget.sourceType);
+    final feedUrl = widget.channel != null
+        ? _channelFeedUrl(widget.channel!, widget.sourceType)
+        : _authorFeedUrl(widget.author!, widget.sourceType);
     final isFollowing = subs.any(
       (s) => s.feedUrl == feedUrl,
     );
@@ -481,13 +625,11 @@ class _FollowButtonState extends ConsumerState<_FollowButton> {
     if (_isFollowing) {
       // Unfollow: find and delete the subscription.
       final subs = await store.listFeedSubscriptions();
-      final feedUrl = _authorFeedUrl(widget.author, widget.sourceType);
+      final feedUrl = widget.channel != null
+          ? _channelFeedUrl(widget.channel!, widget.sourceType)
+          : _authorFeedUrl(widget.author!, widget.sourceType);
       final match = subs.cast<FeedSubscriptionData?>().firstWhere(
-            (s) =>
-                s!.feedUrl == feedUrl ||
-                s.name == widget.author ||
-                s.name ==
-                    _authorDisplayName(widget.author, widget.sourceType),
+            (s) => s!.feedUrl == feedUrl,
             orElse: () => null,
           );
       if (match != null) {
@@ -495,10 +637,12 @@ class _FollowButtonState extends ConsumerState<_FollowButton> {
       }
     } else {
       // Follow: create a new feed subscription.
-      final feedUrl = _authorFeedUrl(widget.author, widget.sourceType);
+      final feedUrl = widget.channel != null
+          ? _channelFeedUrl(widget.channel!, widget.sourceType)
+          : _authorFeedUrl(widget.author!, widget.sourceType);
       if (feedUrl == null) return;
       await store.createFeedSubscription(
-        name: widget.author,
+        name: widget.displayName,
         feedUrl: feedUrl,
         feedType: widget.sourceType.name,
       );

@@ -66,6 +66,7 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
   List<ContentBlockData> _blocks = [];
   Timer? _saveTimer;
   bool _dirty = false;
+  bool _navigating = false;
 
   @override
   void initState() {
@@ -380,6 +381,8 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
             children: [
               IconButton(
                 onPressed: () async {
+                  if (_navigating) return;
+                  _navigating = true;
                   if (_dirty) await _saveImmediate();
                   widget.onBack();
                 },
