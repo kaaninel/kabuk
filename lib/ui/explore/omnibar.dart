@@ -633,27 +633,35 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
     );
 
     try {
-      final service = ref.read(readerModeServiceProvider);
-      final articleUri = await service.processUrl(feedUrl);
-
-      // Create a subscription so the page appears as a channel.
       final store = ref.read(knowledgeStoreProvider);
       final domain = Uri.tryParse(feedUrl)?.host ?? feedUrl;
+
+      // Create or find the subscription first so we have the URI.
+      String? subUri;
       final existing = await store.listFeedSubscriptions();
-      if (!existing.any((s) => s.feedUrl == feedUrl)) {
-        await store.createFeedSubscription(
+      final match = existing.where((s) => s.feedUrl == feedUrl).firstOrNull;
+      if (match != null) {
+        subUri = match.uri;
+      } else {
+        subUri = await store.createFeedSubscription(
           name: domain,
           feedUrl: feedUrl,
           feedType: 'web',
         );
       }
 
+      // Parse the page with feedSource set to the subscription URI.
+      final service = ref.read(readerModeServiceProvider);
+      final articleUri = await service.processUrl(
+        feedUrl,
+        feedSource: subUri,
+      );
+
       ref.invalidate(subscriptionsProvider);
       ref.invalidate(articlesProvider);
 
       if (mounted) {
         ScaffoldMessenger.of(context).clearSnackBars();
-        // Navigate to the reader view for the parsed article.
         await Navigator.of(context).push<void>(
           MaterialPageRoute<void>(
             builder: (_) => ReaderView(articleUri: articleUri, url: feedUrl),

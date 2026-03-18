@@ -63,9 +63,10 @@ class ReaderModeService {
   Future<String> processUrl(
     String url, {
     WebExtraction? preExtracted,
+    String? feedSource,
   }) async {
     final extraction = preExtracted ?? await WebExtractor.fromUrl(url);
-    return _pipeline(extraction);
+    return _pipeline(extraction, feedSource: feedSource);
   }
 
   /// Process a URL with a pre-loaded WebView (extracts via JS).
@@ -77,12 +78,13 @@ class ReaderModeService {
   Future<String> processFromWebView(
     WebViewController controller, {
     required String url,
+    String? feedSource,
   }) async {
     final extraction = await WebExtractor.fromWebView(
       controller,
       url: url,
     );
-    return _pipeline(extraction);
+    return _pipeline(extraction, feedSource: feedSource);
   }
 
   // -------------------------------------------------------------------------
@@ -90,9 +92,12 @@ class ReaderModeService {
   // -------------------------------------------------------------------------
 
   /// Runs the full extract → store → enhance pipeline.
-  Future<String> _pipeline(WebExtraction extraction) async {
+  Future<String> _pipeline(
+    WebExtraction extraction, {
+    String? feedSource,
+  }) async {
     // Step 1 — Store basic article immediately.
-    final articleUri = await _storeArticle(extraction);
+    final articleUri = await _storeArticle(extraction, feedSource: feedSource);
 
     // Step 2 — Create content blocks from the extracted markdown.
     final blockUris = await _createContentBlocks(
@@ -113,7 +118,10 @@ class ReaderModeService {
   // -------------------------------------------------------------------------
 
   /// Creates an Article entity in the knowledge store from [extraction].
-  Future<String> _storeArticle(WebExtraction extraction) {
+  Future<String> _storeArticle(
+    WebExtraction extraction, {
+    String? feedSource,
+  }) {
     final domain = _extractDomain(extraction.url);
     final summary = extraction.textContent.length > 500
         ? extraction.textContent.substring(0, 500)
@@ -125,7 +133,7 @@ class ReaderModeService {
       url: extraction.url,
       author: extraction.author,
       image: extraction.images.firstOrNull,
-      feedSource: 'reader-mode',
+      feedSource: feedSource ?? 'reader-mode',
       datePublished: extraction.datePublished,
       tags: ['reader-mode', if (domain.isNotEmpty) domain],
       galleryImages: extraction.images,
