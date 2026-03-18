@@ -142,6 +142,7 @@ class FilterBar extends StatelessWidget {
       ),
       builder: (ctx) {
         return SafeArea(
+          bottom: false,
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Column(

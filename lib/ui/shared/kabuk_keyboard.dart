@@ -1005,6 +1005,7 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
         ),
       ),
       builder: (ctx) => SafeArea(
+        bottom: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1102,6 +1103,7 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
         ),
       ),
       builder: (ctx) => SafeArea(
+        bottom: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

@@ -856,6 +856,7 @@ class _AttachmentPicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
+      bottom: false,
       child: Padding(
         padding: const EdgeInsets.all(KabukTheme.spacingMd),
         child: Column(
@@ -1147,6 +1148,7 @@ class _PinnedMessagesSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return SafeArea(
+      bottom: false,
       child: Padding(
         padding: const EdgeInsets.all(KabukTheme.spacingMd),
         child: Column(
@@ -1601,6 +1603,7 @@ class _BubbleOptionsSheet extends ConsumerWidget {
     final isOwn = message.role == 'user';
 
     return SafeArea(
+      bottom: false,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

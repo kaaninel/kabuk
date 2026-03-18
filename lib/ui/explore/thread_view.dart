@@ -158,6 +158,7 @@ class _ThreadViewState extends ConsumerState<ThreadView> {
         border: Border(top: BorderSide(color: KabukTheme.divider)),
       ),
       child: SafeArea(
+        bottom: false,
         child: Row(
           children: [
             Expanded(

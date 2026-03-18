@@ -33,15 +33,12 @@ final chatSheetVisibleProvider = StateProvider<bool>((ref) => false);
 /// [ProfileView] for the given pubkey. Cleared after navigation.
 final pendingProfilePubkeyProvider = StateProvider<String?>((ref) => null);
 
-/// The main app shell with bottom navigation.
+/// The main app shell with swipeable page navigation.
 ///
 /// Displays four primary views — Explore, Chat, Vault, and Apps —
-/// using a Material 3 [NavigationBar] with an [IndexedStack] body
-/// to preserve view state across tab switches.
-///
-/// A pull-up chat sheet is accessible from any view (except the Chat
-/// tab) via a floating action button, allowing quick agent interaction
-/// without switching tabs.
+/// using a [PageView] body with a thin multicolor indicator bar at the
+/// bottom. Horizontal drag on the bar switches views; tapping the bar
+/// opens the AI chat sheet overlay.
 ///
 /// Also handles app lifecycle changes: when the app returns to the
 /// foreground after being backgrounded it reconnects all Nostr relays
@@ -63,15 +60,23 @@ class _KabukShellState extends ConsumerState<KabukShell>
     AppsView(),
   ];
 
+  late final PageController _pageController;
+
+  /// Whether we are currently animating the [PageController] programmatically
+  /// to avoid re-entrant updates from the page-change callback.
+  bool _animating = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _pageController = PageController();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _pageController.dispose();
     super.dispose();
   }
 
@@ -85,6 +90,21 @@ class _KabukShellState extends ConsumerState<KabukShell>
     if (state == AppLifecycleState.resumed) {
       ref.read(nostrServiceProvider).connectAll();
     }
+  }
+
+  /// Animate the [PageView] to [page] and keep [selectedTabProvider] in sync.
+  void _goToPage(int page) {
+    if (page < 0 || page >= _views.length) return;
+    HapticFeedback.selectionClick();
+    _animating = true;
+    ref.read(selectedTabProvider.notifier).state = page;
+    _pageController
+        .animateToPage(
+          page,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        )
+        .then((_) => _animating = false);
   }
 
   @override
@@ -145,6 +165,19 @@ class _KabukShellState extends ConsumerState<KabukShell>
       if (next == 1 && ref.read(chatSheetVisibleProvider)) {
         ref.read(chatSheetVisibleProvider.notifier).state = false;
       }
+      // Keep PageView in sync when selectedTabProvider changes externally.
+      if (!_animating &&
+          _pageController.hasClients &&
+          _pageController.page?.round() != next) {
+        _animating = true;
+        _pageController
+            .animateToPage(
+              next,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+            )
+            .then((_) => _animating = false);
+      }
     });
 
     // Navigate to a profile in the Explore tab when requested from chat.
@@ -177,61 +210,123 @@ class _KabukShellState extends ConsumerState<KabukShell>
                       ref.read(modelReadinessProvider.notifier).retry(),
                 ),
               Expanded(
-                child: IndexedStack(index: selectedTab, children: _views),
+                child: PageView(
+                  controller: _pageController,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: _views,
+                ),
+              ),
+              // Thin multicolor indicator bar at the bottom.
+              _NavIndicatorBar(
+                selectedTab: selectedTab,
+                onSwitchTab: _goToPage,
+                onTap: () {
+                  ref.read(chatSheetVisibleProvider.notifier).state = true;
+                },
               ),
             ],
           ),
           if (showChatSheet) const _ChatSheetOverlay(),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: selectedTab,
-        backgroundColor: KabukTheme.surface,
-        indicatorColor: KabukTheme.primaryGreen.withAlpha(25),
-        surfaceTintColor: Colors.transparent,
-        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        onDestinationSelected: (index) {
-          HapticFeedback.selectionClick();
-          ref.read(selectedTabProvider.notifier).state = index;
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.explore_outlined),
-            selectedIcon: Icon(Icons.explore, color: KabukTheme.accentGreen),
-            label: 'Explore',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.chat_outlined),
-            selectedIcon: Icon(Icons.chat, color: KabukTheme.accentGreen),
-            label: 'Chat',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.lock_outline),
-            selectedIcon: Icon(Icons.lock, color: KabukTheme.accentGreen),
-            label: 'Vault',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.apps_outlined),
-            selectedIcon: Icon(Icons.apps, color: KabukTheme.accentGreen),
-            label: 'Apps',
-          ),
-        ],
-      ),
-      floatingActionButton: selectedTab != 1 && !showChatSheet
-          ? Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: FloatingActionButton.small(
-                heroTag: null,
-                tooltip: 'Quick chat',
-                onPressed: () {
-                  ref.read(chatSheetVisibleProvider.notifier).state = true;
-                },
-                backgroundColor: KabukTheme.primaryGreen,
-                child: const Icon(Icons.chat, color: Colors.white),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Bottom navigation indicator bar
+// ---------------------------------------------------------------------------
+
+/// Per-tab accent colors matching the four primary views.
+const _tabColors = [
+  KabukTheme.warmAccent, // Explore
+  KabukTheme.accentGreen, // Chat
+  KabukTheme.purpleAccent, // Vault
+  KabukTheme.blueAccent, // Apps
+];
+
+/// A thin multicolor indicator bar that replaces the Material NavigationBar.
+///
+/// The bar sits at the very bottom of the screen, similar to Android's
+/// gesture navigation pill. Horizontal drag switches views; tap opens
+/// the AI chat sheet.
+class _NavIndicatorBar extends StatelessWidget {
+  const _NavIndicatorBar({
+    required this.selectedTab,
+    required this.onSwitchTab,
+    required this.onTap,
+  });
+
+  /// Currently active tab index (0-3).
+  final int selectedTab;
+
+  /// Callback to switch to a different tab by index.
+  final ValueChanged<int> onSwitchTab;
+
+  /// Callback when the bar is tapped (opens chat sheet).
+  final VoidCallback onTap;
+
+  /// Height of the visible indicator pill.
+  static const double _pillHeight = 5.0;
+
+  /// Width of the sliding pill indicator.
+  static const double _pillWidth = 120.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final bottomPadding = MediaQuery.of(context).viewPadding.bottom;
+    // Position pill: slide across the full width based on active tab.
+    final pillLeft = (screenWidth - _pillWidth) * (selectedTab / 3);
+    final color = _tabColors[selectedTab];
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      onHorizontalDragEnd: (details) {
+        final velocity = details.primaryVelocity ?? 0;
+        if (velocity < -100) {
+          onSwitchTab(selectedTab + 1);
+        } else if (velocity > 100) {
+          onSwitchTab(selectedTab - 1);
+        }
+      },
+      child: Container(
+        // Generous tap area: pill + padding + bottom inset.
+        padding: EdgeInsets.only(
+          top: 8,
+          bottom: bottomPadding > 0 ? bottomPadding : 8,
+        ),
+        color: Colors.transparent,
+        alignment: Alignment.center,
+        child: SizedBox(
+          height: _pillHeight,
+          width: screenWidth * 0.6,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // Sliding pill indicator.
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+                left: (screenWidth * 0.6 - _pillWidth) *
+                    (selectedTab / 3),
+                top: 0,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                  width: _pillWidth,
+                  height: _pillHeight,
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(_pillHeight / 2),
+                  ),
+                ),
               ),
-            )
-          : null,
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

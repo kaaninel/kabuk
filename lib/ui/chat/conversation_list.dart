@@ -1282,6 +1282,7 @@ class _ConversationTile extends ConsumerWidget {
         ),
       ),
       builder: (ctx) => SafeArea(
+        bottom: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

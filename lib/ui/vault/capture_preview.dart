@@ -132,7 +132,7 @@ class _CapturePreviewState extends ConsumerState<CapturePreview> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomPadding = MediaQuery.of(context).viewPadding.bottom;
+    const bottomPadding = 0.0;
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),

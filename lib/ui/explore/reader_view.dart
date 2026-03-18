@@ -235,7 +235,7 @@ class _ReaderBody extends StatelessWidget {
         // ── Safe area padding ────────────────────────────────────────────
         SliverToBoxAdapter(
           child: SizedBox(
-            height: MediaQuery.of(context).padding.bottom + KabukTheme.spacingLg,
+            height: KabukTheme.spacingLg,
           ),
         ),
       ],

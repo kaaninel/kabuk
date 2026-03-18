@@ -436,6 +436,7 @@ class _QrFullScreen extends StatelessWidget {
     final qrSize = (size.width - 80).clamp(200.0, 380.0);
 
     return SafeArea(
+      bottom: false,
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: KabukTheme.spacingLg,

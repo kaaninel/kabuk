@@ -237,7 +237,7 @@ class _AudioCaptureState extends ConsumerState<AudioCapture>
   @override
   Widget build(BuildContext context) {
     final topPadding = MediaQuery.of(context).viewPadding.top;
-    final bottomPadding = MediaQuery.of(context).viewPadding.bottom;
+    const bottomPadding = 0.0;
 
     return Container(
       color: KabukTheme.background,

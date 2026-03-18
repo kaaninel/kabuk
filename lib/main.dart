@@ -2,6 +2,7 @@ import 'dart:developer' as dev;
 
 import 'package:drift/drift.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kabuk/agents/domains/calendar_agent.dart';
 import 'package:kabuk/agents/domains/contact_agent.dart';
@@ -21,6 +22,14 @@ import 'package:kabuk/platform/shared/background_refresh_impl.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Enable fullscreen kiosk mode — hide system navigation and status bars.
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarDividerColor: Colors.transparent,
+  ));
 
   // We intentionally create multiple KabukDatabase instances backed by
   // different SQLite files (per-profile DBs + a global settings DB).

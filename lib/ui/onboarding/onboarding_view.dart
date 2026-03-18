@@ -474,6 +474,7 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
     return Scaffold(
       backgroundColor: KabukTheme.background,
       body: SafeArea(
+        bottom: false,
         child: Column(
           children: [
             // Page view.

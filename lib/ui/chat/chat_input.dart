@@ -126,6 +126,7 @@ class _ChatInputState extends ConsumerState<ChatInput> {
       ),
       child: SafeArea(
         top: false,
+        bottom: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

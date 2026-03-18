@@ -658,6 +658,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
       ),
       builder: (ctx) {
         return SafeArea(
+          bottom: false,
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Column(
