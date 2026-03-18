@@ -97,7 +97,22 @@ class _ConversationDetailState extends ConsumerState<ConversationDetail> {
     setState(() => _pendingOptimistic.add(optimisticMsg));
     _scrollToBottom();
 
-    await ref.read(chatServiceProvider).sendMessage(text);
+    try {
+      await ref.read(chatServiceProvider).sendMessage(text);
+    } catch (_) {
+      // Remove orphaned optimistic message on send failure.
+      if (mounted) {
+        setState(() => _pendingOptimistic.removeWhere(
+          (m) => m.id == optimisticMsg.id,
+        ));
+      }
+      rethrow;
+    }
+    if (!mounted) return;
+    // Remove the optimistic copy — the real message is now in the DB stream.
+    setState(() => _pendingOptimistic.removeWhere(
+      (m) => m.id == optimisticMsg.id,
+    ));
     _scrollToBottom();
   }
 
@@ -121,7 +136,7 @@ class _ConversationDetailState extends ConsumerState<ConversationDetail> {
           _scrollController.jumpTo(target);
         }
         _isNearBottom = true;
-      } catch (_) {
+      } on AssertionError catch (_) {
         // Scroll position may be invalid during rapid state changes.
       }
     });
@@ -137,6 +152,7 @@ class _ConversationDetailState extends ConsumerState<ConversationDetail> {
 
     // Auto-scroll when new messages arrive and clear optimistic messages.
     ref.listen(messagesProvider, (prev, next) {
+      if (!mounted) return;
       final prevLen = prev?.valueOrNull?.length ?? 0;
       final nextLen = next.valueOrNull?.length ?? 0;
       if (nextLen > prevLen) {
@@ -150,11 +166,13 @@ class _ConversationDetailState extends ConsumerState<ConversationDetail> {
 
     // Auto-scroll during streaming.
     ref.listen(streamingTextProvider, (_, next) {
+      if (!mounted) return;
       if (next != null && _isNearBottom) _scrollToBottom(animated: false);
     });
 
     return PopScope(
       onPopInvokedWithResult: (_, _) {
+        if (!mounted) return;
         ref.read(streamingTextProvider.notifier).state = null;
         if (widget.isNewChat) {
           ref.read(activeConversationProvider.notifier).state = null;

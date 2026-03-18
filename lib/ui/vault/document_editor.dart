@@ -66,6 +66,7 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
   Timer? _saveTimer;
   bool _dirty = false;
   bool _navigating = false;
+  bool _disposed = false;
 
   @override
   void initState() {
@@ -84,7 +85,11 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
   @override
   void dispose() {
     _saveTimer?.cancel();
+    // Fire-and-forget save: synchronous portion (ref.read, controller access)
+    // runs before _disposed is set and controllers are disposed. Post-await
+    // code in _saveImmediate is guarded by _disposed.
     if (_dirty) _saveImmediate();
+    _disposed = true;
     _titleFocusNode.removeListener(_onFocusChange);
     _bodyFocusNode.removeListener(_onFocusChange);
     _titleController.dispose();
@@ -177,7 +182,7 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
   }
 
   Future<void> _saveImmediate() async {
-    if (!_dirty) return;
+    if (!_dirty || _disposed) return;
     _dirty = false;
 
     try {

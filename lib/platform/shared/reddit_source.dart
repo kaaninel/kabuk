@@ -167,7 +167,11 @@ class RedditFeedSource implements FeedSource {
           final source = meta['s'] as Map<String, dynamic>?;
           final rawUrl = source?['u'] as String? ?? source?['gif'] as String?;
           if (rawUrl != null) {
-            galleryImages.add(rawUrl.replaceAll('&amp;', '&'));
+            final cleaned = rawUrl.replaceAll('&amp;', '&');
+            final uri = Uri.tryParse(cleaned);
+            if (uri != null && uri.hasScheme && uri.host.isNotEmpty) {
+              galleryImages.add(cleaned);
+            }
           }
         }
       }

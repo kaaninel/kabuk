@@ -14,8 +14,6 @@ import 'dart:convert';
 
 import 'package:kabuk/services/auth.dart' show AuthService;
 
-import 'package:kabuk/services/exports.dart' show AuthService;
-
 /// A Nostr event (NIP-01).
 ///
 /// Events are the fundamental data type in Nostr. Each event has an

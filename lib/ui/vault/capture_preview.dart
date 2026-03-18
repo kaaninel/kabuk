@@ -77,10 +77,16 @@ class _CapturePreviewState extends ConsumerState<CapturePreview> {
   Future<void> _initVideo() async {
     final controller = VideoPlayerController.file(File(widget.filePath));
     _videoController = controller;
-    await controller.initialize();
-    await controller.setLooping(true);
-    await controller.play();
-    if (mounted) setState(() {});
+    try {
+      await controller.initialize();
+      await controller.setLooping(true);
+      await controller.play();
+      if (mounted) setState(() {});
+    } on Object catch (e, st) {
+      debugPrint('Video init failed: $e\n$st');
+      // Still set state so the UI shows a placeholder instead of spinner.
+      if (mounted) setState(() {});
+    }
   }
 
   @override
