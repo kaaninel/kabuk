@@ -201,7 +201,12 @@ class RedditFeedSource implements FeedSource {
           postUrl.endsWith('.mp4') ||
           postUrl.endsWith('.webm') ||
           postUrl.endsWith('.gifv')) {
-        videoUrl = post['url'] as String?;
+        var raw = post['url'] as String? ?? '';
+        // Convert Imgur .gifv → .mp4 for playback.
+        if (raw.toLowerCase().endsWith('.gifv')) {
+          raw = '${raw.substring(0, raw.length - 5)}.mp4';
+        }
+        videoUrl = raw;
       }
     }
 

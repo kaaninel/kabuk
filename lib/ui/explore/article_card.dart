@@ -1089,26 +1089,6 @@ class _GalleryCarouselState extends State<_GalleryCarousel> {
                 );
               },
             ),
-            // Page counter pill.
-            Positioned(
-              bottom: 8,
-              right: 8,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: Colors.black.withAlpha(160),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  '${_current + 1} / ${widget.images.length}',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
             // Dot indicator row or compact counter.
             if (widget.images.length <= 15)
               Positioned(

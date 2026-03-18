@@ -465,10 +465,7 @@ class _FollowButtonState extends ConsumerState<_FollowButton> {
     final subs = await store.listFeedSubscriptions();
     final feedUrl = _authorFeedUrl(widget.author, widget.sourceType);
     final isFollowing = subs.any(
-      (s) =>
-          s.feedUrl == feedUrl ||
-          s.name == widget.author ||
-          s.name == _authorDisplayName(widget.author, widget.sourceType),
+      (s) => s.feedUrl == feedUrl,
     );
     if (mounted) {
       setState(() {

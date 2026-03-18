@@ -1337,13 +1337,13 @@ class _ExploreViewState extends ConsumerState<ExploreView>
 
   int _parseUpvotes(String? desc) {
     if (desc == null) return 0;
-    final m = RegExp(r'\u2b06\s*([\d,]+)').firstMatch(desc);
+    final m = RegExp('⬆\\s*([\\d,]+)').firstMatch(desc);
     return m != null ? int.tryParse(m.group(1)!.replaceAll(',', '')) ?? 0 : 0;
   }
 
   int _parseComments(String? desc) {
     if (desc == null) return 0;
-    final m = RegExp(r'\ud83d\udcac\s*([\d,]+)').firstMatch(desc);
+    final m = RegExp('💬\\s*([\\d,]+)').firstMatch(desc);
     return m != null ? int.tryParse(m.group(1)!.replaceAll(',', '')) ?? 0 : 0;
   }
 
