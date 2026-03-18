@@ -18,7 +18,9 @@ import 'package:kabuk/knowledge/types/saved_view.dart';
 import 'package:kabuk/ui/explore/quick_peek_sheet.dart';
 import 'package:kabuk/ui/settings/settings_view.dart';
 import 'package:kabuk/ui/shared/identity_quick_switcher.dart';
+import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
 import 'package:kabuk/ui/shared/kabuk_markdown.dart';
+import 'package:kabuk/ui/vault/document_editor.dart' show DocumentEditor;
 import 'package:kabuk/ui/theme.dart';
 
 // ---------------------------------------------------------------------------
@@ -1176,6 +1178,24 @@ class _NotesAppView extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Notes')),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () async {
+          final uri = await store.createNote(title: 'Untitled');
+          if (context.mounted) {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (ctx) => Scaffold(
+                  body: DocumentEditor(
+                    documentUri: uri,
+                    onBack: () => Navigator.of(ctx).pop(),
+                  ),
+                ),
+              ),
+            );
+          }
+        },
+        child: const Icon(Icons.add_rounded),
+      ),
       body: FutureBuilder<List<NoteData>>(
         future: store.listNotes(limit: 100),
         builder: (context, snapshot) {
@@ -1187,7 +1207,7 @@ class _NotesAppView extends ConsumerWidget {
             return const _EmptyAppState(
               icon: Icons.sticky_note_2_rounded,
               label: 'No notes yet',
-              hint: 'Create notes in the Vault tab or via Chat',
+              hint: 'Tap + to create a note',
             );
           }
           return ListView.separated(
@@ -1235,7 +1255,12 @@ class _NoteListTile extends StatelessWidget {
         onTap: () {
           Navigator.of(context).push(
             MaterialPageRoute<void>(
-              builder: (_) => _NoteDetailView(note: note),
+              builder: (ctx) => Scaffold(
+                body: DocumentEditor(
+                  documentUri: note.uri,
+                  onBack: () => Navigator.of(ctx).pop(),
+                ),
+              ),
             ),
           );
         },
@@ -1770,7 +1795,15 @@ class _SearchAppViewState extends ConsumerState<_SearchAppView> {
             child: TextField(
               controller: _controller,
               autofocus: true,
+              keyboardType: TextInputType.none,
               onSubmitted: _search,
+              onTap: () {
+                final mode = ref.read(keyboardModeProvider);
+                if (mode == KeyboardMode.none) {
+                  ref.read(keyboardModeProvider.notifier).state =
+                      KeyboardMode.text;
+                }
+              },
               decoration: InputDecoration(
                 hintText: 'Search your knowledge...',
                 prefixIcon: const Icon(Icons.search_rounded),
@@ -1783,7 +1816,10 @@ class _SearchAppViewState extends ConsumerState<_SearchAppView> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         ),
                       )
-                    : null,
+                    : IconButton(
+                        icon: const Icon(Icons.search_rounded),
+                        onPressed: () => _search(_controller.text),
+                      ),
               ),
             ),
           ),
@@ -1821,7 +1857,13 @@ class _SearchAppViewState extends ConsumerState<_SearchAppView> {
                         );
                       },
                     ),
-            ),
+          )
+          else
+            const Spacer(),
+          KabukKeyboardAttachment(
+            controller: _controller,
+            onSend: () => _search(_controller.text),
+          ),
         ],
       ),
     );
