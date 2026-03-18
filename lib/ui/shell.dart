@@ -266,14 +266,14 @@ class _NavIndicatorBar extends StatelessWidget {
   /// Callback when the bar is tapped (opens chat sheet).
   final VoidCallback onTap;
 
-  /// Height of the visible indicator pill.
-  static const double _pillHeight = 5.0;
+  /// Height of the visible indicator bar.
+  static const double _barHeight = 5.0;
 
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final bottomPadding = MediaQuery.of(context).viewPadding.bottom;
-    final pillWidth = screenWidth / 4;
+    final quarterWidth = screenWidth / 4;
     final color = _tabColors[selectedTab];
 
     return GestureDetector(
@@ -291,30 +291,39 @@ class _NavIndicatorBar extends StatelessWidget {
       child: Container(
         // Full-width gesture target pinned to the absolute bottom.
         padding: EdgeInsets.only(
-          top: 6,
+          top: 8,
           bottom: bottomPadding > 0 ? bottomPadding : 4,
         ),
         color: Colors.transparent,
         alignment: Alignment.center,
         child: SizedBox(
-          height: _pillHeight,
+          height: _barHeight,
           width: screenWidth,
           child: Stack(
             children: [
-              // Centered sliding pill — 1/4 of screen width.
+              // Full-width gray track.
+              Container(
+                width: screenWidth,
+                height: _barHeight,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(_barHeight / 2),
+                ),
+              ),
+              // Colored quarter segment that slides to the active tab.
               AnimatedPositioned(
                 duration: const Duration(milliseconds: 300),
                 curve: Curves.easeInOut,
-                left: (screenWidth - pillWidth) / 2,
+                left: quarterWidth * selectedTab,
                 top: 0,
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 300),
                   curve: Curves.easeInOut,
-                  width: pillWidth,
-                  height: _pillHeight,
+                  width: quarterWidth,
+                  height: _barHeight,
                   decoration: BoxDecoration(
                     color: color,
-                    borderRadius: BorderRadius.circular(_pillHeight / 2),
+                    borderRadius: BorderRadius.circular(_barHeight / 2),
                   ),
                 ),
               ),
