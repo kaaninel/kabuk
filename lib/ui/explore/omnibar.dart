@@ -636,8 +636,9 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
     openUrlSmart(context, openUrl);
   }
 
-  /// Parses a URL with AI reader mode, stores it as an article, creates
-  /// a subscription channel, and navigates to the reader view.
+  /// Parses a URL with AI reader mode, stores it as an article (or multiple
+  /// articles for index/listing pages), creates a subscription channel, and
+  /// navigates appropriately.
   Future<void> _readAndSubscribe(String url) async {
     var feedUrl = url.trim();
     if (!feedUrl.startsWith('http://') && !feedUrl.startsWith('https://')) {
@@ -669,7 +670,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
 
       // Parse the page with feedSource set to the subscription URI.
       final service = ref.read(readerModeServiceProvider);
-      final articleUri = await service.processUrl(
+      final result = await service.processUrl(
         feedUrl,
         feedSource: subUri,
       );
@@ -679,11 +680,23 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).clearSnackBars();
-        await Navigator.of(context).push<void>(
-          MaterialPageRoute<void>(
-            builder: (_) => ReaderView(articleUri: articleUri, url: feedUrl),
-          ),
-        );
+
+        if (result.isMultiArticle) {
+          // Multiple articles found — set the feed filter to this
+          // subscription and pop back to the explore view.
+          ref.read(selectedFeedProvider.notifier).state = subUri;
+          Navigator.of(context).pop();
+        } else {
+          // Single article — navigate to reader view as before.
+          await Navigator.of(context).push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => ReaderView(
+                articleUri: result.primaryArticleUri,
+                url: feedUrl,
+              ),
+            ),
+          );
+        }
       }
     } on Object catch (e) {
       if (mounted) {

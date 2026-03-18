@@ -59,8 +59,10 @@ class ReaderModeService {
   /// provided [WebExtraction] is used directly. Otherwise [WebExtractor.fromUrl]
   /// fetches and parses the page via HTTP.
   ///
-  /// Returns the article URI in the knowledge store.
-  Future<String> processUrl(
+  /// Returns a [ReaderModeResult] describing the articles created. When the
+  /// page is an index/listing page with discoverable article links, multiple
+  /// articles are created (one per link) and the main page itself is skipped.
+  Future<ReaderModeResult> processUrl(
     String url, {
     WebExtraction? preExtracted,
     String? feedSource,
@@ -79,8 +81,8 @@ class ReaderModeService {
   /// Uses [WebExtractor.fromWebView] to run JavaScript against the live DOM,
   /// which typically yields higher-quality extraction than the HTTP fallback.
   ///
-  /// Returns the article URI in the knowledge store.
-  Future<String> processFromWebView(
+  /// Returns a [ReaderModeResult] describing the articles created.
+  Future<ReaderModeResult> processFromWebView(
     WebViewController controller, {
     required String url,
     String? feedSource,
@@ -97,10 +99,68 @@ class ReaderModeService {
   // -------------------------------------------------------------------------
 
   /// Runs the full extract → store → enhance pipeline.
-  Future<String> _pipeline(
+  ///
+  /// When the extracted page contains article links (index/listing page),
+  /// creates multiple articles from those links instead of storing the
+  /// index page itself as content.
+  Future<ReaderModeResult> _pipeline(
     WebExtraction extraction, {
     String? feedSource,
   }) async {
+    final articleLinks = extraction.articleLinks;
+
+    // --- Multi-article path: index/listing page ---
+    if (articleLinks.isNotEmpty) {
+      final domain = _extractDomain(extraction.url);
+      final siteName = extraction.siteName ?? domain;
+      final createdUris = <String>[];
+
+      // Check which URLs already exist to avoid duplicates.
+      final existingArticles = await _store.listArticles(
+        feedSource: feedSource,
+        limit: 500,
+      );
+      final existingUrls = <String>{
+        for (final a in existingArticles)
+          if (a.url != null) a.url!,
+      };
+
+      for (final link in articleLinks) {
+        if (existingUrls.contains(link.url)) continue;
+
+        try {
+          final uri = await _store.createArticle(
+            title: link.title,
+            url: link.url,
+            image: link.image,
+            description: link.description,
+            feedSource: feedSource ?? 'reader-mode',
+            author: siteName,
+            tags: ['reader-mode', if (domain.isNotEmpty) domain],
+          );
+          createdUris.add(uri);
+        } on Object catch (e, st) {
+          dev.log(
+            'Failed to create article for ${link.url}',
+            name: 'ReaderModeService',
+            error: e,
+            stackTrace: st,
+          );
+        }
+      }
+
+      // If we created multiple articles, return multi-article result.
+      if (createdUris.isNotEmpty) {
+        return ReaderModeResult(
+          articleUris: createdUris,
+          isMultiArticle: true,
+        );
+      }
+      // Fall through to single-article path if no links were stored.
+    }
+
+    // --- Single-article path: regular content page ---
+
     // Step 1 — Store basic article immediately.
     final articleUri = await _storeArticle(extraction, feedSource: feedSource);
 
@@ -115,7 +175,10 @@ class ReaderModeService {
     // Step 3 — LLM enhancement (best-effort, graceful degradation).
     await _enhanceWithLlm(articleUri, extraction.textContent, blockUris);
 
-    return articleUri;
+    return ReaderModeResult(
+      articleUris: [articleUri],
+      isMultiArticle: false,
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -418,6 +481,33 @@ class ReaderModeService {
 }
 
 // ---------------------------------------------------------------------------
+// Result model
+// ---------------------------------------------------------------------------
+
+/// Result of the reader mode processing pipeline.
+///
+/// When [isMultiArticle] is `true`, the source page was an index/listing
+/// page and [articleUris] contains URIs for each discovered article.
+/// When `false`, the page was a single content page and [articleUris]
+/// contains exactly one URI.
+class ReaderModeResult {
+  /// Creates a [ReaderModeResult].
+  const ReaderModeResult({
+    required this.articleUris,
+    required this.isMultiArticle,
+  });
+
+  /// URIs of the articles created in the knowledge store.
+  final List<String> articleUris;
+
+  /// Whether multiple articles were discovered from an index/listing page.
+  final bool isMultiArticle;
+
+  /// Convenience getter for the first (or only) article URI.
+  String get primaryArticleUri => articleUris.first;
+}
+
+// ---------------------------------------------------------------------------
 // Internal model for parsed blocks
 // ---------------------------------------------------------------------------
 
@@ -462,14 +552,14 @@ final readerModeServiceProvider = Provider<ReaderModeService>((ref) {
   );
 });
 
-/// Process a URL through reader mode. Returns the article URI.
+/// Process a URL through reader mode. Returns a [ReaderModeResult].
 ///
 /// Usage:
 /// ```dart
-/// final articleUri = await ref.read(processReaderModeProvider('https://...').future);
+/// final result = await ref.read(processReaderModeProvider('https://...').future);
 /// ```
 final processReaderModeProvider =
-    FutureProvider.family<String, String>((ref, url) async {
+    FutureProvider.family<ReaderModeResult, String>((ref, url) async {
   final service = ref.read(readerModeServiceProvider);
   return service.processUrl(url);
 });

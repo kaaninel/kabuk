@@ -194,7 +194,7 @@ class _QuickPeekSheetState extends ConsumerState<QuickPeekSheet> {
     setState(() => _isProcessingReader = true);
     try {
       final service = ref.read(readerModeServiceProvider);
-      final articleUri = await service.processFromWebView(
+      final result = await service.processFromWebView(
         _controller,
         url: widget.url,
       );
@@ -202,7 +202,10 @@ class _QuickPeekSheetState extends ConsumerState<QuickPeekSheet> {
         Navigator.of(context).pop(); // close the sheet
         await Navigator.of(context).push(
           MaterialPageRoute<void>(
-            builder: (_) => ReaderView(articleUri: articleUri, url: widget.url),
+            builder: (_) => ReaderView(
+              articleUri: result.primaryArticleUri,
+              url: widget.url,
+            ),
           ),
         );
       }

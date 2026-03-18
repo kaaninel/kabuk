@@ -86,108 +86,6 @@ class ArticleCard extends ConsumerWidget {
     return GestureDetector(
       onTap: () => _openDetail(context, ref),
       onLongPress: () => _quickPeek(context, ref),
-      child: Dismissible(
-      key: ValueKey(article.uri),
-      direction: DismissDirection.horizontal,
-      // Swipe right → bookmark
-      background: Container(
-        color: KabukTheme.accentGreen.withAlpha(200),
-        alignment: Alignment.centerLeft,
-        padding: const EdgeInsets.only(left: 20),
-        child: const Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.bookmark_add_rounded, color: Colors.white, size: 28),
-            SizedBox(height: 4),
-            Text(
-              'Bookmark',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-      // Swipe left → mark as read
-      secondaryBackground: Container(
-        color: Colors.orange.withAlpha(200),
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
-        child: const Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.check_circle_outline_rounded,
-              color: Colors.white,
-              size: 28,
-            ),
-            SizedBox(height: 4),
-            Text(
-              'Mark read',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-      confirmDismiss: (direction) async {
-        unawaited(HapticFeedback.lightImpact());
-        final store = ref.read(knowledgeStoreProvider);
-        if (direction == DismissDirection.startToEnd) {
-          final url = article.url;
-          if (url != null && url.isNotEmpty) {
-            // Toggle: remove if already bookmarked, add otherwise.
-            final existing = await store.listBookmarks();
-            final match = existing.where((b) => b.url == url).firstOrNull;
-            if (match != null) {
-              await store.deleteBookmark(match.uri);
-              ref.invalidate(bookmarkStatusProvider(url));
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Bookmark removed'),
-                    duration: Duration(seconds: 2),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              }
-            } else {
-              await store.createBookmark(
-                name: article.name ?? url,
-                url: url,
-                description: article.description,
-              );
-              ref.invalidate(bookmarkStatusProvider(url));
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Saved to bookmarks'),
-                    duration: Duration(seconds: 2),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              }
-            }
-          }
-        } else {
-          await store.markArticleRead(article.uri);
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Marked as read'),
-                duration: Duration(seconds: 1),
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
-          }
-        }
-        return false; // keep the card in the list
-      },
       child: Opacity(
         opacity: article.read ? 0.7 : 1.0,
         child: Container(
@@ -329,7 +227,6 @@ class ArticleCard extends ConsumerWidget {
             ],
           ),
         ),
-      ),
       ),
     );
   }

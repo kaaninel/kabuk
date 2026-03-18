@@ -16,10 +16,39 @@ import 'dart:developer' as dev;
 import 'package:http/http.dart' as http;
 import 'package:webview_flutter/webview_flutter.dart';
 
+/// A link to an article discovered on an index/listing page.
+///
+/// Used when a page contains links to multiple articles (e.g., a news
+/// homepage or blog index). Each [ExtractedLink] captures the metadata
+/// visible on the index page without fetching the linked page.
+class ExtractedLink {
+  /// Creates an [ExtractedLink].
+  const ExtractedLink({
+    required this.url,
+    required this.title,
+    this.image,
+    this.description,
+  });
+
+  /// Absolute URL of the linked article.
+  final String url;
+
+  /// Title text extracted from the link or its container.
+  final String title;
+
+  /// Thumbnail/hero image URL associated with this link, if any.
+  final String? image;
+
+  /// Short description or snippet, if available.
+  final String? description;
+}
+
 /// Result of extracting content from a web page.
 ///
 /// Contains the cleaned article text in markdown format along with
 /// structured metadata (author, date, site name) and media URLs.
+/// When the page is an index/listing page, [articleLinks] contains
+/// links to individual articles discovered on the page.
 class WebExtraction {
   /// Creates a [WebExtraction] with the given fields.
   const WebExtraction({
@@ -28,6 +57,7 @@ class WebExtraction {
     required this.textContent,
     this.images = const [],
     this.videos = const [],
+    this.articleLinks = const [],
     this.author,
     this.datePublished,
     this.siteName,
@@ -49,6 +79,9 @@ class WebExtraction {
 
   /// Video URLs found in the article (including YouTube/Vimeo embeds).
   final List<String> videos;
+
+  /// Article links discovered on the page (for index/listing pages).
+  final List<ExtractedLink> articleLinks;
 
   /// Author name from `<meta name="author">` or `article:author`.
   final String? author;
@@ -385,18 +418,135 @@ class WebExtractor {
       published = DateTime.tryParse(dateStr);
     }
 
+    // --- Article links (for index/listing pages) ---
+    final articleLinks = _extractArticleLinks(html, url);
+
     return WebExtraction(
       url: url,
       title: _decodeEntities(title).trim(),
       textContent: textContent,
       images: images,
       videos: videos,
+      articleLinks: articleLinks,
       author: _nonEmpty(author),
       datePublished: published,
       siteName: _nonEmpty(ogSiteName),
       favicon: _resolveUrl(url, faviconMatch ?? faviconAlt),
       description: _nonEmpty(ogDesc),
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Article link extraction
+  // ---------------------------------------------------------------------------
+
+  /// Non-article path segments that should be filtered out.
+  static final _nonArticlePaths = RegExp(
+    r'^/(about|contact|login|signup|register|privacy|terms|faq|help|search'
+    r'|categories|tags|authors|archive|page|#|javascript:)',
+    caseSensitive: false,
+  );
+
+  /// Extracts article-like links from raw HTML.
+  ///
+  /// Scans for `<a>` tags inside article containers, cards, and common
+  /// listing patterns. Deduplicates by URL and limits to 50 results.
+  static List<ExtractedLink> _extractArticleLinks(String html, String baseUrl) {
+    final baseUri = Uri.tryParse(baseUrl);
+    if (baseUri == null) return const [];
+    final baseHost = baseUri.host;
+
+    // Strip nav, header, footer, sidebar, and ad regions to reduce noise.
+    final cleanedHtml = html.replaceAll(
+      RegExp(
+        r'<(nav|header|footer|aside)[^>]*>.*?</\1>',
+        caseSensitive: false,
+        dotAll: true,
+      ),
+      '',
+    );
+
+    // Match <a> tags with href attributes.
+    final linkRegex = RegExp(
+      r'<a\s[^>]*href=["' "'" r']([^"' "'" r']+)["' "'" r'][^>]*>(.*?)</a>',
+      caseSensitive: false,
+      dotAll: true,
+    );
+
+    final seen = <String>{};
+    final links = <ExtractedLink>[];
+
+    for (final match in linkRegex.allMatches(cleanedHtml)) {
+      if (links.length >= 50) break;
+
+      final rawHref = match.group(1) ?? '';
+      final innerHtml = match.group(2) ?? '';
+      if (rawHref.isEmpty) continue;
+
+      // Resolve to absolute URL.
+      final resolved = _resolveUrl(baseUrl, rawHref);
+      if (resolved == null || resolved.isEmpty) continue;
+
+      final linkUri = Uri.tryParse(resolved);
+      if (linkUri == null) continue;
+
+      // Only keep links on the same domain (or closely related sub-domains).
+      if (!linkUri.host.endsWith(baseHost) &&
+          !baseHost.endsWith(linkUri.host)) {
+        continue;
+      }
+
+      // Filter out non-article paths.
+      if (_nonArticlePaths.hasMatch(linkUri.path)) continue;
+
+      // Must have a meaningful path (at least /segment/something or slug).
+      if (linkUri.pathSegments.where((s) => s.isNotEmpty).length < 2 &&
+          !linkUri.path.contains('-')) {
+        continue;
+      }
+
+      // Skip root/homepage links.
+      if (linkUri.path == '/' || linkUri.path.isEmpty) continue;
+
+      // Extract title from link text (strip tags).
+      var title = _stripTags(innerHtml).trim();
+      // Collapse whitespace.
+      title = title.replaceAll(RegExp(r'\s+'), ' ');
+      if (title.length < 10) continue;
+      // Truncate very long titles.
+      if (title.length > 200) title = title.substring(0, 200);
+
+      // Deduplicate.
+      final canonical = linkUri.replace(fragment: '').toString();
+      if (seen.contains(canonical)) continue;
+      seen.add(canonical);
+
+      // Try to find an associated image — look backward in the HTML for a
+      // nearby <img> within the same container context (within ~500 chars
+      // before the <a> tag).
+      String? image;
+      final linkStart = match.start;
+      final searchStart = (linkStart - 500).clamp(0, linkStart);
+      final nearbyHtml = cleanedHtml.substring(searchStart, match.end);
+      final imgMatch = RegExp(
+        r'<img[^>]+src=["' "'" r']([^"' "'" r']+)["' "'" r']',
+        caseSensitive: false,
+      ).allMatches(nearbyHtml).lastOrNull;
+      if (imgMatch != null) {
+        final imgSrc = imgMatch.group(1) ?? '';
+        if (imgSrc.isNotEmpty) {
+          image = _resolveUrl(baseUrl, imgSrc);
+        }
+      }
+
+      links.add(ExtractedLink(
+        url: canonical,
+        title: _decodeEntities(title),
+        image: image,
+      ));
+    }
+
+    return links;
   }
 
   // ---------------------------------------------------------------------------
