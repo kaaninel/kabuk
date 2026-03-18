@@ -62,7 +62,6 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
   late TextEditingController _activeController = _bodyController;
 
   bool _loading = true;
-  NoteData? _note;
   List<ContentBlockData> _blocks = [];
   Timer? _saveTimer;
   bool _dirty = false;
@@ -110,7 +109,6 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
 
     if (!mounted) return;
     setState(() {
-      _note = note;
       _blocks = blocks;
       _titleController.text =
           (note?.name != null && note!.name != 'Untitled') ? note.name! : '';
@@ -609,16 +607,6 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
       await store.deleteNote(widget.documentUri);
       widget.onBack();
     }
-  }
-
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final diff = now.difference(date);
-    if (diff.inMinutes < 1) return 'just now';
-    if (diff.inHours < 1) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    if (diff.inDays < 7) return '${diff.inDays}d ago';
-    return '${date.day}/${date.month}/${date.year}';
   }
 }
 

@@ -19,7 +19,6 @@ import 'package:kabuk/ui/explore/quick_peek_sheet.dart';
 import 'package:kabuk/ui/settings/settings_view.dart';
 import 'package:kabuk/ui/shared/identity_quick_switcher.dart';
 import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
-import 'package:kabuk/ui/shared/kabuk_markdown.dart';
 import 'package:kabuk/ui/vault/document_editor.dart' show DocumentEditor;
 import 'package:kabuk/ui/theme.dart';
 
@@ -1239,7 +1238,7 @@ class _NotesAppView extends ConsumerWidget {
         onPressed: () async {
           final uri = await store.createNote(title: 'Untitled');
           if (context.mounted) {
-            Navigator.of(context).push(
+            await Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (ctx) => Scaffold(
                   body: DocumentEditor(
@@ -1360,55 +1359,6 @@ class _NoteListTile extends StatelessWidget {
     if (diff.inHours < 24) return '${diff.inHours}h';
     if (diff.inDays < 30) return '${diff.inDays}d';
     return '${dt.month}/${dt.day}';
-  }
-}
-
-/// Full note detail view with markdown rendering.
-class _NoteDetailView extends StatelessWidget {
-  const _NoteDetailView({required this.note});
-
-  final NoteData note;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(note.name ?? 'Untitled')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(KabukTheme.spacingLg),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (note.dateCreated != null) ...[
-              Text(
-                _formatFullDate(note.dateCreated!),
-                style: const TextStyle(
-                  color: KabukTheme.textTertiary,
-                  fontSize: 12,
-                ),
-              ),
-              const SizedBox(height: KabukTheme.spacingMd),
-            ],
-            if (note.text != null)
-              KabukMarkdown(data: note.text!)
-            else
-              const Text(
-                'No content.',
-                style: TextStyle(
-                  color: KabukTheme.textSecondary,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _formatFullDate(DateTime dt) {
-    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-'
-        '${dt.day.toString().padLeft(2, '0')} '
-        '${dt.hour.toString().padLeft(2, '0')}:'
-        '${dt.minute.toString().padLeft(2, '0')}';
   }
 }
 
