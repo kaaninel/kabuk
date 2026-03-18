@@ -782,7 +782,7 @@ class _SubredditPostTile extends StatelessWidget {
     return InkWell(
       onTap: () {
         // Open the post URL in a nested quick peek.
-        QuickPeekSheet.show(context, url: item.url, title: item.title);
+        openUrlSmart(context, item.url, title: item.title);
       },
       borderRadius: BorderRadius.circular(12),
       child: Padding(

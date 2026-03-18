@@ -288,7 +288,15 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
         'Channel fetch failed for ${widget.author ?? widget.channel}: $e',
         name: 'ChannelView',
       );
-      // Non-fatal — we still show cached articles.
+      if (mounted && _articles.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not refresh — showing cached content'),
+            duration: Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
 
     if (mounted) setState(() => _isLoading = false);
@@ -379,6 +387,15 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
         'Channel fetch failed for r/${widget.channel}: $e',
         name: 'ChannelView',
       );
+      if (mounted && _articles.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not refresh — showing cached content'),
+            duration: Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
 
     if (mounted) setState(() => _isLoading = false);

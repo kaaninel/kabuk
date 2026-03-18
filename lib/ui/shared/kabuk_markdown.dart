@@ -8,7 +8,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:kabuk/ui/explore/quick_peek_sheet.dart';
+import 'package:kabuk/ui/explore/article_detail_page.dart' show openUrlSmart;
 import 'package:kabuk/ui/theme.dart';
 
 /// Creates the standard Kabuk [MarkdownStyleSheet] for consistent
@@ -177,11 +177,7 @@ class KabukMarkdown extends StatelessWidget {
 
   void _defaultLinkHandler(BuildContext context, String? href, String text) {
     if (href == null || href.isEmpty) return;
-    QuickPeekSheet.show(
-      context,
-      url: href,
-      title: text.isNotEmpty ? text : null,
-    );
+    openUrlSmart(context, href, title: text.isNotEmpty ? text : null);
   }
 }
 
@@ -225,10 +221,6 @@ class KabukMarkdownBlock extends StatelessWidget {
 
   void _defaultLinkHandler(BuildContext context, String? href, String text) {
     if (href == null || href.isEmpty) return;
-    QuickPeekSheet.show(
-      context,
-      url: href,
-      title: text.isNotEmpty ? text : null,
-    );
+    openUrlSmart(context, href, title: text.isNotEmpty ? text : null);
   }
 }
