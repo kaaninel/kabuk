@@ -576,6 +576,9 @@ class _ModeButton extends StatelessWidget {
 /// and want to add the custom keyboard at the bottom.
 ///
 /// The [controller] should point to whichever text field is currently active.
+///
+/// When [showMarkdownToolbar] is true, a markdown formatting toolbar is
+/// shown above the mode bar for quick access to formatting shortcuts.
 class KabukKeyboardAttachment extends ConsumerWidget {
   /// Creates a [KabukKeyboardAttachment].
   const KabukKeyboardAttachment({
@@ -583,6 +586,8 @@ class KabukKeyboardAttachment extends ConsumerWidget {
     this.onSend,
     this.onMediaSelected,
     this.onVoiceRecorded,
+    this.showMarkdownToolbar = false,
+    this.markdownFocusNode,
     super.key,
   });
 
@@ -597,6 +602,12 @@ class KabukKeyboardAttachment extends ConsumerWidget {
 
   /// Called when a voice recording is completed.
   final ValueChanged<String>? onVoiceRecorded;
+
+  /// Whether to show a markdown formatting toolbar above the mode bar.
+  final bool showMarkdownToolbar;
+
+  /// Focus node to refocus after formatting actions.
+  final FocusNode? markdownFocusNode;
 
   static const _keyboardHeight = 220.0;
   static const _emojiHeight = 270.0;
@@ -619,6 +630,12 @@ class KabukKeyboardAttachment extends ConsumerWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        // Markdown formatting toolbar (when enabled and keyboard is active).
+        if (showMarkdownToolbar && mode != KeyboardMode.none)
+          MarkdownToolbar(
+            controller: controller,
+            focusNode: markdownFocusNode,
+          ),
         const KeyboardModeBar(),
         AnimatedContainer(
           duration: const Duration(milliseconds: 250),
@@ -737,6 +754,8 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
         textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
         child: Column(
           children: [
+            // Quick emoji strip.
+            _QuickEmojiStrip(onInsert: _insertChar),
             const Divider(height: 1, color: KabukTheme.divider),
             Expanded(
               child: Padding(
@@ -866,6 +885,49 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
     );
   }
 
+  void _paste() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    if (data?.text != null && data!.text!.isNotEmpty) {
+      _insertChar(data.text!);
+      HapticFeedback.mediumImpact();
+    }
+  }
+
+  void _copy() {
+    final selection = widget.controller.selection;
+    if (selection.start != selection.end) {
+      final text = widget.controller.text;
+      Clipboard.setData(
+        ClipboardData(text: text.substring(selection.start, selection.end)),
+      );
+      HapticFeedback.mediumImpact();
+    }
+  }
+
+  void _cut() {
+    final selection = widget.controller.selection;
+    if (selection.start != selection.end) {
+      final text = widget.controller.text;
+      Clipboard.setData(
+        ClipboardData(text: text.substring(selection.start, selection.end)),
+      );
+      final newText = text.replaceRange(selection.start, selection.end, '');
+      widget.controller.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: selection.start),
+      );
+      HapticFeedback.mediumImpact();
+    }
+  }
+
+  void _selectAll() {
+    widget.controller.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: widget.controller.text.length,
+    );
+    HapticFeedback.selectionClick();
+  }
+
   Widget _buildBottomRow(KeyboardLanguage lang) {
     return Container(
       height: 42,
@@ -874,7 +936,7 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
         children: [
           // Symbol toggle.
           SizedBox(
-            width: 48,
+            width: 44,
             child: _KeyButton(
               label: _isSymbol ? 'ABC' : '123',
               onTap: () => setState(() => _isSymbol = !_isSymbol),
@@ -883,13 +945,17 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
           ),
           // Language selector.
           SizedBox(
-            width: 40,
+            width: 36,
             child: _KeyButton(icon: Icons.language, onTap: _showLanguagePicker),
           ),
-          // Comma.
+          // Clipboard menu (paste / copy / cut / select all).
           SizedBox(
-            width: 32,
-            child: _KeyButton(label: ',', onTap: () => _insertChar(',')),
+            width: 36,
+            child: _KeyButton(
+              icon: Icons.content_paste_rounded,
+              onTap: _paste,
+              onLongPress: () => _showClipboardMenu(context),
+            ),
           ),
           // Space bar.
           Expanded(
@@ -922,6 +988,105 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showClipboardMenu(BuildContext context) {
+    HapticFeedback.mediumImpact();
+    final hasSelection =
+        widget.controller.selection.start != widget.controller.selection.end;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: KabukTheme.surfaceElevated,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(KabukTheme.radiusMd),
+        ),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(KabukTheme.spacingMd),
+              child: Text(
+                'Clipboard',
+                style: TextStyle(
+                  color: KabukTheme.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const Divider(height: 1, color: KabukTheme.divider),
+            ListTile(
+              leading: const Icon(
+                Icons.content_paste_rounded,
+                color: KabukTheme.textSecondary,
+                size: 20,
+              ),
+              title: const Text(
+                'Paste',
+                style: TextStyle(color: KabukTheme.textPrimary, fontSize: 14),
+              ),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _paste();
+              },
+            ),
+            if (hasSelection) ...[
+              ListTile(
+                leading: const Icon(
+                  Icons.content_copy_rounded,
+                  color: KabukTheme.textSecondary,
+                  size: 20,
+                ),
+                title: const Text(
+                  'Copy',
+                  style:
+                      TextStyle(color: KabukTheme.textPrimary, fontSize: 14),
+                ),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _copy();
+                },
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.content_cut_rounded,
+                  color: KabukTheme.textSecondary,
+                  size: 20,
+                ),
+                title: const Text(
+                  'Cut',
+                  style:
+                      TextStyle(color: KabukTheme.textPrimary, fontSize: 14),
+                ),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _cut();
+                },
+              ),
+            ],
+            ListTile(
+              leading: const Icon(
+                Icons.select_all_rounded,
+                color: KabukTheme.textSecondary,
+                size: 20,
+              ),
+              title: const Text(
+                'Select all',
+                style: TextStyle(color: KabukTheme.textPrimary, fontSize: 14),
+              ),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _selectAll();
+              },
+            ),
+            const SizedBox(height: KabukTheme.spacingSm),
+          ],
+        ),
       ),
     );
   }
@@ -984,6 +1149,44 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
             const SizedBox(height: KabukTheme.spacingSm),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// A horizontal strip of frequently used emojis above the keyboard.
+class _QuickEmojiStrip extends StatelessWidget {
+  const _QuickEmojiStrip({required this.onInsert});
+
+  final ValueChanged<String> onInsert;
+
+  static const _quickEmojis = [
+    '😂', '❤️', '👍', '🔥', '😭', '🥺', '✨', '😊',
+    '🙏', '💀', '👀', '🤔', '😍', '💯', '🎉', '👏',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 32,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        itemCount: _quickEmojis.length,
+        itemBuilder: (_, i) {
+          final emoji = _quickEmojis[i];
+          return GestureDetector(
+            onTap: () {
+              HapticFeedback.selectionClick();
+              onInsert(emoji);
+            },
+            child: Container(
+              width: 32,
+              alignment: Alignment.center,
+              child: Text(emoji, style: const TextStyle(fontSize: 18)),
+            ),
+          );
+        },
       ),
     );
   }

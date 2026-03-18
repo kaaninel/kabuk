@@ -112,7 +112,8 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
     setState(() {
       _note = note;
       _blocks = blocks;
-      _titleController.text = note?.name ?? '';
+      _titleController.text =
+          (note?.name != null && note!.name != 'Untitled') ? note.name! : '';
       // Build body from blocks, or fall back to note text.
       if (blocks.isNotEmpty) {
         _bodyController.text = _blocksToMarkdown(blocks);
@@ -186,10 +187,30 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
       final title = _titleController.text.trim();
       final body = _bodyController.text.trim();
 
+      // Auto-generate title from body when user hasn't set one.
+      final hasUserTitle = title.isNotEmpty && title != 'Untitled';
+      String resolvedTitle;
+      if (hasUserTitle) {
+        resolvedTitle = title;
+      } else if (body.isNotEmpty) {
+        // Use the first non-empty line, trimmed to a reasonable length.
+        final firstLine = body.split('\n').firstWhere(
+          (l) => l.trim().isNotEmpty,
+          orElse: () => '',
+        ).trim();
+        resolvedTitle = firstLine.length > 60
+            ? '${firstLine.substring(0, 57)}...'
+            : firstLine.isNotEmpty
+                ? firstLine
+                : 'Untitled';
+      } else {
+        resolvedTitle = 'Untitled';
+      }
+
       // Update the note entity.
       await store.updateNote(
         widget.documentUri,
-        title: title.isEmpty ? 'Untitled' : title,
+        title: resolvedTitle,
         body: body,
       );
 
@@ -374,9 +395,9 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
 
     return Column(
       children: [
-        // Top bar.
+        // Top bar with inline title.
         Padding(
-          padding: EdgeInsets.fromLTRB(4, topPadding + 4, 8, 0),
+          padding: EdgeInsets.fromLTRB(4, topPadding + 4, 4, 0),
           child: Row(
             children: [
               IconButton(
@@ -388,29 +409,66 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
                 },
                 icon: const Icon(Icons.arrow_back_rounded),
                 color: KabukTheme.textSecondary,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(
+                  minWidth: 36,
+                  minHeight: 36,
+                ),
               ),
-              const Spacer(),
+              const SizedBox(width: 4),
+              // Inline title field in app bar.
+              Expanded(
+                child: TextField(
+                  controller: _titleController,
+                  focusNode: _titleFocusNode,
+                  onChanged: _onTitleChanged,
+                  keyboardType: TextInputType.none,
+                  showCursor: true,
+                  style: const TextStyle(
+                    color: KabukTheme.textPrimary,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  decoration: const InputDecoration(
+                    hintText: 'Untitled',
+                    hintStyle: TextStyle(
+                      color: KabukTheme.textTertiary,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(vertical: 8),
+                    isDense: true,
+                  ),
+                  maxLines: 1,
+                  textInputAction: TextInputAction.next,
+                  onTap: () {
+                    ref.read(keyboardModeProvider.notifier).state =
+                        KeyboardMode.text;
+                  },
+                  onSubmitted: (_) => _bodyFocusNode.requestFocus(),
+                ),
+              ),
               // Save indicator.
               if (_dirty)
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
+                    horizontal: 6,
+                    vertical: 3,
                   ),
                   decoration: BoxDecoration(
                     color: KabukTheme.warmAccent.withAlpha(25),
                     borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
                   ),
                   child: const Text(
-                    'Editing',
+                    '•',
                     style: TextStyle(
                       color: KabukTheme.warmAccent,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
                     ),
                   ),
                 ),
-              const SizedBox(width: 8),
               // More actions.
               PopupMenuButton<String>(
                 onSelected: _onMenuAction,
@@ -419,6 +477,11 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
                   Icons.more_vert_rounded,
                   size: 20,
                   color: KabukTheme.textSecondary,
+                ),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(
+                  minWidth: 36,
+                  minHeight: 36,
                 ),
                 itemBuilder: (_) => [
                   const PopupMenuItem(
@@ -467,87 +530,30 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
           ),
         ),
 
-        // Title + date — compact fixed header above the editor.
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            KabukTheme.spacingMd,
-            KabukTheme.spacingSm,
-            KabukTheme.spacingMd,
-            0,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextField(
-                controller: _titleController,
-                focusNode: _titleFocusNode,
-                onChanged: _onTitleChanged,
-                keyboardType: TextInputType.none,
-                showCursor: true,
-                style: const TextStyle(
-                  color: KabukTheme.textPrimary,
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.5,
-                ),
-                decoration: const InputDecoration(
-                  hintText: 'Untitled',
-                  hintStyle: TextStyle(
-                    color: KabukTheme.textTertiary,
-                    fontSize: 26,
-                    fontWeight: FontWeight.w800,
-                  ),
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.zero,
-                ),
-                maxLines: 3,
-                textInputAction: TextInputAction.next,
-                onTap: () {
-                  ref.read(keyboardModeProvider.notifier).state =
-                      KeyboardMode.text;
-                },
-                onSubmitted: (_) => _bodyFocusNode.requestFocus(),
-              ),
-              if (_note?.dateModified != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4, bottom: 4),
-                  child: Text(
-                    'Last modified ${_formatDate(_note!.dateModified!)}',
-                    style: const TextStyle(
-                      color: KabukTheme.textTertiary,
-                      fontSize: 11,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-
-        // Body editor — fills remaining space, scrolls internally.
+        // Body editor — fills all remaining space.
         Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: KabukTheme.spacingMd,
-            ),
-            child: MarkdownEditor(
-              controller: _bodyController,
-              focusNode: _bodyFocusNode,
-              hintText: 'Start writing...',
-              onChanged: _onBodyChanged,
-              onTap: () {
-                ref.read(keyboardModeProvider.notifier).state =
-                    KeyboardMode.text;
-              },
-              minLines: 12,
-              suppressSystemKeyboard: true,
-              showToolbar: true,
-              showPreviewToggle: true,
-            ),
+          child: MarkdownEditor(
+            controller: _bodyController,
+            focusNode: _bodyFocusNode,
+            hintText: 'Start writing...',
+            onChanged: _onBodyChanged,
+            onTap: () {
+              ref.read(keyboardModeProvider.notifier).state =
+                  KeyboardMode.text;
+            },
+            minLines: 12,
+            suppressSystemKeyboard: true,
+            showToolbar: false,
+            showPreviewToggle: false,
           ),
         ),
 
-        // Custom keyboard attachment — routes input to the active field.
-        KabukKeyboardAttachment(controller: _activeController),
+        // Custom keyboard with integrated markdown toolbar.
+        KabukKeyboardAttachment(
+          controller: _activeController,
+          showMarkdownToolbar: true,
+          markdownFocusNode: _bodyFocusNode,
+        ),
       ],
     );
   }
