@@ -1,0 +1,546 @@
+/// Web content extraction service — "AI Reader Mode" extraction pipeline.
+///
+/// Provides two extraction modes:
+/// 1. **JavaScript extraction** — runs in an already-loaded WebView to extract
+///    structured content from the live DOM (used by QuickPeekSheet).
+/// 2. **HTTP fetch extraction** — fetches HTML from a URL and parses it with
+///    regex-based heuristics (fallback when no WebView is available).
+///
+/// Both modes produce a [WebExtraction] containing cleaned text content in
+/// markdown format, metadata, images, and video URLs.
+library;
+
+import 'dart:convert';
+import 'dart:developer' as dev;
+
+import 'package:http/http.dart' as http;
+import 'package:webview_flutter/webview_flutter.dart';
+
+/// Result of extracting content from a web page.
+///
+/// Contains the cleaned article text in markdown format along with
+/// structured metadata (author, date, site name) and media URLs.
+class WebExtraction {
+  /// Creates a [WebExtraction] with the given fields.
+  const WebExtraction({
+    required this.url,
+    required this.title,
+    required this.textContent,
+    this.images = const [],
+    this.videos = const [],
+    this.author,
+    this.datePublished,
+    this.siteName,
+    this.favicon,
+    this.description,
+  });
+
+  /// The source URL of the extracted page.
+  final String url;
+
+  /// Page title extracted from `<title>`, `og:title`, or `<h1>`.
+  final String title;
+
+  /// Cleaned text content in markdown format.
+  final String textContent;
+
+  /// Image URLs found in the article content.
+  final List<String> images;
+
+  /// Video URLs found in the article (including YouTube/Vimeo embeds).
+  final List<String> videos;
+
+  /// Author name from `<meta name="author">` or `article:author`.
+  final String? author;
+
+  /// Publication date from `article:published_time` or similar.
+  final DateTime? datePublished;
+
+  /// Site name from `og:site_name`.
+  final String? siteName;
+
+  /// Favicon URL.
+  final String? favicon;
+
+  /// Page description from `og:description` or `<meta name="description">`.
+  final String? description;
+}
+
+/// Extracts structured content from web pages.
+///
+/// Use [fromWebView] when a page is already loaded in a WebView (e.g.,
+/// QuickPeekSheet). Use [fromUrl] as a fallback to fetch and parse HTML
+/// directly via HTTP.
+class WebExtractor {
+  WebExtractor._();
+
+  // ---------------------------------------------------------------------------
+  // JavaScript extraction (primary mode)
+  // ---------------------------------------------------------------------------
+
+  /// Extracts content from an already-loaded WebView page.
+  ///
+  /// Injects a JavaScript snippet that reads the live DOM, finds the main
+  /// content area using heuristics, and returns structured JSON. The [url]
+  /// parameter should be the current page URL for the extraction result.
+  static Future<WebExtraction> fromWebView(
+    WebViewController controller, {
+    required String url,
+  }) async {
+    try {
+      final result = await controller.runJavaScriptReturningResult(
+        _extractionJs,
+      );
+
+      final jsonStr = result is String ? result : result.toString();
+      // WebView may wrap the result in quotes; strip them.
+      final decoded =
+          jsonStr.startsWith('"') && jsonStr.endsWith('"')
+              ? jsonDecode(jsonStr) as String
+              : jsonStr;
+
+      final data = jsonDecode(decoded) as Map<String, dynamic>;
+      return _parseExtractionJson(data, url);
+    } catch (e, st) {
+      dev.log('WebView extraction failed', error: e, stackTrace: st);
+      // On any failure, return a minimal extraction so callers always
+      // get something useful.
+      return WebExtraction(url: url, title: '', textContent: '');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // HTTP fetch extraction (fallback mode)
+  // ---------------------------------------------------------------------------
+
+  /// Extracts content from a URL by fetching and parsing HTML.
+  ///
+  /// Uses [http.get] to download the page, then applies regex-based
+  /// heuristics to pull out metadata, text, images, and videos. No
+  /// external HTML parsing library is required.
+  static Future<WebExtraction> fromUrl(String url) async {
+    try {
+      final uri = Uri.parse(url);
+      final response = await http.get(
+        uri,
+        headers: const {
+          'User-Agent':
+              'Mozilla/5.0 (compatible; Kabuk/1.0; +https://kabuk.app)',
+          'Accept': 'text/html,application/xhtml+xml',
+        },
+      );
+
+      if (response.statusCode != 200) {
+        return WebExtraction(url: url, title: url, textContent: '');
+      }
+
+      final html = response.body;
+      return _parseHtml(html, url);
+    } catch (e, st) {
+      dev.log('HTTP extraction failed for $url', error: e, stackTrace: st);
+      return WebExtraction(url: url, title: url, textContent: '');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // JavaScript snippet
+  // ---------------------------------------------------------------------------
+
+  static const _extractionJs = r'''
+(function() {
+  function meta(attr, value) {
+    var el = document.querySelector('meta[' + attr + '="' + value + '"]');
+    return el ? (el.getAttribute('content') || '') : '';
+  }
+
+  // --- Title ---
+  var title = meta('property', 'og:title')
+    || document.title
+    || (document.querySelector('h1') ? document.querySelector('h1').innerText : '');
+
+  // --- Metadata ---
+  var siteName = meta('property', 'og:site_name');
+  var description = meta('property', 'og:description') || meta('name', 'description');
+  var author = meta('name', 'author') || meta('property', 'article:author');
+  var datePublished = meta('property', 'article:published_time')
+    || meta('name', 'date')
+    || meta('property', 'og:article:published_time');
+  var favicon = '';
+  var fl = document.querySelector('link[rel="icon"]')
+    || document.querySelector('link[rel="shortcut icon"]')
+    || document.querySelector('link[rel="apple-touch-icon"]');
+  if (fl) favicon = fl.getAttribute('href') || '';
+
+  // --- Main content element ---
+  var selectors = [
+    'article', '[role="article"]', 'main', '[role="main"]',
+    '.post-content', '.article-body', '.entry-content', '.article-content',
+    '.post-body', '.story-body', '.content-body', '#article-body',
+    '.td-post-content', '.post_content', '.article__body',
+  ];
+  var main = null;
+  for (var i = 0; i < selectors.length; i++) {
+    var el = document.querySelector(selectors[i]);
+    if (el && el.innerText.trim().length > 100) { main = el; break; }
+  }
+  if (!main) {
+    main = document.body.cloneNode(true);
+    var remove = main.querySelectorAll(
+      'nav, header, footer, aside, .sidebar, .nav, .menu, .footer, .header, ' +
+      '.ad, .ads, .advertisement, .social-share, .comments, .comment, ' +
+      'script, style, noscript, svg, [role="navigation"], [role="banner"], ' +
+      '[role="contentinfo"], [aria-hidden="true"]'
+    );
+    for (var r = 0; r < remove.length; r++) remove[r].remove();
+  }
+
+  // --- Convert to markdown ---
+  function toMarkdown(node) {
+    if (!node) return '';
+    var md = '';
+    var children = node.childNodes;
+    for (var i = 0; i < children.length; i++) {
+      var c = children[i];
+      if (c.nodeType === 3) {
+        md += c.textContent;
+      } else if (c.nodeType === 1) {
+        var tag = c.tagName.toLowerCase();
+        if (tag === 'script' || tag === 'style' || tag === 'noscript' || tag === 'svg') continue;
+        if (tag === 'br') { md += '\n'; continue; }
+        if (tag === 'h1') md += '\n\n# ' + c.innerText.trim() + '\n\n';
+        else if (tag === 'h2') md += '\n\n## ' + c.innerText.trim() + '\n\n';
+        else if (tag === 'h3') md += '\n\n### ' + c.innerText.trim() + '\n\n';
+        else if (tag === 'h4') md += '\n\n#### ' + c.innerText.trim() + '\n\n';
+        else if (tag === 'h5' || tag === 'h6') md += '\n\n##### ' + c.innerText.trim() + '\n\n';
+        else if (tag === 'p' || tag === 'div') md += '\n\n' + toMarkdown(c) + '\n\n';
+        else if (tag === 'blockquote') md += '\n\n> ' + c.innerText.trim().replace(/\n/g, '\n> ') + '\n\n';
+        else if (tag === 'ul' || tag === 'ol') {
+          var items = c.querySelectorAll(':scope > li');
+          for (var li = 0; li < items.length; li++) {
+            var prefix = tag === 'ol' ? ((li + 1) + '. ') : '- ';
+            md += '\n' + prefix + items[li].innerText.trim();
+          }
+          md += '\n\n';
+        }
+        else if (tag === 'a') {
+          var href = c.getAttribute('href') || '';
+          var text = c.innerText.trim();
+          if (text && href) md += '[' + text + '](' + href + ')';
+          else if (text) md += text;
+        }
+        else if (tag === 'strong' || tag === 'b') md += '**' + c.innerText.trim() + '**';
+        else if (tag === 'em' || tag === 'i') md += '*' + c.innerText.trim() + '*';
+        else if (tag === 'code') md += '`' + c.innerText.trim() + '`';
+        else if (tag === 'pre') md += '\n\n```\n' + c.innerText.trim() + '\n```\n\n';
+        else if (tag === 'img') { /* handled separately */ }
+        else md += toMarkdown(c);
+      }
+    }
+    return md;
+  }
+
+  var textContent = toMarkdown(main).replace(/\n{3,}/g, '\n\n').trim();
+
+  // --- Images ---
+  var ogImage = meta('property', 'og:image');
+  var images = [];
+  if (ogImage) images.push(ogImage);
+  var imgs = main.querySelectorAll('img');
+  for (var i = 0; i < imgs.length; i++) {
+    var src = imgs[i].getAttribute('src') || imgs[i].getAttribute('data-src') || '';
+    if (!src) continue;
+    var w = imgs[i].naturalWidth || parseInt(imgs[i].getAttribute('width') || '0', 10);
+    var h = imgs[i].naturalHeight || parseInt(imgs[i].getAttribute('height') || '0', 10);
+    if ((w > 0 && w < 200) || (h > 0 && h < 200)) continue;
+    if (images.indexOf(src) === -1) images.push(src);
+  }
+
+  // --- Videos ---
+  var videos = [];
+  var ogVideo = meta('property', 'og:video');
+  if (ogVideo) videos.push(ogVideo);
+  var vidEls = document.querySelectorAll('video source, video[src]');
+  for (var v = 0; v < vidEls.length; v++) {
+    var vs = vidEls[v].getAttribute('src') || '';
+    if (vs && videos.indexOf(vs) === -1) videos.push(vs);
+  }
+  var iframes = document.querySelectorAll('iframe');
+  for (var f = 0; f < iframes.length; f++) {
+    var fs = iframes[f].getAttribute('src') || '';
+    if (fs && (fs.indexOf('youtube.com') !== -1 || fs.indexOf('youtu.be') !== -1
+      || fs.indexOf('vimeo.com') !== -1 || fs.indexOf('player.vimeo.com') !== -1)) {
+      if (videos.indexOf(fs) === -1) videos.push(fs);
+    }
+  }
+
+  return JSON.stringify({
+    title: title,
+    textContent: textContent,
+    images: images,
+    videos: videos,
+    author: author,
+    datePublished: datePublished,
+    siteName: siteName,
+    favicon: favicon,
+    description: description,
+  });
+})();
+''';
+
+  // ---------------------------------------------------------------------------
+  // Shared parsing helpers
+  // ---------------------------------------------------------------------------
+
+  /// Builds a [WebExtraction] from the JSON map returned by the JS snippet.
+  static WebExtraction _parseExtractionJson(
+    Map<String, dynamic> data,
+    String url,
+  ) {
+    DateTime? published;
+    final dateStr = data['datePublished'] as String? ?? '';
+    if (dateStr.isNotEmpty) {
+      published = DateTime.tryParse(dateStr);
+    }
+
+    return WebExtraction(
+      url: url,
+      title: (data['title'] as String? ?? '').trim(),
+      textContent: (data['textContent'] as String? ?? '').trim(),
+      images: _stringList(data['images']),
+      videos: _stringList(data['videos']),
+      author: _nonEmpty(data['author'] as String?),
+      datePublished: published,
+      siteName: _nonEmpty(data['siteName'] as String?),
+      favicon: _resolveUrl(url, _nonEmpty(data['favicon'] as String?)),
+      description: _nonEmpty(data['description'] as String?),
+    );
+  }
+
+  /// Parses raw HTML into a [WebExtraction] using regex heuristics.
+  static WebExtraction _parseHtml(String html, String url) {
+    // --- Meta tags ---
+    final ogTitle = _metaContent(html, property: 'og:title');
+    final ogDesc = _metaContent(html, property: 'og:description') ??
+        _metaContent(html, name: 'description');
+    final ogImage = _metaContent(html, property: 'og:image');
+    final ogVideo = _metaContent(html, property: 'og:video');
+    final ogSiteName = _metaContent(html, property: 'og:site_name');
+    final author = _metaContent(html, name: 'author') ??
+        _metaContent(html, property: 'article:author');
+    final dateStr =
+        _metaContent(html, property: 'article:published_time') ??
+        _metaContent(html, name: 'date');
+
+    // --- Title ---
+    final titleTag = _firstMatch(html, r'<title[^>]*>(.*?)</title>');
+    final title = ogTitle ?? titleTag ?? '';
+
+    // --- Favicon ---
+    final faviconMatch = _firstMatch(
+      html,
+      r'''<link[^>]+rel=["'](?:icon|shortcut icon|apple-touch-icon)["'][^>]+href=["']([^"']+)["']''',
+    );
+    final faviconAlt = _firstMatch(
+      html,
+      r'''<link[^>]+href=["']([^"']+)["'][^>]+rel=["'](?:icon|shortcut icon)["']''',
+    );
+
+    // --- Main content ---
+    final textContent = _extractMainText(html);
+
+    // --- Images ---
+    final images = <String>[];
+    if (ogImage != null && ogImage.isNotEmpty) images.add(ogImage);
+    final imgRegex = RegExp(
+      r'<img[^>]+src=["' "'" r']([^"' "'" r']+)["' "'" r']',
+      caseSensitive: false,
+    );
+    for (final m in imgRegex.allMatches(html)) {
+      final src = m.group(1) ?? '';
+      if (src.isNotEmpty && !images.contains(src)) images.add(src);
+    }
+
+    // --- Videos ---
+    final videos = <String>[];
+    if (ogVideo != null && ogVideo.isNotEmpty) videos.add(ogVideo);
+    final videoSrcRegex = RegExp(
+      r'<(?:video|source)[^>]+src=["' "'" r']([^"' "'" r']+)["' "'" r']',
+      caseSensitive: false,
+    );
+    for (final m in videoSrcRegex.allMatches(html)) {
+      final src = m.group(1) ?? '';
+      if (src.isNotEmpty && !videos.contains(src)) videos.add(src);
+    }
+    final iframeRegex = RegExp(
+      r'<iframe[^>]+src=["' "'" r']([^"' "'" r']+)["' "'" r']',
+      caseSensitive: false,
+    );
+    for (final m in iframeRegex.allMatches(html)) {
+      final src = m.group(1) ?? '';
+      if (_isVideoEmbed(src) && !videos.contains(src)) videos.add(src);
+    }
+
+    DateTime? published;
+    if (dateStr != null && dateStr.isNotEmpty) {
+      published = DateTime.tryParse(dateStr);
+    }
+
+    return WebExtraction(
+      url: url,
+      title: _decodeEntities(title).trim(),
+      textContent: textContent,
+      images: images,
+      videos: videos,
+      author: _nonEmpty(author),
+      datePublished: published,
+      siteName: _nonEmpty(ogSiteName),
+      favicon: _resolveUrl(url, faviconMatch ?? faviconAlt),
+      description: _nonEmpty(ogDesc),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // HTML regex helpers
+  // ---------------------------------------------------------------------------
+
+  /// Extracts a `<meta>` tag content value by property or name attribute.
+  static String? _metaContent(
+    String html, {
+    String? property,
+    String? name,
+  }) {
+    final attr = property != null
+        ? 'property=["\'"]$property["\'"]'
+        : 'name=["\'"]$name["\'"]';
+    final regex = RegExp(
+      '<meta[^>]+$attr[^>]+content=["\'"]([^"\'"]*)["\'"]',
+      caseSensitive: false,
+    );
+    final alt = RegExp(
+      '<meta[^>]+content=["\'"]([^"\'"]*)["\'"][^>]+$attr',
+      caseSensitive: false,
+    );
+    final match = regex.firstMatch(html) ?? alt.firstMatch(html);
+    final value = match?.group(1);
+    return (value != null && value.isNotEmpty) ? _decodeEntities(value) : null;
+  }
+
+  /// Returns the first capture group from [pattern] in [html], or `null`.
+  static String? _firstMatch(String html, String pattern) {
+    final m = RegExp(pattern, caseSensitive: false, dotAll: true)
+        .firstMatch(html);
+    final value = m?.group(1);
+    return (value != null && value.isNotEmpty) ? _decodeEntities(value) : null;
+  }
+
+  /// Attempts to isolate the main article text from raw HTML.
+  ///
+  /// Looks for `<article>`, `<main>`, or common content class containers.
+  /// Falls back to `<body>` with boilerplate sections stripped.
+  static String _extractMainText(String html) {
+    // Try to find a main content block.
+    final blockPatterns = [
+      r'<article[^>]*>(.*?)</article>',
+      r'<main[^>]*>(.*?)</main>',
+      r'<div[^>]+class="[^"]*(?:post-content|article-body|entry-content|article-content)[^"]*"[^>]*>(.*?)</div>',
+      r'<div[^>]+role="main"[^>]*>(.*?)</div>',
+    ];
+
+    String? contentHtml;
+    for (final p in blockPatterns) {
+      final m = RegExp(p, caseSensitive: false, dotAll: true).firstMatch(html);
+      if (m != null && (m.group(1) ?? '').length > 200) {
+        contentHtml = m.group(1);
+        break;
+      }
+    }
+
+    contentHtml ??= _firstMatch(html, r'<body[^>]*>(.*)</body>') ?? html;
+
+    // Strip boilerplate tags.
+    contentHtml = contentHtml.replaceAll(
+      RegExp(
+        r'<(script|style|noscript|nav|header|footer|aside|svg)[^>]*>.*?</\1>',
+        caseSensitive: false,
+        dotAll: true,
+      ),
+      '',
+    );
+
+    // Convert headings to markdown.
+    for (var h = 1; h <= 6; h++) {
+      final prefix = '#' * h;
+      contentHtml = contentHtml!.replaceAllMapped(
+        RegExp('<h$h[^>]*>(.*?)</h$h>', caseSensitive: false, dotAll: true),
+        (m) => '\n\n$prefix ${_stripTags(m.group(1) ?? '')}\n\n',
+      );
+    }
+
+    // Convert <p>, <br>, <li> to newlines.
+    contentHtml = contentHtml!
+        .replaceAll(RegExp(r'<br\s*/?>',  caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'</?p[^>]*>', caseSensitive: false), '\n\n')
+        .replaceAllMapped(
+          RegExp(r'<li[^>]*>(.*?)</li>', caseSensitive: false, dotAll: true),
+          (m) => '\n- ${_stripTags(m.group(1) ?? '')}',
+        );
+
+    // Strip remaining tags, decode entities, and clean whitespace.
+    final text = _decodeEntities(_stripTags(contentHtml))
+        .replaceAll(RegExp(r'[^\S\n]+'), ' ')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+        .trim();
+
+    return text;
+  }
+
+  /// Removes all HTML tags from [html].
+  static String _stripTags(String html) =>
+      html.replaceAll(RegExp(r'<[^>]+>'), '');
+
+  /// Decodes common HTML entities.
+  static String _decodeEntities(String text) => text
+      .replaceAll('&amp;', '&')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'")
+      .replaceAll('&apos;', "'")
+      .replaceAll('&nbsp;', ' ')
+      .replaceAllMapped(RegExp(r'&#(\d+);'), (m) {
+        final code = int.tryParse(m.group(1) ?? '');
+        return code != null ? String.fromCharCode(code) : m.group(0)!;
+      })
+      .replaceAllMapped(RegExp(r'&#x([0-9a-fA-F]+);'), (m) {
+        final code = int.tryParse(m.group(1) ?? '', radix: 16);
+        return code != null ? String.fromCharCode(code) : m.group(0)!;
+      });
+
+  /// Returns `true` if [src] looks like a YouTube or Vimeo embed URL.
+  static bool _isVideoEmbed(String src) =>
+      src.contains('youtube.com') ||
+      src.contains('youtu.be') ||
+      src.contains('vimeo.com') ||
+      src.contains('player.vimeo.com');
+
+  /// Converts a list of dynamic values to a `List<String>`.
+  static List<String> _stringList(dynamic value) {
+    if (value is List) return value.whereType<String>().toList();
+    return const [];
+  }
+
+  /// Returns [value] if it's non-null and non-empty, otherwise `null`.
+  static String? _nonEmpty(String? value) =>
+      (value != null && value.trim().isNotEmpty) ? value.trim() : null;
+
+  /// Resolves a potentially relative [path] against the page [baseUrl].
+  static String? _resolveUrl(String baseUrl, String? path) {
+    if (path == null || path.isEmpty) return null;
+    if (path.startsWith('http://') || path.startsWith('https://')) return path;
+    try {
+      return Uri.parse(baseUrl).resolve(path).toString();
+    } catch (_) {
+      return path;
+    }
+  }
+}

@@ -1775,22 +1775,9 @@ class _UnifiedCommentTileState extends State<_UnifiedCommentTile> {
                     _UnifiedCommentTile(comment: _UnifiedComment.fromReddit(r)),
               ),
           if (c.redditReplies.length > 20)
-            Padding(
-              padding: EdgeInsets.only(left: 16 + (c.depth + 1) * 16.0),
-              child: GestureDetector(
-                onTap: () {}, // placeholder — future deep-load
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Text(
-                    'Show ${c.redditReplies.length - 20} more replies…',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      color: KabukTheme.blueAccent,
-                    ),
-                  ),
-                ),
-              ),
+            _ShowMoreRepliesButton(
+              comment: c,
+              count: c.redditReplies.length - 20,
             ),
         ],
       ],
@@ -1829,6 +1816,59 @@ class _UnifiedCommentTileState extends State<_UnifiedCommentTile> {
   static String _fmtScore(int score) {
     if (score.abs() >= 1000) return '${(score / 1000).toStringAsFixed(1)}k';
     return score.toString();
+  }
+}
+
+// =============================================================================
+// Show more replies (expands hidden comments inline)
+// =============================================================================
+
+class _ShowMoreRepliesButton extends StatefulWidget {
+  const _ShowMoreRepliesButton({required this.comment, required this.count});
+
+  final _UnifiedComment comment;
+  final int count;
+
+  @override
+  State<_ShowMoreRepliesButton> createState() => _ShowMoreRepliesButtonState();
+}
+
+class _ShowMoreRepliesButtonState extends State<_ShowMoreRepliesButton> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final indent = 16 + (widget.comment.depth + 1) * 16.0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_expanded)
+          ...widget.comment.redditReplies
+              .skip(20)
+              .map(
+                (r) =>
+                    _UnifiedCommentTile(comment: _UnifiedComment.fromReddit(r)),
+              ),
+        if (!_expanded)
+          Padding(
+            padding: EdgeInsets.only(left: indent),
+            child: GestureDetector(
+              onTap: () => setState(() => _expanded = true),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text(
+                  'Show ${widget.count} more replies…',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: KabukTheme.blueAccent,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 }
 

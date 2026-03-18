@@ -18,6 +18,7 @@ import 'package:http/http.dart' as http;
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/database.dart';
 import 'package:kabuk/ui/chat/chat_input.dart';
+import 'package:kabuk/ui/explore/article_detail_page.dart' show openUrlSmart;
 import 'package:kabuk/ui/shell.dart';
 import 'package:kabuk/ui/theme.dart';
 
@@ -2032,7 +2033,7 @@ class _LinkPreviewCardState extends State<_LinkPreviewCard> {
     }
 
     return GestureDetector(
-      onTap: () {}, // Could open URL in browser.
+      onTap: () => openUrlSmart(context, widget.url),
       child: Container(
         margin: const EdgeInsets.only(bottom: 6),
         decoration: BoxDecoration(

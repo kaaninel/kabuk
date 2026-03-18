@@ -61,6 +61,9 @@ class ArticleCard extends ConsumerWidget {
   Color _sourceAccentColor() {
     final source = article.feedSource ?? '';
     final url = article.url ?? '';
+    if (source == 'reader-mode' || article.tags.contains('reader-mode')) {
+      return KabukTheme.accentGreen;
+    }
     if (source.contains('reddit') || url.contains('reddit.com')) {
       return KabukTheme.redditOrange; // Reddit orange
     }
@@ -358,6 +361,9 @@ class ArticleCard extends ConsumerWidget {
   String _cleanDescription(String desc) {
     return desc
         .replaceAll(RegExp(r'https?://\S+'), '') // strip raw URLs
+        .replaceAll(RegExp(r'^#{1,6}\s+', multiLine: true), '') // strip markdown headers
+        .replaceAll(RegExp(r'\*{1,2}([^*]+)\*{1,2}'), r'$1') // strip bold/italic
+        .replaceAll(RegExp(r'`([^`]+)`'), r'$1') // strip inline code
         .replaceAll(
           RegExp(r'\s*[·|]?\s*⬆\s*[\d,]+\s*([·|]\s*💬\s*[\d,]+)?\s*$'),
           '',
@@ -473,7 +479,8 @@ class _SourceHeader extends StatelessWidget {
     final url = article.url ?? '';
     final isReddit =
         source.contains('reddit') || url.contains('reddit.com');
-    final isNostr = !isReddit &&
+    final isReaderMode = source == 'reader-mode' || article.tags.contains('reader-mode');
+    final isNostr = !isReddit && !isReaderMode &&
         (url.startsWith('nostr:') ||
             source.startsWith('kabuk:') ||
             source.isEmpty);
@@ -481,7 +488,10 @@ class _SourceHeader extends StatelessWidget {
 
     final Color iconColor;
     final IconData iconData;
-    if (isReddit) {
+    if (isReaderMode) {
+      iconColor = KabukTheme.accentGreen;
+      iconData = Icons.auto_stories_rounded;
+    } else if (isReddit) {
       iconColor = KabukTheme.redditOrange;
       iconData = Icons.reddit;
     } else if (isNostr) {
@@ -601,6 +611,25 @@ class _SourceHeader extends StatelessWidget {
   /// Extracts subreddit name (e.g. `r/flutter`) or Nostr topic from tags.
   String _subredditName(ArticleData article) {
     final tags = article.tags;
+    final source = article.feedSource ?? '';
+
+    // Reader mode articles — show domain name instead of tag.
+    if (source == 'reader-mode' || tags.contains('reader-mode')) {
+      // Try to get domain from URL.
+      final url = article.url;
+      if (url != null) {
+        final uri = Uri.tryParse(url);
+        if (uri != null && uri.host.isNotEmpty) {
+          return uri.host.replaceFirst('www.', '');
+        }
+      }
+      // Fall back to second tag (domain) if available.
+      for (final tag in tags) {
+        if (tag != 'reader-mode' && tag.isNotEmpty) return tag;
+      }
+      return 'Reader Mode';
+    }
+
     for (final tag in tags) {
       if (tag.startsWith('r/')) return tag;
     }
@@ -609,7 +638,6 @@ class _SourceHeader extends StatelessWidget {
       if (tag.isNotEmpty && !tag.startsWith('kabuk:')) return '#$tag';
     }
     // Fall back: if feedSource is a kabuk URI, show "Nostr" instead of the UUID.
-    final source = article.feedSource ?? '';
     if (source.startsWith('kabuk:') || source.isEmpty) return 'Nostr';
     return source.split('/').last.isNotEmpty ? source.split('/').last : 'Feed';
   }

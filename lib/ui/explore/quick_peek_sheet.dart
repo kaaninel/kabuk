@@ -11,7 +11,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/types/follow.dart';
 import 'package:kabuk/services/feed.dart';
+import 'package:kabuk/services/reader_mode.dart';
 import 'package:kabuk/ui/explore/article_detail_page.dart' show openUrlSmart;
+import 'package:kabuk/ui/explore/reader_view.dart';
 import 'package:kabuk/ui/shared/feed_image.dart';
 import 'package:kabuk/ui/theme.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -26,7 +28,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 /// Used for quick-peeking article URLs without leaving the app.
 /// Supports navigation controls (back/forward/refresh) and an
 /// "Open in Browser" escape hatch.
-class QuickPeekSheet extends StatefulWidget {
+class QuickPeekSheet extends ConsumerStatefulWidget {
   /// Creates a [QuickPeekSheet] for the given [url].
   const QuickPeekSheet({required this.url, this.title, super.key});
 
@@ -48,14 +50,15 @@ class QuickPeekSheet extends StatefulWidget {
   }
 
   @override
-  State<QuickPeekSheet> createState() => _QuickPeekSheetState();
+  ConsumerState<QuickPeekSheet> createState() => _QuickPeekSheetState();
 }
 
-class _QuickPeekSheetState extends State<QuickPeekSheet> {
+class _QuickPeekSheetState extends ConsumerState<QuickPeekSheet> {
   late final WebViewController _controller;
   bool _isLoading = true;
   double _progress = 0;
   String _currentTitle = '';
+  bool _isProcessingReader = false;
 
   @override
   void initState() {
@@ -147,6 +150,8 @@ class _QuickPeekSheetState extends State<QuickPeekSheet> {
                     onClose: () => Navigator.of(context).pop(),
                     onOpenExternal: () => _openExternal(widget.url),
                     onRefresh: () => _controller.reload(),
+                    onReaderMode: _activateReaderMode,
+                    isProcessingReader: _isProcessingReader,
                   ),
                 ],
               ),
@@ -181,6 +186,33 @@ class _QuickPeekSheetState extends State<QuickPeekSheet> {
       return Uri.parse(url).host;
     } on Object {
       return url;
+    }
+  }
+
+  Future<void> _activateReaderMode() async {
+    if (_isProcessingReader) return;
+    setState(() => _isProcessingReader = true);
+    try {
+      final service = ref.read(readerModeServiceProvider);
+      final articleUri = await service.processFromWebView(
+        _controller,
+        url: widget.url,
+      );
+      if (mounted) {
+        Navigator.of(context).pop(); // close the sheet
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ReaderView(articleUri: articleUri, url: widget.url),
+          ),
+        );
+      }
+    } on Object catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Reader mode failed: $e')),
+        );
+        setState(() => _isProcessingReader = false);
+      }
     }
   }
 
@@ -695,6 +727,8 @@ class _PeekHeader extends StatelessWidget {
     this.iconColor,
     this.onRefresh,
     this.onOpenExternal,
+    this.onReaderMode,
+    this.isProcessingReader = false,
   });
 
   final String title;
@@ -703,6 +737,8 @@ class _PeekHeader extends StatelessWidget {
   final Color? iconColor;
   final VoidCallback? onRefresh;
   final VoidCallback? onOpenExternal;
+  final VoidCallback? onReaderMode;
+  final bool isProcessingReader;
 
   @override
   Widget build(BuildContext context) {
@@ -728,6 +764,30 @@ class _PeekHeader extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
+          // Reader mode button.
+          if (onReaderMode != null)
+            isProcessingReader
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: KabukTheme.accentGreen,
+                      ),
+                    ),
+                  )
+                : IconButton(
+                    icon: const Icon(
+                      Icons.auto_stories_rounded,
+                      size: 20,
+                      color: KabukTheme.accentGreen,
+                    ),
+                    onPressed: onReaderMode,
+                    tooltip: 'AI Reader Mode',
+                    visualDensity: VisualDensity.compact,
+                  ),
           // Refresh button.
           if (onRefresh != null)
             IconButton(

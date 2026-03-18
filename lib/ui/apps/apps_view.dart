@@ -172,8 +172,20 @@ class AppsView extends ConsumerWidget {
                     ],
                   ),
             loading: () => const SliverToBoxAdapter(child: SizedBox.shrink()),
-            error: (_, _) =>
-                const SliverToBoxAdapter(child: SizedBox.shrink()),
+            error: (e, _) => SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: KabukTheme.spacingMd,
+                ),
+                child: Text(
+                  'Could not load saved views.',
+                  style: const TextStyle(
+                    color: KabukTheme.textSecondary,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ),
           ),
 
           // ─── Section divider ──────────────────────────────────────
@@ -221,8 +233,20 @@ class AppsView extends ConsumerWidget {
                     ],
                   ),
             loading: () => const SliverToBoxAdapter(child: SizedBox.shrink()),
-            error: (_, _) =>
-                const SliverToBoxAdapter(child: SizedBox.shrink()),
+            error: (e, _) => SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: KabukTheme.spacingMd,
+                ),
+                child: Text(
+                  'Could not load recent notes.',
+                  style: const TextStyle(
+                    color: KabukTheme.textSecondary,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ),
           ),
 
           // ─── Section divider ──────────────────────────────────────
@@ -533,18 +557,29 @@ class AppsView extends ConsumerWidget {
                         );
                         return;
                       }
-                      final store = ref.read(knowledgeStoreProvider);
-                      await store.createBookmark(
-                        name: name,
-                        url: url,
-                        description: descCtrl.text.trim().isNotEmpty
-                            ? descCtrl.text.trim()
-                            : null,
-                        iconName: selectedIcon,
-                        color: selectedColor,
-                      );
-                      ref.invalidate(_bookmarksProvider);
-                      if (ctx.mounted) Navigator.pop(ctx);
+                      try {
+                        final store = ref.read(knowledgeStoreProvider);
+                        await store.createBookmark(
+                          name: name,
+                          url: url,
+                          description: descCtrl.text.trim().isNotEmpty
+                              ? descCtrl.text.trim()
+                              : null,
+                          iconName: selectedIcon,
+                          color: selectedColor,
+                        );
+                        ref.invalidate(_bookmarksProvider);
+                        if (ctx.mounted) Navigator.pop(ctx);
+                      } catch (e) {
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(
+                              content: Text('Failed to save: $e'),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      }
                     },
                     icon: const Icon(Icons.push_pin_rounded, size: 18),
                     label: const Text('Pin'),
@@ -580,10 +615,21 @@ class AppsView extends ConsumerWidget {
           ),
           TextButton(
             onPressed: () async {
-              final store = ref.read(knowledgeStoreProvider);
-              await store.deleteBookmark(bm.uri);
-              ref.invalidate(_bookmarksProvider);
-              if (context.mounted) Navigator.pop(context);
+              try {
+                final store = ref.read(knowledgeStoreProvider);
+                await store.deleteBookmark(bm.uri);
+                ref.invalidate(_bookmarksProvider);
+                if (context.mounted) Navigator.pop(context);
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Failed to remove: $e'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              }
             },
             style: TextButton.styleFrom(foregroundColor: KabukTheme.error),
             child: const Text('Remove'),
@@ -611,10 +657,21 @@ class AppsView extends ConsumerWidget {
           ),
           TextButton(
             onPressed: () async {
-              final store = ref.read(knowledgeStoreProvider);
-              await store.deleteSavedView(view.uri);
-              ref.invalidate(_savedViewsProvider);
-              if (context.mounted) Navigator.pop(context);
+              try {
+                final store = ref.read(knowledgeStoreProvider);
+                await store.deleteSavedView(view.uri);
+                ref.invalidate(_savedViewsProvider);
+                if (context.mounted) Navigator.pop(context);
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Failed to delete: $e'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              }
             },
             style: TextButton.styleFrom(foregroundColor: KabukTheme.error),
             child: const Text('Delete'),
@@ -1458,13 +1515,24 @@ class _CalendarAppViewState extends ConsumerState<_CalendarAppView> {
                 pickedTime.minute,
               );
 
-              final store = ref.read(knowledgeStoreProvider);
-              await store.createEvent(
-                name: name,
-                description: description,
-                startDate: selectedDateTime,
-              );
-              if (context.mounted) setState(() => _refreshKey++);
+              try {
+                final store = ref.read(knowledgeStoreProvider);
+                await store.createEvent(
+                  name: name,
+                  description: description,
+                  startDate: selectedDateTime,
+                );
+                if (context.mounted) setState(() => _refreshKey++);
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Failed to create event: $e'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              }
             },
             child: const Text('Add'),
           ),
@@ -1641,17 +1709,28 @@ class _ContactsAppView extends ConsumerWidget {
             onPressed: () async {
               final name = nameController.text.trim();
               if (name.isEmpty) return;
-              final store = ref.read(knowledgeStoreProvider);
-              await store.createPerson(
-                name: name,
-                email: emailController.text.trim().isNotEmpty
-                    ? emailController.text.trim()
-                    : null,
-                telephone: phoneController.text.trim().isNotEmpty
-                    ? phoneController.text.trim()
-                    : null,
-              );
-              if (ctx.mounted) Navigator.pop(ctx);
+              try {
+                final store = ref.read(knowledgeStoreProvider);
+                await store.createPerson(
+                  name: name,
+                  email: emailController.text.trim().isNotEmpty
+                      ? emailController.text.trim()
+                      : null,
+                  telephone: phoneController.text.trim().isNotEmpty
+                      ? phoneController.text.trim()
+                      : null,
+                );
+                if (ctx.mounted) Navigator.pop(ctx);
+              } catch (e) {
+                if (ctx.mounted) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    SnackBar(
+                      content: Text('Failed to add contact: $e'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              }
             },
             child: const Text('Add'),
           ),
