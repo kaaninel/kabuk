@@ -81,7 +81,11 @@ class VaultView extends ConsumerStatefulWidget {
   ConsumerState<VaultView> createState() => _VaultViewState();
 }
 
-class _VaultViewState extends ConsumerState<VaultView> {
+class _VaultViewState extends ConsumerState<VaultView>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
   bool _showOverlay = false;
   Widget? _overlayWidget;
 
@@ -177,6 +181,7 @@ class _VaultViewState extends ConsumerState<VaultView> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final activeDoc = ref.watch(activeDocumentProvider);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(

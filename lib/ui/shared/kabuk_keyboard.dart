@@ -888,7 +888,7 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
     );
   }
 
-  void _paste() async {
+  Future<void> _paste() async {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     if (data?.text != null && data!.text!.isNotEmpty) {
       _insertChar(data.text!);

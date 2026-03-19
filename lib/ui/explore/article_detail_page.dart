@@ -345,7 +345,7 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
     if (blocks.isNotEmpty) {
       setState(() => _contentBlocks = blocks);
     } else if (_needsContentFetch) {
-      _fetchContent();
+      unawaited(_fetchContent());
     }
   }
 

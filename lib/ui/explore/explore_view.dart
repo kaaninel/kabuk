@@ -319,9 +319,12 @@ class ExploreView extends ConsumerStatefulWidget {
 }
 
 class _ExploreViewState extends ConsumerState<ExploreView>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, AutomaticKeepAliveClientMixin {
   final _scrollController = ScrollController();
   bool _didAutoRefresh = false;
+
+  @override
+  bool get wantKeepAlive => true;
 
   /// Tracks an in-progress refresh so concurrent callers can await it.
   Future<void>? _refreshFuture;
@@ -614,6 +617,7 @@ class _ExploreViewState extends ConsumerState<ExploreView>
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final articlesAsync = ref.watch(articlesProvider);
     final subsAsync = ref.watch(subscriptionsProvider);
     final selectedFeed = ref.watch(selectedFeedProvider);
@@ -1951,7 +1955,7 @@ class _ContentFilterSheetState extends State<_ContentFilterSheet> {
             child: Switch.adaptive(
               value: value,
               onChanged: onChanged,
-              activeColor: KabukTheme.accentGreen,
+              activeTrackColor: KabukTheme.accentGreen,
             ),
           ),
         ],

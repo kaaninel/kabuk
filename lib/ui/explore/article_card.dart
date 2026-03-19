@@ -550,7 +550,8 @@ class _SourceHeader extends StatelessWidget {
     }
     // Fall back: if feedSource is a kabuk URI, show "Nostr" instead of the UUID.
     if (source.startsWith('kabuk:') || source.isEmpty) return 'Nostr';
-    return source.split('/').last.isNotEmpty ? source.split('/').last : 'Feed';
+    final last = source.split('/').last;
+    return last.isNotEmpty ? last : 'Feed';
   }
 
   /// Opens the subreddit natively via [ChannelView].
