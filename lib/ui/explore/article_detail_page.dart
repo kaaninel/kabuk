@@ -606,10 +606,8 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
         // ── Content blocks (from reader mode) ─────────────────────────────
         if (_contentBlocks != null && _contentBlocks!.isNotEmpty)
           for (final block in _contentBlocks!)
-            // Skip heading blocks that duplicate the article title.
-            if (!(block.type == BlockType.heading &&
-                block.content != null &&
-                _isSameTitle(block.content!, article.name ?? '')))
+            // Skip blocks that duplicate the article title or description.
+            if (!_isDuplicateBlock(block, article))
               _renderContentBlock(context, block),
 
         // ── Load full article button (when no content and not loading) ─────
@@ -793,12 +791,50 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
   }
 
   /// Returns true when [blockText] is effectively the same as [title],
-  /// ignoring case, leading/trailing whitespace and common punctuation diffs.
+  /// ignoring case, whitespace differences, and punctuation.
   bool _isSameTitle(String blockText, String title) {
-    String norm(String s) =>
-        s.trim().toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
+    // Strip everything except alphanumerics so spacing differences
+    // (e.g. "peoplewant" vs "people want") don't break the match.
+    String norm(String s) => s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
     return norm(blockText) == norm(title);
   }
+
+  /// Returns true when a content block duplicates the article title or
+  /// the opening description paragraph already shown in the header.
+  bool _isDuplicateBlock(ContentBlockData block, ArticleData article) {
+    if (block.content == null || block.content!.isEmpty) return false;
+
+    // Skip heading blocks that match the article title.
+    if (block.type == BlockType.heading &&
+        _isSameTitle(block.content!, article.name ?? '')) {
+      return true;
+    }
+
+    // Skip the first text block if it substantially overlaps with the
+    // description already shown in the header.
+    if (block.type == BlockType.text &&
+        article.description != null &&
+        article.description!.isNotEmpty) {
+      final descNorm = _normContent(article.description!);
+      final blockNorm = _normContent(block.content!);
+      // If the block starts with the same text as the description (first
+      // 80 chars), or the description starts with the block text, skip it.
+      if (descNorm.length > 20 && blockNorm.length > 20) {
+        final descPrefix = descNorm.substring(0, descNorm.length.clamp(0, 80));
+        final blockPrefix =
+            blockNorm.substring(0, blockNorm.length.clamp(0, 80));
+        if (blockPrefix.startsWith(descPrefix) ||
+            descPrefix.startsWith(blockPrefix)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  String _normContent(String s) =>
+      s.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 
   /// Renders a single content block as a widget.
   Widget _renderContentBlock(BuildContext context, ContentBlockData block) {

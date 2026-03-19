@@ -31,10 +31,6 @@ class FeedImage extends StatelessWidget {
   /// Known Reddit placeholder URLs that are not real images.
   static const _redditPlaceholders = {'self', 'default', 'nsfw', 'spoiler', ''};
 
-  /// Whether [url] is a valid, displayable image URL.
-  ///
-  /// Returns `false` for Reddit placeholder strings (e.g. "self", "default")
-  /// and malformed URLs.
   /// Patterns in image URLs that indicate lazy-load placeholders.
   static const _placeholderPatterns = [
     'placeholder',
@@ -47,11 +43,15 @@ class FeedImage extends StatelessWidget {
     'blank.',
   ];
 
+  /// Whether [url] is a valid, displayable image URL.
+  ///
+  /// Returns `false` for Reddit placeholder strings (e.g. `self`, `default`)
+  /// and malformed URLs.
   static bool isValidImageUrl(String? url) {
     if (url == null || url.isEmpty) return false;
     if (_redditPlaceholders.contains(url.toLowerCase())) return false;
     final lower = url.toLowerCase();
-    if (_placeholderPatterns.any((p) => lower.contains(p))) return false;
+    if (_placeholderPatterns.any(lower.contains)) return false;
     final uri = Uri.tryParse(url);
     return uri != null && uri.hasScheme && uri.host.isNotEmpty;
   }
