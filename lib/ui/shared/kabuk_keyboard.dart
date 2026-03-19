@@ -357,10 +357,8 @@ class _KabukKeyboardState extends ConsumerState<KabukKeyboard> {
           minLines: 1,
           autofocus: widget.autofocus,
           onTap: () {
-            if (isCustomKeyboardActive) {
-              ref.read(keyboardModeProvider.notifier).state = KeyboardMode.none;
-            } else {
-              // Auto-activate text keyboard when tapping the input.
+            // Always ensure keyboard is open when tapping the input field.
+            if (!isCustomKeyboardActive) {
               ref.read(keyboardModeProvider.notifier).state = KeyboardMode.text;
             }
           },

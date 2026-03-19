@@ -295,7 +295,12 @@ class _ConversationDetailState extends ConsumerState<ConversationDetail> {
   }
 
   Widget _buildEmptyState(BuildContext context) {
-    final isConfigured = ref.watch(llmConfigProvider) != null;
+    final hasRemote = ref.watch(llmConfigProvider) != null;
+    final hasLocal = ref.watch(localModelConfigProvider) != null;
+    final modelState = ref.watch(modelReadinessProvider);
+    final isDownloading =
+        modelState.status == ModelReadyStatus.downloading;
+    final isConfigured = hasRemote || hasLocal;
 
     return Center(
       child: SingleChildScrollView(
@@ -304,26 +309,53 @@ class _ConversationDetailState extends ConsumerState<ConversationDetail> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              isConfigured ? Icons.chat_outlined : Icons.warning_amber_rounded,
+              isDownloading
+                  ? Icons.downloading_rounded
+                  : isConfigured
+                      ? Icons.chat_outlined
+                      : Icons.warning_amber_rounded,
               size: 48,
-              color: isConfigured
-                  ? KabukTheme.accentGreen.withAlpha(100)
-                  : KabukTheme.error.withAlpha(180),
+              color: isDownloading
+                  ? KabukTheme.accentGreen.withAlpha(150)
+                  : isConfigured
+                      ? KabukTheme.accentGreen.withAlpha(100)
+                      : KabukTheme.error.withAlpha(180),
             ),
             const SizedBox(height: KabukTheme.spacingMd),
             Text(
-              isConfigured ? 'Start chatting' : 'AI Not Configured',
+              isDownloading
+                  ? 'Model Downloading…'
+                  : isConfigured
+                      ? 'Start chatting'
+                      : 'AI Not Configured',
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: KabukTheme.spacingSm),
             Text(
-              isConfigured
-                  ? 'Ask me anything — I can help with notes,\nsearch, and everyday tasks.'
-                  : 'Set up an LLM provider to enable chat.',
+              isDownloading
+                  ? '${modelState.modelName ?? "Model"} — '
+                      '${(modelState.progress * 100).toInt()}% complete.\n'
+                      'Chat will be ready shortly.'
+                  : isConfigured
+                      ? 'Ask me anything — I can help with notes,\nsearch, and everyday tasks.'
+                      : 'Set up an LLM provider to enable chat.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
-            if (!isConfigured) ...[
+            if (isDownloading) ...[
+              const SizedBox(height: KabukTheme.spacingLg),
+              SizedBox(
+                width: 200,
+                child: LinearProgressIndicator(
+                  value: modelState.progress,
+                  backgroundColor: KabukTheme.surfaceVariant,
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                    KabukTheme.accentGreen,
+                  ),
+                ),
+              ),
+            ],
+            if (!isConfigured && !isDownloading) ...[
               const SizedBox(height: KabukTheme.spacingLg),
               FilledButton.icon(
                 onPressed: () => Navigator.of(context).push(

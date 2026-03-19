@@ -19,7 +19,6 @@ import 'package:kabuk/ui/chat/conversation_detail.dart';
 import 'package:kabuk/ui/chat/nostr_channel_detail.dart';
 import 'package:kabuk/ui/chat/nostr_chat_detail.dart';
 import 'package:kabuk/ui/chat/qr_contact_exchange.dart';
-import 'package:kabuk/ui/settings/settings_view.dart';
 import 'package:kabuk/ui/shared/identity_quick_switcher.dart';
 import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
 import 'package:kabuk/ui/theme.dart';
@@ -61,7 +60,8 @@ class _ConversationListState extends ConsumerState<ConversationList> {
   Widget build(BuildContext context) {
     final conversationsAsync = ref.watch(conversationsProvider);
     final contactsAsync = ref.watch(contactsProvider);
-    final isConfigured = ref.watch(llmConfigProvider) != null;
+    final isConfigured = ref.watch(llmConfigProvider) != null ||
+        ref.watch(localModelConfigProvider) != null;
 
     return Scaffold(
       appBar: AppBar(
@@ -1032,31 +1032,17 @@ class _KabukAiTile extends ConsumerWidget {
         style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
       ),
       subtitle: Text(
-        isConfigured ? 'Your personal assistant' : 'Tap to configure AI',
+        isConfigured ? 'Your personal assistant' : 'Model downloading…',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(color: KabukTheme.textSecondary, fontSize: 13),
       ),
-      trailing: !isConfigured
-          ? Icon(
-              Icons.warning_amber_rounded,
-              color: KabukTheme.warmAccent.withAlpha(200),
-              size: 20,
-            )
-          : const Icon(
-              Icons.chevron_right,
-              color: KabukTheme.textSecondary,
-              size: 20,
-            ),
-      onTap: () {
-        if (!isConfigured) {
-          Navigator.of(
-            context,
-          ).push(MaterialPageRoute<void>(builder: (_) => const SettingsView()));
-          return;
-        }
-        _openKabukAi(context, ref);
-      },
+      trailing: const Icon(
+        Icons.chevron_right,
+        color: KabukTheme.textSecondary,
+        size: 20,
+      ),
+      onTap: () => _openKabukAi(context, ref),
     );
   }
 

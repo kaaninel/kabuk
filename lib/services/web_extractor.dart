@@ -483,6 +483,35 @@ class WebExtractor {
     String baseUrl,
     String? pageOgImage,
   ) {
+    // First pass: same-domain only (standard news/article sites).
+    final links = _doExtractArticleLinks(
+      html, baseUrl, pageOgImage,
+      sameDomainOnly: true,
+    );
+    if (links.length >= 5) return links;
+
+    // Few same-domain links — likely an aggregator (HN, Reddit, etc.).
+    // Second pass: allow cross-domain article links.
+    return _doExtractArticleLinks(
+      html, baseUrl, pageOgImage,
+      sameDomainOnly: false,
+    );
+  }
+
+  /// Domains to skip when extracting cross-domain article links.
+  static const _socialDomains = {
+    'twitter.com', 'x.com', 'facebook.com', 'instagram.com',
+    'linkedin.com', 'tiktok.com', 'pinterest.com', 'snapchat.com',
+    'whatsapp.com', 't.me', 'discord.com', 'discord.gg',
+    'accounts.google.com', 'play.google.com', 'apps.apple.com',
+  };
+
+  static List<ExtractedLink> _doExtractArticleLinks(
+    String html,
+    String baseUrl,
+    String? pageOgImage, {
+    required bool sameDomainOnly,
+  }) {
     final baseUri = Uri.tryParse(baseUrl);
     if (baseUri == null) return const [];
     final baseHost = baseUri.host;
@@ -521,10 +550,19 @@ class WebExtractor {
       final linkUri = Uri.tryParse(resolved);
       if (linkUri == null) continue;
 
-      // Only keep links on the same domain (or closely related sub-domains).
-      if (!linkUri.host.endsWith(baseHost) &&
-          !baseHost.endsWith(linkUri.host)) {
-        continue;
+      // Domain filtering.
+      if (sameDomainOnly) {
+        // Only keep links on the same domain (or closely related sub-domains).
+        if (!linkUri.host.endsWith(baseHost) &&
+            !baseHost.endsWith(linkUri.host)) {
+          continue;
+        }
+      } else {
+        // Cross-domain pass: skip social/platform domains.
+        final host = linkUri.host;
+        if (_socialDomains.any((d) => host == d || host.endsWith('.$d'))) {
+          continue;
+        }
       }
 
       // Filter out non-article paths.
