@@ -711,7 +711,32 @@ class WebExtractor {
     // Strip boilerplate tags.
     contentHtml = contentHtml.replaceAll(
       RegExp(
-        r'<(script|style|noscript|nav|header|footer|aside|svg)[^>]*>.*?</\1>',
+        r'<(script|style|noscript|nav|header|footer|aside|svg|form|iframe|button)[^>]*>.*?</\1>',
+        caseSensitive: false,
+        dotAll: true,
+      ),
+      '',
+    );
+
+    // Strip common boilerplate sections (newsletter signups, related/popular
+    // content, ad containers, sidebar widgets).
+    contentHtml = contentHtml.replaceAll(
+      RegExp(
+        r'<div[^>]+(?:class|id)="[^"]*(?:newsletter|signup|sign-up|subscribe|'
+        r'popular|trending|related|sidebar|widget|ad-|advertisement|'
+        r'social-share|share-bar|recirculation|promo|cookie|consent|'
+        r'most-popular|recommended)[^"]*"[^>]*>.*?</div>',
+        caseSensitive: false,
+        dotAll: true,
+      ),
+      '',
+    );
+
+    // Strip <section> boilerplate (e.g. "Most Popular" or "Related" sections).
+    contentHtml = contentHtml.replaceAll(
+      RegExp(
+        r'<section[^>]+(?:class|id)="[^"]*(?:popular|trending|related|'
+        r'newsletter|sidebar|widget|promo|recommended)[^"]*"[^>]*>.*?</section>',
         caseSensitive: false,
         dotAll: true,
       ),
@@ -735,6 +760,14 @@ class WebExtractor {
           RegExp(r'<li[^>]*>(.*?)</li>', caseSensitive: false, dotAll: true),
           (m) => '\n- ${_stripTags(m.group(1) ?? '')}',
         );
+
+    // Add spaces after closing inline tags to prevent word concatenation
+    // (e.g. "<a>Middle East</a><a>Israel</a>" → "Middle East Israel").
+    contentHtml = contentHtml.replaceAll(
+      RegExp(r'</(?:a|span|div|td|th|dt|dd|label|em|strong|b|i|u|time)\s*>',
+          caseSensitive: false),
+      ' ',
+    );
 
     // Strip remaining tags, decode entities, and clean whitespace.
     final text = _decodeEntities(_stripTags(contentHtml))

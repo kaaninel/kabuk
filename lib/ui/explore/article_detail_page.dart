@@ -607,7 +607,11 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
         // ── Content blocks (from reader mode) ─────────────────────────────
         if (_contentBlocks != null && _contentBlocks!.isNotEmpty)
           for (final block in _contentBlocks!)
-            _renderContentBlock(context, block),
+            // Skip heading blocks that duplicate the article title.
+            if (!(block.type == BlockType.heading &&
+                block.content != null &&
+                _isSameTitle(block.content!, article.name ?? '')))
+              _renderContentBlock(context, block),
 
         // ── Load full article button (when no content and not loading) ─────
         if ((_contentBlocks == null || _contentBlocks!.isEmpty) &&
@@ -787,6 +791,14 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
       'Dec',
     ];
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
+  }
+
+  /// Returns true when [blockText] is effectively the same as [title],
+  /// ignoring case, leading/trailing whitespace and common punctuation diffs.
+  bool _isSameTitle(String blockText, String title) {
+    String norm(String s) =>
+        s.trim().toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
+    return norm(blockText) == norm(title);
   }
 
   /// Renders a single content block as a widget.
