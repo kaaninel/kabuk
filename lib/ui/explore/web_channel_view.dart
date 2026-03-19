@@ -17,7 +17,6 @@ import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/ui/explore/article_card.dart';
 import 'package:kabuk/ui/explore/explore_view.dart';
 import 'package:kabuk/ui/explore/reader_view.dart';
-import 'package:kabuk/ui/shared/feed_image.dart';
 import 'package:kabuk/ui/theme.dart';
 
 // =============================================================================

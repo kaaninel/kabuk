@@ -304,20 +304,22 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
   ArticleData? _enrichedArticle;
   List<ContentBlockData>? _contentBlocks;
 
-  /// Whether this article is a stub that needs content fetching.
-  bool get _isStub {
+  /// Whether this article needs full content fetching.
+  ///
+  /// True when the article has a URL but no content blocks have been loaded
+  /// yet. This covers both description-less stubs and articles parsed from
+  /// index pages that have og:description but no body content.
+  bool get _needsContentFetch {
     final a = widget.article;
-    return (a.description == null || a.description!.isEmpty) &&
-        a.url != null &&
-        a.url!.startsWith('http');
+    return a.url != null &&
+        a.url!.startsWith('http') &&
+        (_contentBlocks == null || _contentBlocks!.isEmpty);
   }
 
   @override
   void initState() {
     super.initState();
-    if (_isStub) {
-      _fetchContent();
-    }
+    _loadExistingBlocks();
   }
 
   @override
@@ -328,7 +330,22 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
       _fetchAttempted = false;
       _enrichedArticle = null;
       _contentBlocks = null;
-      if (_isStub) _fetchContent();
+      _loadExistingBlocks();
+    }
+  }
+
+  /// Load any existing content blocks from the store. If none exist and the
+  /// article has a URL, trigger a full content fetch.
+  Future<void> _loadExistingBlocks() async {
+    final store = ref.read(knowledgeStoreProvider);
+    final blocks = await store.listDocumentBlocks(widget.article.uri);
+
+    if (!mounted) return;
+
+    if (blocks.isNotEmpty) {
+      setState(() => _contentBlocks = blocks);
+    } else if (_needsContentFetch) {
+      _fetchContent();
     }
   }
 
@@ -341,10 +358,10 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
       final readerMode = ref.read(readerModeServiceProvider);
       final store = ref.read(knowledgeStoreProvider);
 
-      // Process through reader mode — this creates content blocks.
-      await readerMode.processUrl(
+      // Fetch content and store blocks under the existing article URI.
+      await readerMode.fetchContentForArticle(
+        widget.article.uri,
         widget.article.url!,
-        feedSource: widget.article.feedSource,
       );
 
       if (!mounted) return;
@@ -591,6 +608,28 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
         if (_contentBlocks != null && _contentBlocks!.isNotEmpty)
           for (final block in _contentBlocks!)
             _renderContentBlock(context, block),
+
+        // ── Load full article button (when no content and not loading) ─────
+        if ((_contentBlocks == null || _contentBlocks!.isEmpty) &&
+            !_isFetchingContent &&
+            _needsContentFetch)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+            child: Center(
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  _fetchAttempted = false;
+                  _fetchContent();
+                },
+                icon: const Icon(Icons.article_outlined, size: 18),
+                label: const Text('Load full article'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: KabukTheme.blueAccent,
+                  side: const BorderSide(color: KabukTheme.blueAccent),
+                ),
+              ),
+            ),
+          ),
 
         // ── Loading indicator for lazy content fetch ──────────────────────
         if (_isFetchingContent)

@@ -95,6 +95,31 @@ class ReaderModeService {
     return _pipeline(extraction, feedSource: feedSource);
   }
 
+  /// Fetch full content for an existing article and store content blocks
+  /// under its URI.
+  ///
+  /// Used for lazy-loading article body when only title/description are
+  /// available (e.g. stub articles parsed from index pages).
+  Future<void> fetchContentForArticle(String articleUri, String url) async {
+    final extraction = await WebExtractor.fromUrl(url).timeout(
+      const Duration(seconds: 15),
+      onTimeout: () => WebExtraction(url: url, title: '', textContent: ''),
+    );
+
+    if (extraction.textContent.isEmpty) return;
+
+    // Create content blocks under the existing article URI.
+    final blockUris = await _createContentBlocks(
+      articleUri,
+      extraction.textContent,
+      extraction.images,
+      extraction.videos,
+    );
+
+    // Best-effort LLM enhancement.
+    await _enhanceWithLlm(articleUri, extraction.textContent, blockUris);
+  }
+
   // -------------------------------------------------------------------------
   // Pipeline
   // -------------------------------------------------------------------------
@@ -121,15 +146,24 @@ class ReaderModeService {
         feedSource: feedSource,
         limit: 500,
       );
-      final existingUrls = <String>{
+      final existingUrlToUri = <String, String>{
         for (final a in existingArticles)
-          if (a.url != null) a.url!,
+          if (a.url != null) a.url!: a.uri,
       };
 
+      // Collect URIs of already-cached articles that match extracted links.
+      final existingMatchUris = <String>[];
+      final linksToProcess = <ExtractedLink>[];
+      for (final link in articleLinks) {
+        final cachedUri = existingUrlToUri[link.url];
+        if (cachedUri != null) {
+          existingMatchUris.add(cachedUri);
+        } else {
+          linksToProcess.add(link);
+        }
+      }
+
       // For links missing images, fetch og:image in parallel (max 10 at a time).
-      final linksToProcess = articleLinks
-          .where((l) => !existingUrls.contains(l.url))
-          .toList();
       final enriched = await _enrichLinksWithImages(linksToProcess);
 
       for (final link in enriched) {
@@ -154,10 +188,11 @@ class ReaderModeService {
         }
       }
 
-      // If we created multiple articles, return multi-article result.
-      if (createdUris.isNotEmpty) {
+      // Return multi-article result with both new and cached article URIs.
+      final allUris = [...createdUris, ...existingMatchUris];
+      if (allUris.isNotEmpty) {
         return ReaderModeResult(
-          articleUris: createdUris,
+          articleUris: allUris,
           isMultiArticle: true,
         );
       }
@@ -617,7 +652,17 @@ class ReaderModeService {
         .replaceAll('&gt;', '>')
         .replaceAll('&quot;', '"')
         .replaceAll('&#39;', "'")
-        .replaceAll('&#x27;', "'");
+        .replaceAll('&#x27;', "'")
+        .replaceAll('&apos;', "'")
+        .replaceAll('&nbsp;', ' ')
+        .replaceAllMapped(RegExp(r'&#(\d+);'), (m) {
+          final code = int.tryParse(m.group(1) ?? '');
+          return code != null ? String.fromCharCode(code) : m.group(0)!;
+        })
+        .replaceAllMapped(RegExp(r'&#x([0-9a-fA-F]+);'), (m) {
+          final code = int.tryParse(m.group(1) ?? '', radix: 16);
+          return code != null ? String.fromCharCode(code) : m.group(0)!;
+        });
   }
 }
 

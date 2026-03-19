@@ -172,9 +172,15 @@ class _ServiceProviderDetailPageState
   @override
   void initState() {
     super.initState();
-    final provider = ref
-        .read(serviceProvidersProvider)
-        .firstWhere((p) => p.id == widget.providerId);
+    final providers = ref.read(serviceProvidersProvider);
+    final idx = providers.indexWhere((p) => p.id == widget.providerId);
+    if (idx < 0) {
+      _apiKeyController = TextEditingController();
+      _baseUrlController = TextEditingController();
+      _usernameController = TextEditingController();
+      return;
+    }
+    final provider = providers[idx];
     _apiKeyController = TextEditingController(text: provider.apiKey ?? '');
     _baseUrlController = TextEditingController(text: provider.baseUrl ?? '');
     _usernameController = TextEditingController(text: provider.username ?? '');
@@ -190,7 +196,12 @@ class _ServiceProviderDetailPageState
 
   void _save() {
     final providers = ref.read(serviceProvidersProvider);
-    final provider = providers.firstWhere((p) => p.id == widget.providerId);
+    final idx = providers.indexWhere((p) => p.id == widget.providerId);
+    if (idx < 0) {
+      Navigator.pop(context);
+      return;
+    }
+    final provider = providers[idx];
 
     ref
         .read(serviceProvidersProvider.notifier)
@@ -222,9 +233,15 @@ class _ServiceProviderDetailPageState
 
   @override
   Widget build(BuildContext context) {
-    final provider = ref
-        .watch(serviceProvidersProvider)
-        .firstWhere((p) => p.id == widget.providerId);
+    final providers = ref.watch(serviceProvidersProvider);
+    final idx = providers.indexWhere((p) => p.id == widget.providerId);
+    if (idx < 0) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Not Found')),
+        body: const Center(child: Text('Service provider not found.')),
+      );
+    }
+    final provider = providers[idx];
 
     return Scaffold(
       appBar: AppBar(title: Text(provider.name)),

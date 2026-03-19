@@ -676,7 +676,7 @@ class _FollowButtonState extends ConsumerState<_FollowButton> {
           ? _channelFeedUrl(widget.channel!, widget.sourceType)
           : _authorFeedUrl(widget.author!, widget.sourceType);
       final match = subs.cast<FeedSubscriptionData?>().firstWhere(
-            (s) => s!.feedUrl == feedUrl,
+            (s) => s != null && s.feedUrl == feedUrl,
             orElse: () => null,
           );
       if (match != null) {

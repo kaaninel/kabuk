@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/database.dart';
+import 'package:kabuk/services/media.dart';
 import 'package:kabuk/ui/chat/chat_input.dart';
 import 'package:kabuk/ui/explore/article_detail_page.dart' show openUrlSmart;
 import 'package:kabuk/ui/shell.dart';
@@ -429,9 +430,9 @@ class _NostrChatDetailState extends ConsumerState<NostrChatDetail> {
     if (mounted) setState(() => _isSending = false);
   }
 
-  Future<void> _uploadAndSend(String path, dynamic media) async {
+  Future<void> _uploadAndSend(String path, MediaService media) async {
     try {
-      final bytes = await (media as dynamic).readFile(path) as List<int>;
+      final bytes = await media.readFile(path);
       final filename = path.split('/').last;
       final request = http.MultipartRequest(
         'POST',

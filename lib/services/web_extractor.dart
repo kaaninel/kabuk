@@ -381,16 +381,24 @@ class WebExtractor {
     // --- Main content ---
     final textContent = _extractMainText(html);
 
-    // --- Images ---
+    // --- Images (resolve all to absolute URLs) ---
     final images = <String>[];
-    if (ogImage != null && ogImage.isNotEmpty) images.add(ogImage);
+    if (ogImage != null && ogImage.isNotEmpty) {
+      final resolved = _resolveUrl(url, ogImage);
+      if (resolved != null) images.add(resolved);
+    }
     final imgRegex = RegExp(
       r'<img[^>]+src=["' "'" r']([^"' "'" r']+)["' "'" r']',
       caseSensitive: false,
     );
     for (final m in imgRegex.allMatches(html)) {
       final src = m.group(1) ?? '';
-      if (src.isNotEmpty && !images.contains(src)) images.add(src);
+      if (src.isNotEmpty) {
+        final resolved = _resolveUrl(url, src);
+        if (resolved != null && !images.contains(resolved)) {
+          images.add(resolved);
+        }
+      }
     }
 
     // --- Videos ---
@@ -432,7 +440,7 @@ class WebExtractor {
       datePublished: published,
       siteName: _nonEmpty(ogSiteName),
       favicon: _resolveUrl(url, faviconMatch ?? faviconAlt),
-      description: _nonEmpty(ogDesc),
+      description: ogDesc != null ? _decodeEntities(ogDesc) : null,
     );
   }
 
@@ -515,8 +523,20 @@ class WebExtractor {
       // Skip root/homepage links.
       if (linkUri.path == '/' || linkUri.path.isEmpty) continue;
 
-      // Extract title from link text (strip tags).
-      var title = _stripTags(innerHtml).trim();
+      // Extract title from link text. Prefer heading elements (h1-h6) to
+      // avoid concatenating headline + description when both are inside <a>.
+      var title = '';
+      final headingMatch = RegExp(
+        r'<h[1-6][^>]*>(.*?)</h[1-6]>',
+        caseSensitive: false,
+        dotAll: true,
+      ).firstMatch(innerHtml);
+      if (headingMatch != null) {
+        title = _decodeEntities(_stripTags(headingMatch.group(1) ?? '')).trim();
+      }
+      if (title.isEmpty) {
+        title = _decodeEntities(_stripTags(innerHtml)).trim();
+      }
       // Collapse whitespace.
       title = title.replaceAll(RegExp(r'\s+'), ' ');
       if (title.length < 10) continue;
