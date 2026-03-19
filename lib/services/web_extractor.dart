@@ -725,7 +725,8 @@ class WebExtractor {
         r'<div[^>]+(?:class|id)="[^"]*(?:newsletter|signup|sign-up|subscribe|'
         r'popular|trending|related|sidebar|widget|ad-|advertisement|'
         r'social-share|share-bar|recirculation|promo|cookie|consent|'
-        r'most-popular|recommended)[^"]*"[^>]*>.*?</div>',
+        r'most-popular|recommended|follow-topics|author-follow|'
+        r'article-footer|story-footer|cta|callout)[^"]*"[^>]*>.*?</div>',
         caseSensitive: false,
         dotAll: true,
       ),
@@ -736,7 +737,8 @@ class WebExtractor {
     contentHtml = contentHtml.replaceAll(
       RegExp(
         r'<section[^>]+(?:class|id)="[^"]*(?:popular|trending|related|'
-        r'newsletter|sidebar|widget|promo|recommended)[^"]*"[^>]*>.*?</section>',
+        r'newsletter|sidebar|widget|promo|recommended|'
+        r'follow-topics|article-footer|story-footer|cta)[^"]*"[^>]*>.*?</section>',
         caseSensitive: false,
         dotAll: true,
       ),

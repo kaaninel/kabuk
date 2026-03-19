@@ -479,12 +479,61 @@ class ReaderModeService {
       }
     }
 
+    // -- Strip trailing boilerplate blocks (CTAs, follow prompts, etc.) ------
+    _stripTrailingBoilerplate(blocks);
+
     return blocks;
   }
 
-  // -------------------------------------------------------------------------
-  // Regex patterns
-  // -------------------------------------------------------------------------
+  /// Common CTA / boilerplate patterns found at the end of articles.
+  static final _boilerplatePatterns = [
+    RegExp(r'follow\s+topics?\s+and\s+authors?', caseSensitive: false),
+    RegExp(r'receive\s+email\s+updates?', caseSensitive: false),
+    RegExp(r'sign\s+up\s+for\s+(our|the)\s+newsletter', caseSensitive: false),
+    RegExp(r'subscribe\s+to\s+(our|the)', caseSensitive: false),
+    RegExp(r'more\s+like\s+this\s+in\s+your', caseSensitive: false),
+    RegExp(r'personalized\s+homepage\s+feed', caseSensitive: false),
+    RegExp(r'was\s+originally\s+published\s+on', caseSensitive: false),
+    RegExp(r'correction.*this\s+(article|story)', caseSensitive: false),
+    RegExp(r'read\s+more\s+at\s+', caseSensitive: false),
+    RegExp(r'most\s+popular$', caseSensitive: false),
+    RegExp(r'^related\s+(stories|articles|posts)$', caseSensitive: false),
+  ];
+
+  /// Removes trailing boilerplate blocks (from the end backwards) and any
+  /// isolated short text blocks that match known CTA patterns.
+  void _stripTrailingBoilerplate(List<_ParsedBlock> blocks) {
+    // Remove from the end: once we hit real content, stop.
+    while (blocks.isNotEmpty) {
+      final last = blocks.last;
+      if (last.type == BlockType.divider) {
+        blocks.removeLast();
+        continue;
+      }
+      if (last.type == BlockType.text &&
+          last.content != null &&
+          _isBoilerplate(last.content!)) {
+        blocks.removeLast();
+        continue;
+      }
+      break;
+    }
+    // Also remove any matching blocks earlier in the list.
+    blocks.removeWhere(
+      (b) =>
+          b.type == BlockType.text &&
+          b.content != null &&
+          _isBoilerplate(b.content!),
+    );
+  }
+
+  /// Returns true if the text matches known boilerplate patterns.
+  bool _isBoilerplate(String text) {
+    final trimmed = text.trim();
+    // Very short bullet-point style items after a CTA heading aren't
+    // boilerplate by themselves, but paragraphs matching CTA phrases are.
+    return _boilerplatePatterns.any((p) => p.hasMatch(trimmed));
+  }
 
   /// Matches `# `, `## `, or `### ` heading lines.
   static final _headingPattern = RegExp(r'^(#{1,3})\s+(.+)$');
