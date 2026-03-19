@@ -35,9 +35,23 @@ class FeedImage extends StatelessWidget {
   ///
   /// Returns `false` for Reddit placeholder strings (e.g. "self", "default")
   /// and malformed URLs.
+  /// Patterns in image URLs that indicate lazy-load placeholders.
+  static const _placeholderPatterns = [
+    'placeholder',
+    'grey-placeholder',
+    'loading.',
+    'lazy-load',
+    '1x1',
+    'pixel',
+    'spacer',
+    'blank.',
+  ];
+
   static bool isValidImageUrl(String? url) {
     if (url == null || url.isEmpty) return false;
     if (_redditPlaceholders.contains(url.toLowerCase())) return false;
+    final lower = url.toLowerCase();
+    if (_placeholderPatterns.any((p) => lower.contains(p))) return false;
     final uri = Uri.tryParse(url);
     return uri != null && uri.hasScheme && uri.host.isNotEmpty;
   }
@@ -66,36 +80,17 @@ class FeedImage extends StatelessWidget {
         'Referer': '${uri.scheme}://${uri.host}/',
     };
 
-    Widget image = Container(
-      color: KabukTheme.surfaceVariant,
-      child: CachedNetworkImage(
-        imageUrl: imageUrl,
-        cacheManager: KabukCacheManager.instance,
-        httpHeaders: headers,
-        height: height,
-        width: width ?? double.infinity,
-        fit: fit,
-        // Filter out tiny tracking pixels (< 10×10).
-        imageBuilder: (context, imageProvider) {
-          return Image(
-            image: imageProvider,
-            height: height,
-            width: width ?? double.infinity,
-            fit: fit,
-            frameBuilder: (ctx, child, frame, wasSyncLoaded) {
-              if (frame == null) {
-                return _ShimmerPlaceholder(height: height, width: width);
-              }
-              return child;
-            },
-          );
-        },
-        placeholder: (_, _) =>
-            _ShimmerPlaceholder(height: height, width: width),
-        errorWidget: (_, _, _) =>
-            _ErrorPlaceholder(height: height, width: width),
-        fadeInDuration: const Duration(milliseconds: 200),
-      ),
+    Widget image = CachedNetworkImage(
+      imageUrl: imageUrl,
+      cacheManager: KabukCacheManager.instance,
+      httpHeaders: headers,
+      height: height,
+      width: width ?? double.infinity,
+      fit: fit,
+      placeholder: (_, _) => _ShimmerPlaceholder(height: height, width: width),
+      errorWidget: (_, _, _) =>
+          _ErrorPlaceholder(height: height, width: width),
+      fadeInDuration: const Duration(milliseconds: 200),
     );
 
     if (showGradientOverlay) {

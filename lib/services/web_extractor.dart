@@ -644,7 +644,11 @@ class WebExtractor {
             !val.contains('1x1') &&
             !val.contains('pixel') &&
             !val.contains('spacer') &&
-            !val.contains('blank.')) {
+            !val.contains('blank.') &&
+            !val.contains('placeholder') &&
+            !val.contains('loading.') &&
+            !val.contains('grey-placeholder') &&
+            !val.contains('lazy-load')) {
           return _resolveUrl(baseUrl, val);
         }
       }
