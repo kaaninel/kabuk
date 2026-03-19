@@ -462,6 +462,14 @@ class WebExtractor {
     r'^[A-Z][a-z]+(\s+[A-Z][a-z]+){1,2}$',
   );
 
+  /// Matches promotional/CTA titles that aren't real articles.
+  static final _promoTitlePattern = RegExp(
+    r'(?:^subscribe\s+to\b|^sign\s+up\b|^join\s+(our|the)\b|'
+    r'^follow\s+us\b|^download\s+(our|the)\b|^get\s+the\s+app\b|'
+    r'^create\s+(an?\s+)?account\b|^start\s+your\b|^try\s+it\b)',
+    caseSensitive: false,
+  );
+
   /// Extracts article-like links from raw HTML.
   ///
   /// Scans for `<a>` tags inside article containers, cards, and common
@@ -544,6 +552,8 @@ class WebExtractor {
       if (_personNamePattern.hasMatch(title)) continue;
       // Skip titles with too few words (likely nav items, not headlines).
       if (title.split(' ').length < 4 && title.length < 30) continue;
+      // Skip promotional/CTA titles (e.g. "Subscribe to Ars Technica").
+      if (_promoTitlePattern.hasMatch(title)) continue;
       // Truncate very long titles.
       if (title.length > 200) title = title.substring(0, 200);
 
