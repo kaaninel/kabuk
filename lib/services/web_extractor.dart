@@ -427,7 +427,11 @@ class WebExtractor {
     }
 
     // --- Article links (for index/listing pages) ---
-    final articleLinks = _extractArticleLinks(html, url);
+    // Pass page-level og:image as fallback for articles without images.
+    final resolvedOgImage = ogImage != null && ogImage.isNotEmpty
+        ? _resolveUrl(url, ogImage)
+        : null;
+    final articleLinks = _extractArticleLinks(html, url, resolvedOgImage);
 
     return WebExtraction(
       url: url,
@@ -474,7 +478,11 @@ class WebExtractor {
   ///
   /// Scans for `<a>` tags inside article containers, cards, and common
   /// listing patterns. Deduplicates by URL and limits to 50 results.
-  static List<ExtractedLink> _extractArticleLinks(String html, String baseUrl) {
+  static List<ExtractedLink> _extractArticleLinks(
+    String html,
+    String baseUrl,
+    String? pageOgImage,
+  ) {
     final baseUri = Uri.tryParse(baseUrl);
     if (baseUri == null) return const [];
     final baseHost = baseUri.host;
@@ -557,10 +565,17 @@ class WebExtractor {
       // Truncate very long titles.
       if (title.length > 200) title = title.substring(0, 200);
 
-      // Deduplicate.
-      final canonical = linkUri.replace(fragment: '').toString();
-      if (seen.contains(canonical)) continue;
+      // Deduplicate by URL (strip tracking params) and title.
+      final cleanUri = linkUri.replace(
+        fragment: '',
+        queryParameters:
+            linkUri.queryParameters.isEmpty ? null : _stripTrackingParams(linkUri),
+      );
+      final canonical = cleanUri.toString();
+      final titleKey = title.toLowerCase();
+      if (seen.contains(canonical) || seen.contains(titleKey)) continue;
       seen.add(canonical);
+      seen.add(titleKey);
 
       // Try to find an associated image. Modern sites use lazy loading
       // (data-src, srcset, data-original) so we check multiple attributes.
@@ -609,6 +624,9 @@ class WebExtractor {
         }
       }
 
+      // Fall back to page-level og:image when no article-specific image found.
+      image ??= pageOgImage;
+
       links.add(ExtractedLink(
         url: canonical,
         title: _decodeEntities(title),
@@ -617,6 +635,20 @@ class WebExtractor {
     }
 
     return links;
+  }
+
+  /// Common tracking/analytics query parameters to strip during dedup.
+  static const _trackingParams = {
+    'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+    'ref', 'source', 'fbclid', 'gclid', 'ocid', 'ns_mchannel',
+    'ns_source', 'ns_campaign', 'ns_linkname', 'ns_fee',
+  };
+
+  /// Strips tracking query parameters from a URI for deduplication.
+  static Map<String, String>? _stripTrackingParams(Uri uri) {
+    final cleaned = Map<String, String>.from(uri.queryParameters)
+      ..removeWhere((k, _) => _trackingParams.contains(k.toLowerCase()));
+    return cleaned.isEmpty ? null : cleaned;
   }
 
   // ---------------------------------------------------------------------------

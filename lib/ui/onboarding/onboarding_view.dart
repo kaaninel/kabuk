@@ -660,13 +660,16 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
   // ---------------------------------------------------------------------------
 
   Widget _buildConfigurePage() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: KabukTheme.spacingLg),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          children: [
-            const SizedBox(height: KabukTheme.spacingXl),
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: KabukTheme.spacingLg),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                children: [
+                  const SizedBox(height: KabukTheme.spacingXl),
 
             // Header icon.
             Container(
@@ -808,65 +811,79 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
               const SizedBox(height: KabukTheme.spacingMd),
             ],
 
-            // Test + Save buttons.
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _testStatus == _TestStatus.testing
-                        ? null
-                        : _testConnection,
-                    icon: const Icon(Icons.wifi_tethering, size: 18),
-                    label: const Text('Test'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: KabukTheme.textPrimary,
-                      side: const BorderSide(color: KabukTheme.divider),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(
-                          KabukTheme.radiusMd,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: KabukTheme.spacingSm),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: () {
-                      _saveLlmConfig();
-                      _goToPage(2);
-                    },
-                    icon: const Icon(Icons.check, size: 18),
-                    label: const Text('Save & Continue'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: KabukTheme.primaryGreen,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(
-                          KabukTheme.radiusMd,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: KabukTheme.spacingSm),
-
-            // Skip option.
-            TextButton(
-              onPressed: () => _goToPage(2),
-              child: const Text(
-                'Skip for now',
-                style: TextStyle(color: KabukTheme.textSecondary, fontSize: 14),
-              ),
-            ),
-            const SizedBox(height: KabukTheme.spacingLg),
+            const SizedBox(height: KabukTheme.spacingMd),
           ],
         ),
       ),
+    ),
+  ),
+
+  // Bottom action buttons — outside scroll view.
+  Padding(
+    padding: const EdgeInsets.symmetric(horizontal: KabukTheme.spacingLg),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Test + Save buttons.
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _testStatus == _TestStatus.testing
+                    ? null
+                    : _testConnection,
+                icon: const Icon(Icons.wifi_tethering, size: 18),
+                label: const Text('Test'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: KabukTheme.textPrimary,
+                  side: const BorderSide(color: KabukTheme.divider),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(
+                      KabukTheme.radiusMd,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: KabukTheme.spacingSm),
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: () {
+                  _saveLlmConfig();
+                  _goToPage(2);
+                },
+                icon: const Icon(Icons.check, size: 18),
+                label: const Text('Save & Continue'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: KabukTheme.primaryGreen,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(
+                      KabukTheme.radiusMd,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: KabukTheme.spacingSm),
+
+        // Skip option.
+        TextButton(
+          onPressed: () => _goToPage(2),
+          child: const Text(
+            'Skip for now',
+            style: TextStyle(color: KabukTheme.textSecondary, fontSize: 14),
+          ),
+        ),
+        const SizedBox(height: KabukTheme.spacingSm),
+      ],
+    ),
+  ),
+],
     );
   }
 
@@ -880,12 +897,15 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
   /// and copy their private key (nsec). A checkbox acknowledges that the key
   /// has been saved before proceeding to the final page.
   Widget _buildKeyBackupPage() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: KabukTheme.spacingLg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(height: KabukTheme.spacingXl),
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: KabukTheme.spacingLg),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: KabukTheme.spacingXl),
 
           // Header icon.
           Center(
@@ -1020,60 +1040,73 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
             ),
           ],
           const SizedBox(height: KabukTheme.spacingMd),
-
-          // Acknowledgement checkbox.
-          GestureDetector(
-            onTap: () => setState(
-              () => _keyBackupAcknowledged = !_keyBackupAcknowledged,
-            ),
-            child: Row(
-              children: [
-                Checkbox(
-                  value: _keyBackupAcknowledged,
-                  onChanged: (v) =>
-                      setState(() => _keyBackupAcknowledged = v ?? false),
-                  activeColor: KabukTheme.accentGreen,
-                  side: const BorderSide(color: KabukTheme.textSecondary),
-                ),
-                const SizedBox(width: KabukTheme.spacingSm),
-                const Expanded(
-                  child: Text(
-                    'I\'ve saved my private key in a safe place.',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: KabukTheme.textPrimary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: KabukTheme.spacingMd),
-
-          // Continue button.
-          FilledButton(
-            onPressed: _keyBackupAcknowledged ? () => _goToPage(3) : null,
-            style: FilledButton.styleFrom(
-              backgroundColor: KabukTheme.primaryGreen,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
-              ),
-            ),
-            child: const Text('Continue', style: TextStyle(fontSize: 16)),
-          ),
-          const SizedBox(height: KabukTheme.spacingSm),
-          TextButton(
-            onPressed: () => _goToPage(3),
-            child: const Text(
-              'Skip (I\'ll do this later in Settings)',
-              style: TextStyle(color: KabukTheme.textSecondary, fontSize: 13),
-            ),
-          ),
-          const SizedBox(height: KabukTheme.spacingLg),
         ],
       ),
+    ),
+  ),
+
+  // Bottom action buttons — outside scroll view.
+  Padding(
+    padding: const EdgeInsets.symmetric(horizontal: KabukTheme.spacingLg),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Acknowledgement checkbox.
+        GestureDetector(
+          onTap: () => setState(
+            () => _keyBackupAcknowledged = !_keyBackupAcknowledged,
+          ),
+          child: Row(
+            children: [
+              Checkbox(
+                value: _keyBackupAcknowledged,
+                onChanged: (v) =>
+                    setState(() => _keyBackupAcknowledged = v ?? false),
+                activeColor: KabukTheme.accentGreen,
+                side: const BorderSide(color: KabukTheme.textSecondary),
+              ),
+              const SizedBox(width: KabukTheme.spacingSm),
+              const Expanded(
+                child: Text(
+                  'I\'ve saved my private key in a safe place.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: KabukTheme.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: KabukTheme.spacingSm),
+
+        // Continue button.
+        FilledButton(
+          onPressed: _keyBackupAcknowledged ? () => _goToPage(3) : null,
+          style: FilledButton.styleFrom(
+            backgroundColor: KabukTheme.primaryGreen,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
+            ),
+          ),
+          child: const Text('Continue', style: TextStyle(fontSize: 16)),
+        ),
+        const SizedBox(height: KabukTheme.spacingSm),
+        TextButton(
+          onPressed: () => _goToPage(3),
+          child: const Text(
+            'Skip (I\'ll do this later in Settings)',
+            style: TextStyle(color: KabukTheme.textSecondary, fontSize: 13),
+          ),
+        ),
+        const SizedBox(height: KabukTheme.spacingSm),
+      ],
+    ),
+  ),
+],
     );
   }
 
