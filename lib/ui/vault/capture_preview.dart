@@ -207,7 +207,7 @@ class _CapturePreviewState extends ConsumerState<CapturePreview> {
             left: 0,
             right: 0,
             child: Container(
-              padding: EdgeInsets.fromLTRB(
+              padding: const EdgeInsets.fromLTRB(
                 KabukTheme.spacingMd,
                 KabukTheme.spacingLg,
                 KabukTheme.spacingMd,

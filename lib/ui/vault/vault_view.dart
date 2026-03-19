@@ -22,6 +22,8 @@ import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/types/collection.dart';
 import 'package:kabuk/knowledge/types/media.dart';
 import 'package:kabuk/knowledge/types/note.dart';
+import 'package:kabuk/ui/shared/identity_quick_switcher.dart';
+import 'package:kabuk/ui/theme.dart';
 import 'package:kabuk/ui/vault/audio_capture.dart';
 import 'package:kabuk/ui/vault/camera_viewfinder.dart';
 import 'package:kabuk/ui/vault/capture_preview.dart';
@@ -29,8 +31,6 @@ import 'package:kabuk/ui/vault/collection_manager.dart';
 import 'package:kabuk/ui/vault/document_editor.dart';
 import 'package:kabuk/ui/vault/document_list.dart';
 import 'package:kabuk/ui/vault/media_gallery.dart';
-import 'package:kabuk/ui/shared/identity_quick_switcher.dart';
-import 'package:kabuk/ui/theme.dart';
 
 // ---------------------------------------------------------------------------
 // Providers

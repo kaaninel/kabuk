@@ -17,11 +17,11 @@ import 'package:kabuk/ui/chat/chat_view.dart';
 import 'package:kabuk/ui/chat/conversation_detail.dart';
 import 'package:kabuk/ui/chat/message_bubble.dart';
 import 'package:kabuk/ui/chat/nostr_chat_detail.dart';
-import 'package:kabuk/ui/vault/vault_view.dart';
 import 'package:kabuk/ui/explore/explore_view.dart';
 import 'package:kabuk/ui/explore/profile_view.dart';
 import 'package:kabuk/ui/settings/dev_mode_page.dart';
 import 'package:kabuk/ui/theme.dart';
+import 'package:kabuk/ui/vault/vault_view.dart';
 
 /// Provider for the currently selected tab index.
 final selectedTabProvider = StateProvider<int>((ref) => 0);

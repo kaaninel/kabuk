@@ -26,6 +26,7 @@ import 'package:kabuk/knowledge/types/saved_search.dart';
 import 'package:kabuk/services/nip19.dart';
 import 'package:kabuk/services/nostr.dart';
 import 'package:kabuk/services/nostr_utils.dart';
+import 'package:kabuk/services/reader_mode.dart';
 import 'package:kabuk/ui/explore/article_detail_page.dart' show openUrlSmart;
 import 'package:kabuk/ui/explore/browse_session.dart';
 import 'package:kabuk/ui/explore/discovery_providers.dart';
@@ -36,7 +37,6 @@ import 'package:kabuk/ui/explore/topic_following.dart';
 import 'package:kabuk/ui/explore/web_channel_view.dart';
 import 'package:kabuk/ui/shared/feed_image.dart';
 import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
-import 'package:kabuk/services/reader_mode.dart';
 import 'package:kabuk/ui/theme.dart';
 
 // =============================================================================

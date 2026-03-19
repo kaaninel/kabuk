@@ -233,8 +233,8 @@ class _ReaderBody extends StatelessWidget {
         ),
 
         // ── Safe area padding ────────────────────────────────────────────
-        SliverToBoxAdapter(
-          child: const SizedBox(
+        const SliverToBoxAdapter(
+          child: SizedBox(
             height: KabukTheme.spacingLg,
           ),
         ),

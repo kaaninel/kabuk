@@ -19,8 +19,8 @@ import 'package:kabuk/ui/explore/quick_peek_sheet.dart';
 import 'package:kabuk/ui/settings/settings_view.dart';
 import 'package:kabuk/ui/shared/identity_quick_switcher.dart';
 import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
-import 'package:kabuk/ui/vault/document_editor.dart' show DocumentEditor;
 import 'package:kabuk/ui/theme.dart';
+import 'package:kabuk/ui/vault/document_editor.dart' show DocumentEditor;
 
 // ---------------------------------------------------------------------------
 // Providers
@@ -171,14 +171,14 @@ class AppsView extends ConsumerWidget {
                     ],
                   ),
             loading: () => const SliverToBoxAdapter(child: SizedBox.shrink()),
-            error: (e, _) => SliverToBoxAdapter(
+            error: (e, _) => const SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.symmetric(
+                padding: EdgeInsets.symmetric(
                   horizontal: KabukTheme.spacingMd,
                 ),
                 child: Text(
                   'Could not load saved views.',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: KabukTheme.textSecondary,
                     fontSize: 13,
                   ),
@@ -232,14 +232,14 @@ class AppsView extends ConsumerWidget {
                     ],
                   ),
             loading: () => const SliverToBoxAdapter(child: SizedBox.shrink()),
-            error: (e, _) => SliverToBoxAdapter(
+            error: (e, _) => const SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.symmetric(
+                padding: EdgeInsets.symmetric(
                   horizontal: KabukTheme.spacingMd,
                 ),
                 child: Text(
                   'Could not load recent notes.',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: KabukTheme.textSecondary,
                     fontSize: 13,
                   ),

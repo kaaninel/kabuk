@@ -13,7 +13,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/knowledge/types/bookmark.dart';
@@ -24,8 +23,8 @@ import 'package:kabuk/services/media_cache.dart';
 import 'package:kabuk/services/reader_mode.dart';
 import 'package:kabuk/ui/explore/article_card.dart' show bookmarkStatusProvider;
 import 'package:kabuk/ui/explore/browse_session.dart';
-import 'package:kabuk/ui/explore/fourchan_comments.dart';
 import 'package:kabuk/ui/explore/channel_view.dart';
+import 'package:kabuk/ui/explore/fourchan_comments.dart';
 import 'package:kabuk/ui/explore/nostr_providers.dart';
 import 'package:kabuk/ui/explore/profile_view.dart';
 import 'package:kabuk/ui/explore/quick_peek_sheet.dart';
@@ -671,16 +670,16 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
         Container(
           padding: const EdgeInsets.symmetric(vertical: 16),
           alignment: Alignment.center,
-          child: Row(
+          child: const Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
+              Icon(
                 Icons.swipe_rounded,
                 color: KabukTheme.textTertiary,
                 size: 16,
               ),
-              const SizedBox(width: 6),
-              const Text(
+              SizedBox(width: 6),
+              Text(
                 'Swipe left/right for more articles',
                 style: TextStyle(
                   color: KabukTheme.textTertiary,

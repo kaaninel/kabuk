@@ -399,7 +399,7 @@ class _AudioCaptureState extends ConsumerState<AudioCapture>
 
           // Bottom controls.
           Padding(
-            padding: EdgeInsets.fromLTRB(
+            padding: const EdgeInsets.fromLTRB(
               KabukTheme.spacingLg,
               KabukTheme.spacingMd,
               KabukTheme.spacingLg,

@@ -20,10 +20,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/types/content_block.dart';
 import 'package:kabuk/knowledge/types/note.dart';
-import 'package:kabuk/ui/vault/vault_view.dart';
 import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
 import 'package:kabuk/ui/shared/markdown_editor.dart';
 import 'package:kabuk/ui/theme.dart';
+import 'package:kabuk/ui/vault/vault_view.dart';
 
 // ---------------------------------------------------------------------------
 // Document editor

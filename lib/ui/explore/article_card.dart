@@ -10,15 +10,14 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/knowledge/types/bookmark.dart';
-import 'package:kabuk/services/media_cache.dart';
 import 'package:kabuk/services/feed.dart';
+import 'package:kabuk/services/media_cache.dart';
 import 'package:kabuk/ui/explore/article_detail_page.dart';
-import 'package:kabuk/ui/explore/nostr_providers.dart';
 import 'package:kabuk/ui/explore/channel_view.dart';
+import 'package:kabuk/ui/explore/nostr_providers.dart';
 import 'package:kabuk/ui/explore/profile_view.dart';
 import 'package:kabuk/ui/shared/feed_image.dart';
 import 'package:kabuk/ui/shared/video_thumbnail.dart';
