@@ -1010,7 +1010,9 @@ class _ArticleOmniBar extends ConsumerWidget implements PreferredSizeWidget {
     if (url != null) {
       try {
         return Uri.parse(url).host.replaceFirst('www.', '');
-      } catch (_) {}
+      } catch (e) {
+        dev.log('Feed source parse failed', name: 'ArticleDetail', error: e);
+      }
     }
     return 'Feed';
   }

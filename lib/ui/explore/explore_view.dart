@@ -602,8 +602,8 @@ class _ExploreViewState extends ConsumerState<ExploreView>
       // Prune stale articles regardless of connectivity — keeps the store lean.
       final store = ref.read(knowledgeStoreProvider);
       await store.pruneStaleArticles();
-    } on Object catch (_) {
-      // Swallow — individual feed errors handled inside each function.
+    } on Object catch (e) {
+      dev.log('Feed refresh failed', name: 'ExploreView', error: e);
     }
     if (!mounted) return;
     ref.read(_feedRefreshingProvider.notifier).state = false;

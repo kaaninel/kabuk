@@ -59,16 +59,43 @@ class FeedImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget image = CachedNetworkImage(
-      imageUrl: imageUrl,
-      cacheManager: KabukCacheManager.instance,
-      height: height,
-      width: width ?? double.infinity,
-      fit: fit,
-      placeholder: (_, _) => _ShimmerPlaceholder(height: height, width: width),
-      errorWidget: (_, _, _) =>
-          _ErrorPlaceholder(height: height, width: width),
-      fadeInDuration: const Duration(milliseconds: 200),
+    // Derive a Referer header from the image URL so CDNs don't block us.
+    final uri = Uri.tryParse(imageUrl);
+    final headers = <String, String>{
+      if (uri != null && uri.host.isNotEmpty)
+        'Referer': '${uri.scheme}://${uri.host}/',
+    };
+
+    Widget image = Container(
+      color: KabukTheme.surfaceVariant,
+      child: CachedNetworkImage(
+        imageUrl: imageUrl,
+        cacheManager: KabukCacheManager.instance,
+        httpHeaders: headers,
+        height: height,
+        width: width ?? double.infinity,
+        fit: fit,
+        // Filter out tiny tracking pixels (< 10×10).
+        imageBuilder: (context, imageProvider) {
+          return Image(
+            image: imageProvider,
+            height: height,
+            width: width ?? double.infinity,
+            fit: fit,
+            frameBuilder: (ctx, child, frame, wasSyncLoaded) {
+              if (frame == null) {
+                return _ShimmerPlaceholder(height: height, width: width);
+              }
+              return child;
+            },
+          );
+        },
+        placeholder: (_, _) =>
+            _ShimmerPlaceholder(height: height, width: width),
+        errorWidget: (_, _, _) =>
+            _ErrorPlaceholder(height: height, width: width),
+        fadeInDuration: const Duration(milliseconds: 200),
+      ),
     );
 
     if (showGradientOverlay) {

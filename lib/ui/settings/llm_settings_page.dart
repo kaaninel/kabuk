@@ -355,7 +355,10 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
         ),
       ],
       selected: {_provider},
-      onSelectionChanged: (selected) => _onProviderChanged(selected.first),
+      onSelectionChanged: (selected) {
+        final value = selected.firstOrNull;
+        if (value != null) _onProviderChanged(value);
+      },
       style: ButtonStyle(
         visualDensity: VisualDensity.compact,
         foregroundColor: WidgetStateProperty.resolveWith((states) {

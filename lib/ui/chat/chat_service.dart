@@ -6,6 +6,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as dev;
 
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -416,7 +417,8 @@ class ChatService {
           title = title.substring(1, title.length - 1);
         }
         if (title.isEmpty) throw StateError('Empty title');
-      } catch (_) {
+      } catch (e) {
+        dev.log('LLM title generation failed', name: 'ChatService', error: e);
         // Heuristic fallback: extract first meaningful phrase from user msg.
         title = _heuristicTitle(userMessage);
       }
@@ -430,8 +432,9 @@ class ChatService {
       await (db.update(db.conversations)
             ..where((c) => c.id.equals(conversationId)))
           .write(ConversationsCompanion(title: Value(title)));
-    } catch (_) {
+    } catch (e) {
       // Title generation is best-effort; never crash the chat flow.
+      dev.log('Title update failed', name: 'ChatService', error: e);
     } finally {
       _pendingTitles.remove(conversationId);
     }

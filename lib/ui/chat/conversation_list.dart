@@ -390,7 +390,7 @@ class _ConversationListState extends ConsumerState<ConversationList> {
                     ));
                   }
                 } on Object catch (e) {
-                  if (ctx.mounted) {
+                  if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('Failed to create channel: $e')),
                     );

@@ -304,6 +304,16 @@ class ReaderModeService {
   ) async {
     if (rawText.trim().isEmpty) return;
 
+    // Skip LLM for image-only or navigation-heavy pages (e.g. Reddit
+    // image posts where the extracted text is only sidebar/nav elements).
+    if (_isBoilerplateOnly(rawText)) {
+      dev.log(
+        'Skipping LLM: content is mostly navigation/boilerplate',
+        name: 'ReaderModeService',
+      );
+      return;
+    }
+
     try {
       final response = await _llm.complete(
         LlmRequest(
@@ -340,6 +350,39 @@ class ReaderModeService {
         stackTrace: st,
       );
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Boilerplate Detection
+  // -------------------------------------------------------------------------
+
+  /// Navigation/boilerplate patterns commonly seen on Reddit, forums, etc.
+  static final _navPatterns = [
+    RegExp(r'\bgo to\s+\w+', caseSensitive: false),
+    RegExp(r'^r/\w+$', multiLine: true),
+    RegExp(r'\bjoin\b.*\bcommunity\b', caseSensitive: false),
+    RegExp(r'\bcreate\s+post\b', caseSensitive: false),
+    RegExp(r'\bget\s+app\b', caseSensitive: false),
+    RegExp(r'\blog\s*in\b', caseSensitive: false),
+    RegExp(r'\bsign\s*up\b', caseSensitive: false),
+    RegExp(r'\bupvote\b|\bdownvote\b', caseSensitive: false),
+  ];
+
+  /// Returns `true` when [text] is too short to be real article content or
+  /// is dominated by navigation / boilerplate patterns.
+  bool _isBoilerplateOnly(String text) {
+    final words =
+        text.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    // Fewer than 30 words is almost never a real article.
+    if (words.length < 30) return true;
+
+    final lines = text.split('\n').where((l) => l.trim().isNotEmpty).length;
+    final navHits =
+        _navPatterns.expand((p) => p.allMatches(text)).length;
+    // If more than a third of non-empty lines match nav patterns, skip.
+    if (lines > 0 && navHits > lines / 3) return true;
+
+    return false;
   }
 
   // -------------------------------------------------------------------------

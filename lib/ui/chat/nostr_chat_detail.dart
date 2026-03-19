@@ -1989,7 +1989,8 @@ class _LinkPreviewCardState extends State<_LinkPreviewCard> {
           _loading = false;
         });
       }
-    } catch (_) {
+    } catch (e) {
+      dev.log('OG data fetch failed', name: 'NostrChatDetail', error: e);
       if (mounted) setState(() => _failed = true);
     }
   }
