@@ -443,8 +443,15 @@ class WebExtractor {
   /// Non-article path segments that should be filtered out.
   static final _nonArticlePaths = RegExp(
     r'^/(about|contact|login|signup|register|privacy|terms|faq|help|search'
-    r'|categories|tags|authors|archive|page|#|javascript:)',
+    r'|categories|tags|authors?|archive|page|#|javascript:|newsletter'
+    r'|subscribe|account|profile|settings|cart|checkout|sitemap)',
     caseSensitive: false,
+  );
+
+  /// Heuristic: titles that look like a person name (2-3 capitalized words,
+  /// no lowercase-starting words, no punctuation/numbers).
+  static final _personNamePattern = RegExp(
+    r'^[A-Z][a-z]+(\s+[A-Z][a-z]+){1,2}$',
   );
 
   /// Extracts article-like links from raw HTML.
@@ -513,6 +520,10 @@ class WebExtractor {
       // Collapse whitespace.
       title = title.replaceAll(RegExp(r'\s+'), ' ');
       if (title.length < 10) continue;
+      // Skip titles that look like a person name (e.g. "Aisha Malik").
+      if (_personNamePattern.hasMatch(title)) continue;
+      // Skip titles with too few words (likely nav items, not headlines).
+      if (title.split(' ').length < 4 && title.length < 30) continue;
       // Truncate very long titles.
       if (title.length > 200) title = title.substring(0, 200);
 
@@ -521,21 +532,50 @@ class WebExtractor {
       if (seen.contains(canonical)) continue;
       seen.add(canonical);
 
-      // Try to find an associated image — look backward in the HTML for a
-      // nearby <img> within the same container context (within ~500 chars
-      // before the <a> tag).
+      // Try to find an associated image. Modern sites use lazy loading
+      // (data-src, srcset, data-original) so we check multiple attributes.
       String? image;
-      final linkStart = match.start;
-      final searchStart = (linkStart - 500).clamp(0, linkStart);
-      final nearbyHtml = cleanedHtml.substring(searchStart, match.end);
-      final imgMatch = RegExp(
-        r'<img[^>]+src=["' "'" r']([^"' "'" r']+)["' "'" r']',
-        caseSensitive: false,
-      ).allMatches(nearbyHtml).lastOrNull;
-      if (imgMatch != null) {
-        final imgSrc = imgMatch.group(1) ?? '';
-        if (imgSrc.isNotEmpty) {
-          image = _resolveUrl(baseUrl, imgSrc);
+      final imgTagRegex = RegExp(r'<img\s[^>]+>', caseSensitive: false);
+
+      // Check inner HTML first (image inside the link).
+      final innerImgTag = imgTagRegex.firstMatch(innerHtml);
+      if (innerImgTag != null) {
+        image = _bestImgUrl(innerImgTag.group(0)!, baseUrl);
+      }
+
+      // Also check <picture><source> inside the link.
+      if (image == null) {
+        final sourceMatch = RegExp(
+          r'<source[^>]+srcset=["\x27]([^"\x27,]+)',
+          caseSensitive: false,
+        ).firstMatch(innerHtml);
+        if (sourceMatch != null) {
+          final url = sourceMatch.group(1)?.trim();
+          if (url != null && url.isNotEmpty && !url.startsWith('data:')) {
+            image = _resolveUrl(baseUrl, url);
+          }
+        }
+      }
+
+      // Then check backward context (~800 chars).
+      if (image == null) {
+        final linkStart = match.start;
+        final searchStart = (linkStart - 800).clamp(0, linkStart);
+        final beforeHtml = cleanedHtml.substring(searchStart, linkStart);
+        final beforeImgTags = imgTagRegex.allMatches(beforeHtml);
+        if (beforeImgTags.isNotEmpty) {
+          image = _bestImgUrl(beforeImgTags.last.group(0)!, baseUrl);
+        }
+      }
+
+      // Finally check forward context (~800 chars).
+      if (image == null) {
+        final linkEnd = match.end;
+        final searchEnd = (linkEnd + 800).clamp(linkEnd, cleanedHtml.length);
+        final afterHtml = cleanedHtml.substring(linkEnd, searchEnd);
+        final afterImgTag = imgTagRegex.firstMatch(afterHtml);
+        if (afterImgTag != null) {
+          image = _bestImgUrl(afterImgTag.group(0)!, baseUrl);
         }
       }
 
@@ -552,6 +592,47 @@ class WebExtractor {
   // ---------------------------------------------------------------------------
   // HTML regex helpers
   // ---------------------------------------------------------------------------
+
+  /// Extracts the best image URL from an `<img>` tag string, handling
+  /// lazy-loading attributes (`data-src`, `data-original`, `srcset`, etc.).
+  static String? _bestImgUrl(String imgTag, String baseUrl) {
+    for (final attr in [
+      'data-src',
+      'data-original',
+      'data-lazy-src',
+      'data-full-src',
+      'src',
+    ]) {
+      final m = RegExp(
+        '$attr="([^"]+)"',
+        caseSensitive: false,
+      ).firstMatch(imgTag);
+      if (m != null) {
+        final val = m.group(1) ?? '';
+        if (val.isNotEmpty &&
+            !val.startsWith('data:') &&
+            !val.contains('1x1') &&
+            !val.contains('pixel') &&
+            !val.contains('spacer') &&
+            !val.contains('blank.')) {
+          return _resolveUrl(baseUrl, val);
+        }
+      }
+    }
+    // Fallback: first URL from srcset.
+    final srcsetMatch = RegExp(
+      r'srcset="([^"]+)"',
+      caseSensitive: false,
+    ).firstMatch(imgTag);
+    if (srcsetMatch != null) {
+      final srcset = srcsetMatch.group(1) ?? '';
+      final firstUrl = srcset.split(',').first.trim().split(' ').first;
+      if (firstUrl.isNotEmpty && !firstUrl.startsWith('data:')) {
+        return _resolveUrl(baseUrl, firstUrl);
+      }
+    }
+    return null;
+  }
 
   /// Extracts a `<meta>` tag content value by property or name attribute.
   static String? _metaContent(
@@ -693,4 +774,10 @@ class WebExtractor {
       return path;
     }
   }
+
+  /// Resolves a relative [path] against [baseUrl] to an absolute URL.
+  ///
+  /// Public wrapper for use by other services (e.g., [ReaderModeService]).
+  static String? resolveUrl(String baseUrl, String path) =>
+      _resolveUrl(baseUrl, path);
 }

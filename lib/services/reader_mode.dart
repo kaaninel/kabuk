@@ -16,6 +16,7 @@ library;
 import 'dart:developer' as dev;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 import 'package:kabuk/agents/llm.dart';
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/store.dart';
@@ -125,18 +126,22 @@ class ReaderModeService {
           if (a.url != null) a.url!,
       };
 
-      for (final link in articleLinks) {
-        if (existingUrls.contains(link.url)) continue;
+      // For links missing images, fetch og:image in parallel (max 10 at a time).
+      final linksToProcess = articleLinks
+          .where((l) => !existingUrls.contains(l.url))
+          .toList();
+      final enriched = await _enrichLinksWithImages(linksToProcess);
 
+      for (final link in enriched) {
         try {
           final uri = await _store.createArticle(
             title: link.title,
             url: link.url,
             image: link.image,
             description: link.description,
-            feedSource: feedSource ?? 'reader-mode',
+            feedSource: feedSource ?? 'web:$domain',
             author: siteName,
-            tags: ['reader-mode', if (domain.isNotEmpty) domain],
+            tags: ['web', if (domain.isNotEmpty) domain],
           );
           createdUris.add(uri);
         } on Object catch (e, st) {
@@ -201,9 +206,9 @@ class ReaderModeService {
       url: extraction.url,
       author: extraction.author,
       image: extraction.images.firstOrNull,
-      feedSource: feedSource ?? 'reader-mode',
+      feedSource: feedSource ?? 'web:$domain',
       datePublished: extraction.datePublished,
-      tags: ['reader-mode', if (domain.isNotEmpty) domain],
+      tags: ['web', if (domain.isNotEmpty) domain],
       galleryImages: extraction.images,
     );
   }
@@ -477,6 +482,142 @@ class ReaderModeService {
     } on Object {
       return '';
     }
+  }
+
+  /// Enriches [ExtractedLink] entries that lack images by fetching each
+  /// article URL and extracting `og:image` from the HTML `<meta>` tags.
+  ///
+  /// Processes up to 10 links in parallel with a 5-second timeout per fetch.
+  /// Links that already have images are returned unchanged.
+  Future<List<ExtractedLink>> _enrichLinksWithImages(
+    List<ExtractedLink> links,
+  ) async {
+    if (links.isEmpty) return links;
+
+    final results = <ExtractedLink>[];
+    // Process in batches of 10 for bounded concurrency.
+    for (var i = 0; i < links.length; i += 10) {
+      final batch = links.skip(i).take(10).toList();
+      final futures = batch.map((link) async {
+        if (link.image != null) return link;
+        try {
+          final response = await http
+              .get(
+                Uri.parse(link.url),
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (compatible; Kabuk/1.0)',
+                },
+              )
+              .timeout(const Duration(seconds: 5));
+          if (response.statusCode != 200) return link;
+
+          final html = response.body;
+          // Extract og:image and og:title for better quality.
+          final ogImage = _extractMetaImage(html);
+          final ogTitle = _extractMetaTitle(html);
+          final ogDesc = _extractMetaDescription(html);
+
+          // Use og:title if available (much cleaner than link text).
+          final bestTitle = ogTitle ?? link.title;
+          final bestDesc = link.description ?? ogDesc;
+          final bestImage = ogImage != null
+              ? WebExtractor.resolveUrl(link.url, ogImage)
+              : link.image;
+
+          if (ogImage != null || ogTitle != null || ogDesc != null) {
+            return ExtractedLink(
+              url: link.url,
+              title: bestTitle,
+              image: bestImage,
+              description: bestDesc,
+            );
+          }
+          return link;
+        } on Object {
+          return link;
+        }
+      });
+      results.addAll(await Future.wait(futures));
+    }
+    return results;
+  }
+
+  /// Extracts `og:title` from HTML meta tags.
+  static String? _extractMetaTitle(String html) {
+    for (final prop in ['og:title', 'twitter:title']) {
+      final m1 = RegExp(
+        '(?:property|name)="$prop"[^>]+content="([^"]+)"',
+        caseSensitive: false,
+      ).firstMatch(html);
+      if (m1 != null) return _decodeEntities(m1.group(1)!);
+      final m2 = RegExp(
+        'content="([^"]+)"[^>]+(?:property|name)="$prop"',
+        caseSensitive: false,
+      ).firstMatch(html);
+      if (m2 != null) return _decodeEntities(m2.group(1)!);
+    }
+    return null;
+  }
+
+  /// Extracts `og:image` or `twitter:image` from HTML meta tags.
+  static String? _extractMetaImage(String html) {
+    for (final prop in ['og:image', 'twitter:image', 'twitter:image:src']) {
+      // property="og:image" content="..."
+      final m1 = RegExp(
+        'property="$prop"[^>]+content="([^"]+)"',
+        caseSensitive: false,
+      ).firstMatch(html);
+      if (m1 != null) return _decodeEntities(m1.group(1)!);
+
+      // content="..." property="og:image"
+      final m2 = RegExp(
+        'content="([^"]+)"[^>]+property="$prop"',
+        caseSensitive: false,
+      ).firstMatch(html);
+      if (m2 != null) return _decodeEntities(m2.group(1)!);
+
+      // name= variant (twitter uses name instead of property)
+      final m3 = RegExp(
+        'name="$prop"[^>]+content="([^"]+)"',
+        caseSensitive: false,
+      ).firstMatch(html);
+      if (m3 != null) return _decodeEntities(m3.group(1)!);
+    }
+    return null;
+  }
+
+  /// Extracts meta description from HTML.
+  static String? _extractMetaDescription(String html) {
+    for (final prop in ['og:description', 'description']) {
+      final m1 = RegExp(
+        '(?:property|name)="$prop"[^>]+content="([^"]+)"',
+        caseSensitive: false,
+      ).firstMatch(html);
+      if (m1 != null) {
+        final desc = _decodeEntities(m1.group(1)!);
+        return desc.length > 500 ? desc.substring(0, 500) : desc;
+      }
+      final m2 = RegExp(
+        'content="([^"]+)"[^>]+(?:property|name)="$prop"',
+        caseSensitive: false,
+      ).firstMatch(html);
+      if (m2 != null) {
+        final desc = _decodeEntities(m2.group(1)!);
+        return desc.length > 500 ? desc.substring(0, 500) : desc;
+      }
+    }
+    return null;
+  }
+
+  /// Decodes common HTML entities in a string.
+  static String _decodeEntities(String text) {
+    return text
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&#x27;', "'");
   }
 }
 

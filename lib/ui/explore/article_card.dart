@@ -61,7 +61,8 @@ class ArticleCard extends ConsumerWidget {
   Color _sourceAccentColor() {
     final source = article.feedSource ?? '';
     final url = article.url ?? '';
-    if (source == 'reader-mode' || article.tags.contains('reader-mode')) {
+    if (source == 'reader-mode' || source.startsWith('web:') ||
+        article.tags.contains('reader-mode') || article.tags.contains('web')) {
       return KabukTheme.accentGreen;
     }
     if (source.contains('reddit') || url.contains('reddit.com')) {
@@ -386,8 +387,9 @@ class _SourceHeader extends StatelessWidget {
     final url = article.url ?? '';
     final isReddit =
         source.contains('reddit') || url.contains('reddit.com');
-    final isReaderMode = source == 'reader-mode' || article.tags.contains('reader-mode');
-    final isNostr = !isReddit && !isReaderMode &&
+    final isWebBrowse = source == 'reader-mode' || source.startsWith('web:') ||
+        article.tags.contains('reader-mode') || article.tags.contains('web');
+    final isNostr = !isReddit && !isWebBrowse &&
         (url.startsWith('nostr:') ||
             source.startsWith('kabuk:') ||
             source.isEmpty);
@@ -395,7 +397,7 @@ class _SourceHeader extends StatelessWidget {
 
     final Color iconColor;
     final IconData iconData;
-    if (isReaderMode) {
+    if (isWebBrowse) {
       iconColor = KabukTheme.accentGreen;
       iconData = Icons.auto_stories_rounded;
     } else if (isReddit) {
@@ -520,8 +522,9 @@ class _SourceHeader extends StatelessWidget {
     final tags = article.tags;
     final source = article.feedSource ?? '';
 
-    // Reader mode articles — show domain name instead of tag.
-    if (source == 'reader-mode' || tags.contains('reader-mode')) {
+    // Web-browsed articles — show domain name instead of tag.
+    if (source == 'reader-mode' || source.startsWith('web:') ||
+        tags.contains('reader-mode') || tags.contains('web')) {
       // Try to get domain from URL.
       final url = article.url;
       if (url != null) {
@@ -530,11 +533,12 @@ class _SourceHeader extends StatelessWidget {
           return uri.host.replaceFirst('www.', '');
         }
       }
-      // Fall back to second tag (domain) if available.
+      // Fall back to domain from web: feedSource or a tag.
+      if (source.startsWith('web:')) return source.substring(4);
       for (final tag in tags) {
-        if (tag != 'reader-mode' && tag.isNotEmpty) return tag;
+        if (tag != 'reader-mode' && tag != 'web' && tag.isNotEmpty) return tag;
       }
-      return 'Reader Mode';
+      return 'Web';
     }
 
     for (final tag in tags) {

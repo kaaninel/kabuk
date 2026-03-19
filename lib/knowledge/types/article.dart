@@ -391,6 +391,17 @@ extension KnowledgeStoreArticleExtension on KnowledgeStore {
     });
   }
 
+  /// Updates the feed source of an existing article.
+  ///
+  /// Used when a user subscribes to a page after browsing it — the
+  /// articles were created without a subscription, and now need to be
+  /// associated with the new subscription URI.
+  Future<void> updateArticleFeedSource(String uri, String feedSource) {
+    return mutate((ctx) async {
+      await ctx.set(uri, NS.kabukFeedSource, feedSource);
+    });
+  }
+
   /// Retrieves a single Article by [uri], or `null` if not found.
   Future<ArticleData?> getArticleData(String uri) async {
     final triples = await getEntity(uri);

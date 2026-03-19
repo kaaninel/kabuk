@@ -6,6 +6,7 @@
 library;
 
 import 'dart:async' show unawaited;
+import 'dart:developer' as dev;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -16,9 +17,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/knowledge/types/bookmark.dart';
+import 'package:kabuk/knowledge/types/content_block.dart';
 import 'package:kabuk/knowledge/types/nostr_social.dart';
 import 'package:kabuk/services/feed.dart';
 import 'package:kabuk/services/media_cache.dart';
+import 'package:kabuk/services/reader_mode.dart';
 import 'package:kabuk/ui/explore/article_card.dart' show bookmarkStatusProvider;
 import 'package:kabuk/ui/explore/browse_session.dart';
 import 'package:kabuk/ui/explore/fourchan_comments.dart';
@@ -273,7 +276,10 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
 // =============================================================================
 
 /// Scrollable content for a single article in the [ArticleDetailPage].
-class _ArticleDetailContent extends ConsumerWidget {
+///
+/// When the article has no description and a URL (multi-article stub),
+/// automatically fetches full content via reader mode.
+class _ArticleDetailContent extends ConsumerStatefulWidget {
   const _ArticleDetailContent({
     required this.article,
     required this.onViewInBrowser,
@@ -288,13 +294,91 @@ class _ArticleDetailContent extends ConsumerWidget {
   final ScrollController? scrollController;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ArticleDetailContent> createState() =>
+      _ArticleDetailContentState();
+}
+
+class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
+  bool _isFetchingContent = false;
+  bool _fetchAttempted = false;
+  ArticleData? _enrichedArticle;
+  List<ContentBlockData>? _contentBlocks;
+
+  /// Whether this article is a stub that needs content fetching.
+  bool get _isStub {
+    final a = widget.article;
+    return (a.description == null || a.description!.isEmpty) &&
+        a.url != null &&
+        a.url!.startsWith('http');
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (_isStub) {
+      _fetchContent();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _ArticleDetailContent old) {
+    super.didUpdateWidget(old);
+    if (old.article.uri != widget.article.uri) {
+      _isFetchingContent = false;
+      _fetchAttempted = false;
+      _enrichedArticle = null;
+      _contentBlocks = null;
+      if (_isStub) _fetchContent();
+    }
+  }
+
+  Future<void> _fetchContent() async {
+    if (_fetchAttempted || _isFetchingContent) return;
+    setState(() => _isFetchingContent = true);
+    _fetchAttempted = true;
+
+    try {
+      final readerMode = ref.read(readerModeServiceProvider);
+      final store = ref.read(knowledgeStoreProvider);
+
+      // Process through reader mode — this creates content blocks.
+      await readerMode.processUrl(
+        widget.article.url!,
+        feedSource: widget.article.feedSource,
+      );
+
+      if (!mounted) return;
+
+      // Re-fetch the updated article and its content blocks.
+      final updatedArticle = await store.getArticleData(widget.article.uri);
+      final blocks = await store.listDocumentBlocks(widget.article.uri);
+
+      if (!mounted) return;
+      setState(() {
+        _enrichedArticle = updatedArticle;
+        _contentBlocks = blocks;
+        _isFetchingContent = false;
+      });
+    } on Object catch (e, st) {
+      dev.log(
+        'Lazy content fetch failed for ${widget.article.url}',
+        name: 'ArticleDetail',
+        error: e,
+        stackTrace: st,
+      );
+      if (mounted) setState(() => _isFetchingContent = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final article = _enrichedArticle ?? widget.article;
     final hasImage = FeedImage.isValidImageUrl(article.image);
     final isVideo = _hasVideo(article);
     final hasGallery = article.galleryImages.length > 1;
 
     return ListView(
-      controller: scrollController,
+      controller: widget.scrollController,
       padding: EdgeInsets.zero,
       children: [
         // ── Media ──────────────────────────────────────────────────────────
@@ -397,7 +481,7 @@ class _ArticleDetailContent extends ConsumerWidget {
                             fontSize: 12, color: KabukTheme.textTertiary)),
                   ),
                 GestureDetector(
-                  onTap: onViewInBrowser,
+                  onTap: widget.onViewInBrowser,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -501,6 +585,39 @@ class _ArticleDetailContent extends ConsumerWidget {
                       );
                     },
                   ),
+          ),
+
+        // ── Content blocks (from reader mode) ─────────────────────────────
+        if (_contentBlocks != null && _contentBlocks!.isNotEmpty)
+          for (final block in _contentBlocks!)
+            _renderContentBlock(context, block),
+
+        // ── Loading indicator for lazy content fetch ──────────────────────
+        if (_isFetchingContent)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 32),
+            child: Center(
+              child: Column(
+                children: [
+                  SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: KabukTheme.accentGreen,
+                    ),
+                  ),
+                  SizedBox(height: 12),
+                  Text(
+                    'Loading full article…',
+                    style: TextStyle(
+                      color: KabukTheme.textTertiary,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
 
         // ── Unified discussion (Nostr + Reddit + 4chan) ────────────────────
@@ -631,6 +748,151 @@ class _ArticleDetailContent extends ConsumerWidget {
       'Dec',
     ];
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
+  }
+
+  /// Renders a single content block as a widget.
+  Widget _renderContentBlock(BuildContext context, ContentBlockData block) {
+    return switch (block.type) {
+      BlockType.heading => Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+          child: Text(
+            block.content ?? '',
+            style: TextStyle(
+              fontSize: switch (block.level) {
+                1 => 22.0,
+                2 => 18.0,
+                _ => 16.0,
+              },
+              fontWeight: FontWeight.w700,
+              color: KabukTheme.textPrimary,
+            ),
+          ),
+        ),
+      BlockType.text => Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: _hasMarkdown(block.content ?? '')
+              ? MarkdownBody(
+                  data: block.content ?? '',
+                  styleSheet: MarkdownStyleSheet(
+                    p: const TextStyle(
+                      fontSize: 15,
+                      height: 1.65,
+                      color: KabukTheme.textPrimary,
+                    ),
+                    a: const TextStyle(color: KabukTheme.blueAccent),
+                  ),
+                  onTapLink: (text, href, title) {
+                    if (href == null) return;
+                    openUrlSmart(context, href,
+                        title: text.isNotEmpty ? text : null);
+                  },
+                )
+              : Text(
+                  block.content ?? '',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    height: 1.65,
+                    color: KabukTheme.textPrimary,
+                  ),
+                ),
+        ),
+      BlockType.image => Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (block.mediaUri != null)
+                GestureDetector(
+                  onTap: () => FullscreenImageViewer.show(
+                    context,
+                    imageUrl: block.mediaUri!,
+                    tag: 'block_img_${block.uri}',
+                  ),
+                  child: Hero(
+                    tag: 'block_img_${block.uri}',
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: FeedImage(
+                        imageUrl: block.mediaUri!,
+                        height: 240,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              if (block.caption != null && block.caption!.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    block.caption!,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: KabukTheme.textTertiary,
+                      fontStyle: FontStyle.italic,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      BlockType.video => Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: block.mediaUri != null
+              ? VideoThumbnail(
+                  videoUrl: block.mediaUri!,
+                  height: 240,
+                  borderRadius: BorderRadius.circular(12),
+                )
+              : const SizedBox.shrink(),
+        ),
+      BlockType.quote => Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+            decoration: BoxDecoration(
+              border: Border(
+                left: BorderSide(
+                  color: KabukTheme.textTertiary.withAlpha(120),
+                  width: 3,
+                ),
+              ),
+            ),
+            child: Text(
+              block.content ?? '',
+              style: const TextStyle(
+                fontSize: 14,
+                height: 1.6,
+                color: KabukTheme.textSecondary,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
+        ),
+      BlockType.code => Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A1A1A),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              block.content ?? '',
+              style: const TextStyle(
+                fontSize: 13,
+                fontFamily: 'monospace',
+                color: KabukTheme.accentGreen,
+              ),
+            ),
+          ),
+        ),
+      BlockType.divider => const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Divider(color: KabukTheme.textTertiary, height: 1),
+        ),
+      _ => const SizedBox.shrink(),
+    };
   }
 }
 

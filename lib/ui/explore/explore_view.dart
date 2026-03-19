@@ -1125,8 +1125,8 @@ class _ExploreViewState extends ConsumerState<ExploreView>
 
     // For the Nostr global feed, match any article with a 'nostr' feed source,
     // since individual Nostr notes are stored with 'nostr:...' source URIs.
-    // For web subscriptions, also match articles by feedUrl domain or
-    // legacy 'reader-mode' feedSource with matching URL domain.
+    // For web subscriptions, match articles by subscription URI, feedUrl
+    // domain, or 'web:domain' feedSource tag.
     final selectedFeedType = _resolveSelectedFeedType(subsAsync, selectedFeed);
     final selectedFeedUrl = subsAsync.whenOrNull(
       data: (subs) =>
@@ -1142,7 +1142,7 @@ class _ExploreViewState extends ConsumerState<ExploreView>
       _ when selectedFeedType == 'web' && selectedFeedUrl != null =>
         allArticles.where((a) {
           if (a.feedSource == selectedFeed) return true;
-          // Match legacy reader-mode articles by URL domain.
+          // Match browsed web articles by URL domain.
           final subDomain = Uri.tryParse(selectedFeedUrl)?.host;
           final articleDomain = a.url != null
               ? Uri.tryParse(a.url!)?.host
@@ -1150,6 +1150,11 @@ class _ExploreViewState extends ConsumerState<ExploreView>
           if (subDomain != null &&
               articleDomain != null &&
               subDomain == articleDomain) {
+            return true;
+          }
+          // Match by web:domain feedSource tag.
+          if (subDomain != null &&
+              a.feedSource == 'web:$subDomain') {
             return true;
           }
           return false;

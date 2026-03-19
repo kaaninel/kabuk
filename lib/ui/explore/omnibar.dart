@@ -1,4 +1,4 @@
-/// OmniBar — Chrome-like unified search, navigation, and subscription bar.
+/// OmniBar — Chrome-like unified search, navigation, and browse bar.
 ///
 /// A single bar that replaces the separate search dialog, filter bar,
 /// and saved search row with one unified interface. Inspired by Chrome's
@@ -8,8 +8,9 @@
 /// - **Global and scoped search** — search all feeds or within a specific
 ///   feed, like Reddit's "Search r/subreddit"
 /// - **Feed switching** — integrated feed selector replaces filter chips
-/// - **One-tap subscribe** — type `r/subreddit`, `#topic`, or paste a URL
-///   to subscribe directly from search results
+/// - **URL browsing** — paste a URL to browse it natively; subscribe
+///   optionally via a follow button in the channel view
+/// - **One-tap subscribe** — type `r/subreddit` or `#topic` to subscribe
 /// - **Trending topics** and **recent searches** for discovery
 /// - **Smart detection** of URLs, subreddits, and hashtags
 /// - **User guidance** — contextual hints and onboarding for new users
@@ -33,6 +34,7 @@ import 'package:kabuk/ui/explore/feed_management_sheet.dart';
 import 'package:kabuk/ui/explore/profile_view.dart';
 import 'package:kabuk/ui/explore/reader_view.dart';
 import 'package:kabuk/ui/explore/topic_following.dart';
+import 'package:kabuk/ui/explore/web_channel_view.dart';
 import 'package:kabuk/ui/shared/feed_image.dart';
 import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
 import 'package:kabuk/services/reader_mode.dart';
@@ -246,7 +248,7 @@ class OmniBar extends StatelessWidget {
               child: Text(
                 hasScope
                     ? 'Search in ${selectedFeedName ?? "feed"}...'
-                    : 'Search, subscribe, or enter URL...',
+                    : 'Search or enter URL…',
                 style: const TextStyle(
                   fontSize: 14,
                   color: KabukTheme.textTertiary,
@@ -617,8 +619,8 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
     if (q.isEmpty) return;
 
     if (_isUrlQuery(q)) {
-      // Parse URL with AI reader mode and create a channel.
-      _readAndSubscribe(q);
+      // Browse the URL natively — no auto-subscribe.
+      _browseUrl(q);
     } else if (_isBrowseableQuery(q)) {
       // Cancel pending debounce and navigate immediately.
       _browseDebounce?.cancel();
@@ -636,10 +638,10 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
     openUrlSmart(context, openUrl);
   }
 
-  /// Parses a URL with AI reader mode, stores it as an article (or multiple
-  /// articles for index/listing pages), creates a subscription channel, and
-  /// navigates appropriately.
-  Future<void> _readAndSubscribe(String url) async {
+  /// Parses a URL with AI, stores semantic objects in the knowledge base,
+  /// and navigates to a native channel view showing the extracted content.
+  /// Does NOT auto-subscribe — the user can follow from the channel view.
+  Future<void> _browseUrl(String url) async {
     var feedUrl = url.trim();
     if (!feedUrl.startsWith('http://') && !feedUrl.startsWith('https://')) {
       feedUrl = 'https://$feedUrl';
@@ -647,61 +649,33 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Reading page with AI…')),
+      const SnackBar(content: Text('Loading page…')),
     );
 
     try {
-      final store = ref.read(knowledgeStoreProvider);
-      final domain = Uri.tryParse(feedUrl)?.host ?? feedUrl;
-
-      // Create or find the subscription first so we have the URI.
-      String? subUri;
-      final existing = await store.listFeedSubscriptions();
-      final match = existing.where((s) => s.feedUrl == feedUrl).firstOrNull;
-      if (match != null) {
-        subUri = match.uri;
-      } else {
-        subUri = await store.createFeedSubscription(
-          name: domain,
-          feedUrl: feedUrl,
-          feedType: 'web',
-        );
-      }
-
-      // Parse the page with feedSource set to the subscription URI.
+      // Process the page — articles are stored in knowledge base.
       final service = ref.read(readerModeServiceProvider);
-      final result = await service.processUrl(
-        feedUrl,
-        feedSource: subUri,
-      );
+      final result = await service.processUrl(feedUrl);
 
-      ref.invalidate(subscriptionsProvider);
       ref.invalidate(articlesProvider);
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).clearSnackBars();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).clearSnackBars();
 
-        if (result.isMultiArticle) {
-          // Multiple articles found — set the feed filter to this
-          // subscription and pop back to the explore view.
-          ref.read(selectedFeedProvider.notifier).state = subUri;
-          Navigator.of(context).pop();
-        } else {
-          // Single article — navigate to reader view as before.
-          await Navigator.of(context).push<void>(
-            MaterialPageRoute<void>(
-              builder: (_) => ReaderView(
-                articleUri: result.primaryArticleUri,
-                url: feedUrl,
-              ),
-            ),
-          );
-        }
-      }
+      // Navigate to native channel view showing parsed content.
+      await Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => WebChannelView(
+            url: feedUrl,
+            articleUris: result.articleUris,
+            isMultiArticle: result.isMultiArticle,
+          ),
+        ),
+      );
     } on Object catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to read page: $e')),
+          SnackBar(content: Text('Failed to load page: $e')),
         );
       }
     }
@@ -988,7 +962,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
       onSubmitted: _onSubmitted,
       hintText: _scope != null
           ? 'Search in ${_scopeName ?? "feed"}...'
-          : 'Search, subscribe, or enter URL...',
+          : 'Search or enter URL…',
     );
   }
 
@@ -1516,7 +1490,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
           const SizedBox(height: 8),
           _tipRow(
             'https://...',
-            'Subscribe as feed or open in browser',
+            'Browse page natively',
             Icons.link_rounded,
             KabukTheme.blueAccent,
           ),
@@ -1610,29 +1584,29 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
     if (_isUrlQuery(_query)) {
       actions.add(
         _actionTile(
-          icon: Icons.auto_stories_rounded,
+          icon: Icons.language_rounded,
+          iconColor: KabukTheme.blueAccent,
+          title: 'Browse',
+          subtitle: 'View this page natively',
+          onTap: () => _browseUrl(_query),
+        ),
+      );
+      actions.add(
+        _actionTile(
+          icon: Icons.rss_feed_rounded,
           iconColor: KabukTheme.warmAccent,
-          title: 'Read & Subscribe',
-          subtitle: 'Parse with AI and create a channel',
-          onTap: () => _readAndSubscribe(_query),
+          title: 'Subscribe as RSS feed',
+          subtitle: 'Follow updates from this URL',
+          onTap: () => _subscribeToRss(_query),
         ),
       );
       actions.add(
         _actionTile(
           icon: Icons.open_in_new_rounded,
           iconColor: KabukTheme.accentGreen,
-          title: 'Open link',
-          subtitle: 'Preview this link in-app',
+          title: 'Open in browser',
+          subtitle: 'View raw page in WebView',
           onTap: () => _openExternal(_query),
-        ),
-      );
-      actions.add(
-        _actionTile(
-          icon: Icons.rss_feed_rounded,
-          iconColor: KabukTheme.blueAccent,
-          title: 'Subscribe as RSS feed',
-          subtitle: 'Subscribe to updates from this URL',
-          onTap: () => _subscribeToRss(_query),
         ),
       );
     }

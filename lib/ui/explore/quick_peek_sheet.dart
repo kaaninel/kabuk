@@ -212,7 +212,7 @@ class _QuickPeekSheetState extends ConsumerState<QuickPeekSheet> {
     } on Object catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Reader mode failed: $e')),
+          SnackBar(content: Text('Failed to load page: $e')),
         );
         setState(() => _isProcessingReader = false);
       }
@@ -788,7 +788,7 @@ class _PeekHeader extends StatelessWidget {
                       color: KabukTheme.accentGreen,
                     ),
                     onPressed: onReaderMode,
-                    tooltip: 'AI Reader Mode',
+                    tooltip: 'View natively',
                     visualDensity: VisualDensity.compact,
                   ),
           // Refresh button.
