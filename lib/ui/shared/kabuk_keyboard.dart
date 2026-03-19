@@ -892,7 +892,7 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     if (data?.text != null && data!.text!.isNotEmpty) {
       _insertChar(data.text!);
-      HapticFeedback.mediumImpact();
+      unawaited(HapticFeedback.mediumImpact());
     }
   }
 

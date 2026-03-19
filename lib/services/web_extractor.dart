@@ -832,7 +832,7 @@ class WebExtractor {
 
   /// Resolves a relative [path] against [baseUrl] to an absolute URL.
   ///
-  /// Public wrapper for use by other services (e.g., [ReaderModeService]).
+  /// Public wrapper for use by other services (e.g., ReaderModeService).
   static String? resolveUrl(String baseUrl, String path) =>
       _resolveUrl(baseUrl, path);
 }

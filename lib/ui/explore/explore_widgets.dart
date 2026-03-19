@@ -1,8 +1,8 @@
 /// Explore view widgets — barrel export.
 ///
 /// Re-exports all explore widget sub-modules that were split for
-/// maintainability: [FilterBar], [ArticleCard],
-/// [EmptyFeedState], and [SearchDialog].
+/// maintainability: FilterBar, ArticleCard,
+/// EmptyFeedState, and SearchDialog.
 library;
 
 export 'article_card.dart';
