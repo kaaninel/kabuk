@@ -5,7 +5,6 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kabuk/ui/theme.dart';
 
 // ---------------------------------------------------------------------------
@@ -126,29 +125,8 @@ final defaultProviders = <ServiceProviderConfig>[
   ),
 ];
 
-/// Notifier that holds in-memory service provider configs.
-///
-/// In a future version, these should be persisted to the knowledge store.
-final serviceProvidersProvider =
-    StateNotifierProvider<
-      ServiceProvidersNotifier,
-      List<ServiceProviderConfig>
-    >((ref) => ServiceProvidersNotifier());
-
-/// State notifier for service provider configuration.
-class ServiceProvidersNotifier
-    extends StateNotifier<List<ServiceProviderConfig>> {
-  /// Creates a [ServiceProvidersNotifier] with defaults.
-  ServiceProvidersNotifier() : super(defaultProviders);
-
-  /// Updates a provider by id.
-  void update(ServiceProviderConfig updated) {
-    state = [
-      for (final p in state)
-        if (p.id == updated.id) updated else p,
-    ];
-  }
-}
+// Service provider state is persisted via [serviceProvidersProvider]
+// defined in lib/config/providers.dart.
 
 // ---------------------------------------------------------------------------
 // Shared settings widgets
@@ -233,9 +211,9 @@ class SettingsTile extends StatelessWidget {
     return Container(
       margin: EdgeInsets.only(bottom: compact ? 2 : 4),
       decoration: BoxDecoration(
-        color: KabukTheme.cardColor,
+        color: context.kabukCardColor,
         borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
-        border: Border.all(color: KabukTheme.divider, width: 0.5),
+        border: Border.all(color: context.kabukDivider, width: 0.5),
       ),
       child: Material(
         color: Colors.transparent,
@@ -266,7 +244,7 @@ class SettingsTile extends StatelessWidget {
                       Text(
                         title,
                         style: TextStyle(
-                          color: KabukTheme.textPrimary,
+                          color: context.kabukTextPrimary,
                           fontSize: compact ? 13 : 14,
                           fontWeight: FontWeight.w600,
                         ),
@@ -274,7 +252,7 @@ class SettingsTile extends StatelessWidget {
                       Text(
                         subtitle,
                         style: TextStyle(
-                          color: KabukTheme.textSecondary,
+                          color: context.kabukTextSecondary,
                           fontSize: compact ? 11 : 12,
                         ),
                       ),
@@ -286,7 +264,7 @@ class SettingsTile extends StatelessWidget {
                 Icon(
                   Icons.chevron_right_rounded,
                   size: compact ? 18 : 20,
-                  color: KabukTheme.textTertiary,
+                  color: context.kabukTextTertiary,
                 ),
               ],
             ),
@@ -311,13 +289,13 @@ void showComingSoonDialog(
   showDialog<void>(
     context: context,
     builder: (_) => AlertDialog(
-      backgroundColor: KabukTheme.surface,
+      backgroundColor: context.kabukSurface,
       icon: Icon(icon, size: 32, color: KabukTheme.primaryGreen),
       title: Text(title),
       content: Text(
         description,
-        style: const TextStyle(
-          color: KabukTheme.textSecondary,
+        style: TextStyle(
+          color: context.kabukTextSecondary,
           fontSize: 14,
           height: 1.5,
         ),

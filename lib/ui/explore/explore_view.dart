@@ -644,7 +644,7 @@ class _ExploreViewState extends ConsumerState<ExploreView>
           SliverAppBar(
             floating: true,
             snap: true,
-            backgroundColor: KabukTheme.background,
+            backgroundColor: context.kabukBackground,
             surfaceTintColor: Colors.transparent,
             titleSpacing: 12,
             title: OmniBar(
@@ -722,16 +722,16 @@ class _ExploreViewState extends ConsumerState<ExploreView>
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.cloud_off_rounded,
                             size: 48,
-                            color: KabukTheme.textSecondary,
+                            color: context.kabukTextSecondary,
                           ),
                           const SizedBox(height: 16),
                           Text(
                             friendlyError(e),
-                            style: const TextStyle(
-                              color: KabukTheme.textSecondary,
+                            style: TextStyle(
+                              color: context.kabukTextSecondary,
                             ),
                             textAlign: TextAlign.center,
                           ),
@@ -782,17 +782,17 @@ class _ExploreViewState extends ConsumerState<ExploreView>
           SliverToBoxAdapter(child: _buildBrowseBanner(session)),
           // Loading skeleton.
           if (session.loading)
-            const SliverFillRemaining(
+            SliverFillRemaining(
               child: Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    CircularProgressIndicator(color: KabukTheme.accentGreen),
-                    SizedBox(height: 16),
+                    const CircularProgressIndicator(color: KabukTheme.accentGreen),
+                    const SizedBox(height: 16),
                     Text(
                       'Loading content...',
                       style: TextStyle(
-                        color: KabukTheme.textSecondary,
+                        color: context.kabukTextSecondary,
                         fontSize: 14,
                       ),
                     ),
@@ -808,24 +808,24 @@ class _ExploreViewState extends ConsumerState<ExploreView>
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.cloud_off_rounded,
                         size: 48,
-                        color: KabukTheme.textSecondary,
+                        color: context.kabukTextSecondary,
                       ),
                       const SizedBox(height: 12),
                       Text(
                         'Failed to load ${session.displayName}',
-                        style: const TextStyle(
-                          color: KabukTheme.textPrimary,
+                        style: TextStyle(
+                          color: context.kabukTextPrimary,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         friendlyError(session.error),
-                        style: const TextStyle(
-                          color: KabukTheme.textTertiary,
+                        style: TextStyle(
+                          color: context.kabukTextTertiary,
                           fontSize: 12,
                         ),
                         textAlign: TextAlign.center,
@@ -850,11 +850,11 @@ class _ExploreViewState extends ConsumerState<ExploreView>
               ),
             )
           else if (session.articles.isEmpty)
-            const SliverFillRemaining(
+            SliverFillRemaining(
               child: Center(
                 child: Text(
                   'No content found.',
-                  style: TextStyle(color: KabukTheme.textSecondary),
+                  style: TextStyle(color: context.kabukTextSecondary),
                 ),
               ),
             )
@@ -982,9 +982,9 @@ class _ExploreViewState extends ConsumerState<ExploreView>
                   isNostrProfile
                       ? 'Not subscribed — tap × in the bar to leave'
                       : 'Viewing without subscribing',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
-                    color: KabukTheme.textTertiary,
+                    color: context.kabukTextTertiary,
                   ),
                 ),
               ],
@@ -1198,12 +1198,12 @@ class _ExploreViewState extends ConsumerState<ExploreView>
                     Icon(
                       Icons.filter_alt_off_rounded,
                       size: 48,
-                      color: KabukTheme.textTertiary.withAlpha(120),
+                      color: context.kabukTextTertiary.withAlpha(120),
                     ),
                     const SizedBox(height: 12),
-                    const Text(
+                    Text(
                       'No articles from this feed yet',
-                      style: TextStyle(color: KabukTheme.textSecondary),
+                      style: TextStyle(color: context.kabukTextSecondary),
                     ),
                   ],
                 ),
@@ -1318,8 +1318,8 @@ class _ExploreViewState extends ConsumerState<ExploreView>
           if (_lastRefreshedAt != null)
             Text(
               _formatRefreshTime(_lastRefreshedAt!),
-              style: const TextStyle(
-                color: KabukTheme.textTertiary,
+              style: TextStyle(
+                color: context.kabukTextTertiary,
                 fontSize: 11,
               ),
             ),
@@ -1359,12 +1359,12 @@ class _ExploreViewState extends ConsumerState<ExploreView>
         decoration: BoxDecoration(
           color: isSelected
               ? KabukTheme.accentGreen.withAlpha(30)
-              : KabukTheme.cardColor,
+              : context.kabukCardColor,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: isSelected
                 ? KabukTheme.accentGreen.withAlpha(120)
-                : KabukTheme.divider,
+                : context.kabukDivider,
           ),
         ),
         child: Row(
@@ -1375,7 +1375,7 @@ class _ExploreViewState extends ConsumerState<ExploreView>
               size: 13,
               color: isSelected
                   ? KabukTheme.accentGreen
-                  : KabukTheme.textTertiary,
+                  : context.kabukTextTertiary,
             ),
             const SizedBox(width: 4),
             Text(
@@ -1385,7 +1385,7 @@ class _ExploreViewState extends ConsumerState<ExploreView>
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                 color: isSelected
                     ? KabukTheme.accentGreen
-                    : KabukTheme.textTertiary,
+                    : context.kabukTextTertiary,
               ),
             ),
           ],
@@ -1413,12 +1413,12 @@ class _ExploreViewState extends ConsumerState<ExploreView>
         decoration: BoxDecoration(
           color: hasFilters
               ? KabukTheme.warmAccent.withAlpha(30)
-              : KabukTheme.cardColor,
+              : context.kabukCardColor,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: hasFilters
                 ? KabukTheme.warmAccent.withAlpha(120)
-                : KabukTheme.divider,
+                : context.kabukDivider,
           ),
         ),
         child: Icon(
@@ -1428,7 +1428,7 @@ class _ExploreViewState extends ConsumerState<ExploreView>
           size: 14,
           color: hasFilters
               ? KabukTheme.warmAccent
-              : KabukTheme.textTertiary,
+              : context.kabukTextTertiary,
         ),
       ),
     );
@@ -1438,7 +1438,7 @@ class _ExploreViewState extends ConsumerState<ExploreView>
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: KabukTheme.cardColor,
+      backgroundColor: context.kabukCardColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -1572,22 +1572,22 @@ class _OfflineBanner extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: KabukTheme.cardColor,
+        color: context.kabukCardColor,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: KabukTheme.divider),
+        border: Border.all(color: context.kabukDivider),
       ),
-      child: const Row(
+      child: Row(
         children: [
           Icon(
             Icons.wifi_off_rounded,
             size: 15,
-            color: KabukTheme.textTertiary,
+            color: context.kabukTextTertiary,
           ),
-          SizedBox(width: 8),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
               'Offline \u2014 showing cached content',
-              style: TextStyle(fontSize: 12, color: KabukTheme.textSecondary),
+              style: TextStyle(fontSize: 12, color: context.kabukTextSecondary),
             ),
           ),
         ],
@@ -1652,14 +1652,14 @@ class _SkeletonCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const base = KabukTheme.cardColor;
-    final shimmer = Color.lerp(base, KabukTheme.divider, shimmerValue * 0.6)!;
+    final base = context.kabukCardColor;
+    final shimmer = Color.lerp(base, context.kabukDivider, shimmerValue * 0.6)!;
 
     return Container(
       decoration: BoxDecoration(
         color: base,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: KabukTheme.divider),
+        border: Border.all(color: context.kabukDivider),
       ),
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -1788,7 +1788,7 @@ class _ContentFilterSheetState extends State<_ContentFilterSheet> {
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: KabukTheme.divider,
+                  color: context.kabukDivider,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -1797,11 +1797,11 @@ class _ContentFilterSheetState extends State<_ContentFilterSheet> {
             // Title + apply
             Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Text(
                     'Content Filters',
                     style: TextStyle(
-                      color: KabukTheme.textPrimary,
+                      color: context.kabukTextPrimary,
                       fontSize: 18,
                       fontWeight: FontWeight.w700,
                     ),
@@ -1825,10 +1825,10 @@ class _ContentFilterSheetState extends State<_ContentFilterSheet> {
             const SizedBox(height: 16),
 
             // Blocked keywords
-            const Text(
+            Text(
               'Blocked keywords',
               style: TextStyle(
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -1839,17 +1839,17 @@ class _ContentFilterSheetState extends State<_ContentFilterSheet> {
                 Expanded(
                   child: TextField(
                     controller: _keywordController,
-                    style: const TextStyle(
-                      color: KabukTheme.textPrimary,
+                    style: TextStyle(
+                      color: context.kabukTextPrimary,
                       fontSize: 14,
                     ),
                     decoration: InputDecoration(
                       hintText: 'Add keyword…',
                       hintStyle: TextStyle(
-                        color: KabukTheme.textTertiary.withAlpha(120),
+                        color: context.kabukTextTertiary.withAlpha(120),
                       ),
                       filled: true,
-                      fillColor: KabukTheme.surface,
+                      fillColor: context.kabukSurface,
                       isDense: true,
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 12,
@@ -1881,15 +1881,15 @@ class _ContentFilterSheetState extends State<_ContentFilterSheet> {
                       (kw) => Chip(
                         label: Text(
                           kw,
-                          style: const TextStyle(
-                            color: KabukTheme.textPrimary,
+                          style: TextStyle(
+                            color: context.kabukTextPrimary,
                             fontSize: 12,
                           ),
                         ),
                         deleteIcon: const Icon(Icons.close, size: 14),
                         onDeleted: () =>
                             setState(() => _keywords.remove(kw)),
-                        backgroundColor: KabukTheme.surface,
+                        backgroundColor: context.kabukSurface,
                         side: BorderSide.none,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
@@ -1903,10 +1903,10 @@ class _ContentFilterSheetState extends State<_ContentFilterSheet> {
             // Muted sources
             if (widget.subscriptions.isNotEmpty) ...[
               const SizedBox(height: 20),
-              const Text(
+              Text(
                 'Muted sources',
                 style: TextStyle(
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
@@ -1943,8 +1943,8 @@ class _ContentFilterSheetState extends State<_ContentFilterSheet> {
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(
-                color: KabukTheme.textPrimary,
+              style: TextStyle(
+                color: context.kabukTextPrimary,
                 fontSize: 14,
               ),
               overflow: TextOverflow.ellipsis,

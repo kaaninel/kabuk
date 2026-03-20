@@ -187,7 +187,7 @@ class _VaultViewState extends ConsumerState<VaultView>
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
-        backgroundColor: KabukTheme.background,
+        backgroundColor: context.kabukBackground,
         body: Stack(
           fit: StackFit.expand,
           children: [
@@ -260,10 +260,10 @@ class _WorkspaceShell extends ConsumerWidget {
           ),
           child: Row(
             children: [
-              const Text(
+              Text(
                 'Vault',
                 style: TextStyle(
-                  color: KabukTheme.textPrimary,
+                  color: context.kabukTextPrimary,
                   fontSize: 24,
                   fontWeight: FontWeight.w800,
                   letterSpacing: -0.5,
@@ -387,7 +387,7 @@ class _WorkspaceTabBar extends ConsumerWidget {
                       size: 18,
                       color: isActive
                           ? KabukTheme.accentGreen
-                          : KabukTheme.textTertiary,
+                          : context.kabukTextTertiary,
                     ),
                     const SizedBox(width: 6),
                     Text(
@@ -395,7 +395,7 @@ class _WorkspaceTabBar extends ConsumerWidget {
                       style: TextStyle(
                         color: isActive
                             ? KabukTheme.accentGreen
-                            : KabukTheme.textTertiary,
+                            : context.kabukTextTertiary,
                         fontSize: 13,
                         fontWeight: isActive
                             ? FontWeight.w700
@@ -553,7 +553,7 @@ class _CameraFlowState extends ConsumerState<_CameraFlow> {
     final topPadding = MediaQuery.of(context).viewPadding.top;
 
     return Container(
-      color: KabukTheme.background,
+      color: context.kabukBackground,
       child: Column(
         children: [
           // Top bar with close button and mode toggle.
@@ -564,7 +564,7 @@ class _CameraFlowState extends ConsumerState<_CameraFlow> {
                 IconButton(
                   onPressed: widget.onClose,
                   icon: const Icon(Icons.close_rounded),
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                 ),
                 const Spacer(),
                 GestureDetector(
@@ -575,13 +575,13 @@ class _CameraFlowState extends ConsumerState<_CameraFlow> {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: KabukTheme.surfaceVariant,
+                      color: context.kabukSurfaceVariant,
                       borderRadius: BorderRadius.circular(KabukTheme.radiusXl),
                     ),
                     child: Text(
                       _isVideoMode ? 'VIDEO' : 'PHOTO',
-                      style: const TextStyle(
-                        color: KabukTheme.textPrimary,
+                      style: TextStyle(
+                        color: context.kabukTextPrimary,
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 1,

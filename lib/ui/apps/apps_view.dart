@@ -17,6 +17,7 @@ import 'package:kabuk/knowledge/types/person.dart';
 import 'package:kabuk/knowledge/types/saved_view.dart';
 import 'package:kabuk/ui/explore/quick_peek_sheet.dart';
 import 'package:kabuk/ui/settings/settings_view.dart';
+import 'package:kabuk/ui/shared/error_retry.dart';
 import 'package:kabuk/ui/shared/identity_quick_switcher.dart';
 import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
 import 'package:kabuk/ui/theme.dart';
@@ -75,7 +76,7 @@ class AppsView extends ConsumerWidget {
               trailing: IconButton(
                 icon: const Icon(Icons.add_rounded, size: 20),
                 tooltip: 'Add bookmark',
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
                 onPressed: () => _showAddBookmarkSheet(context, ref),
               ),
             ),
@@ -118,22 +119,19 @@ class AppsView extends ConsumerWidget {
                 ),
               ),
             ),
-            error: (_, _) => const SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.all(KabukTheme.spacingMd),
-                child: Text(
-                  'Could not load bookmarks.',
-                  style: TextStyle(color: KabukTheme.textSecondary),
-                ),
+            error: (_, _) => SliverToBoxAdapter(
+              child: ErrorRetryWidget(
+                message: 'Could not load bookmarks.',
+                onRetry: () => ref.invalidate(_bookmarksProvider),
               ),
             ),
           ),
 
           // ─── Section divider ──────────────────────────────────────
-          const SliverToBoxAdapter(
+          SliverToBoxAdapter(
             child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: KabukTheme.spacingLg),
-              child: Divider(height: KabukTheme.spacingLg, color: KabukTheme.divider),
+              padding: const EdgeInsets.symmetric(horizontal: KabukTheme.spacingLg),
+              child: Divider(height: KabukTheme.spacingLg, color: context.kabukDivider),
             ),
           ),
 
@@ -171,27 +169,19 @@ class AppsView extends ConsumerWidget {
                     ],
                   ),
             loading: () => const SliverToBoxAdapter(child: SizedBox.shrink()),
-            error: (e, _) => const SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: KabukTheme.spacingMd,
-                ),
-                child: Text(
-                  'Could not load saved views.',
-                  style: TextStyle(
-                    color: KabukTheme.textSecondary,
-                    fontSize: 13,
-                  ),
-                ),
+            error: (e, _) => SliverToBoxAdapter(
+              child: ErrorRetryWidget(
+                message: 'Could not load saved views.',
+                onRetry: () => ref.invalidate(_savedViewsProvider),
               ),
             ),
           ),
 
           // ─── Section divider ──────────────────────────────────────
-          const SliverToBoxAdapter(
+          SliverToBoxAdapter(
             child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: KabukTheme.spacingLg),
-              child: Divider(height: KabukTheme.spacingLg, color: KabukTheme.divider),
+              padding: const EdgeInsets.symmetric(horizontal: KabukTheme.spacingLg),
+              child: Divider(height: KabukTheme.spacingLg, color: context.kabukDivider),
             ),
           ),
 
@@ -232,27 +222,19 @@ class AppsView extends ConsumerWidget {
                     ],
                   ),
             loading: () => const SliverToBoxAdapter(child: SizedBox.shrink()),
-            error: (e, _) => const SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: KabukTheme.spacingMd,
-                ),
-                child: Text(
-                  'Could not load recent notes.',
-                  style: TextStyle(
-                    color: KabukTheme.textSecondary,
-                    fontSize: 13,
-                  ),
-                ),
+            error: (e, _) => SliverToBoxAdapter(
+              child: ErrorRetryWidget(
+                message: 'Could not load recent notes.',
+                onRetry: () => ref.invalidate(_recentNotesProvider),
               ),
             ),
           ),
 
           // ─── Section divider ──────────────────────────────────────
-          const SliverToBoxAdapter(
+          SliverToBoxAdapter(
             child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: KabukTheme.spacingLg),
-              child: Divider(height: KabukTheme.spacingLg, color: KabukTheme.divider),
+              padding: const EdgeInsets.symmetric(horizontal: KabukTheme.spacingLg),
+              child: Divider(height: KabukTheme.spacingLg, color: context.kabukDivider),
             ),
           ),
 
@@ -316,7 +298,7 @@ class AppsView extends ConsumerWidget {
                   _ToolChip(
                     icon: Icons.settings_rounded,
                     label: 'Settings',
-                    color: KabukTheme.textSecondary,
+                    color: context.kabukTextSecondary,
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
                         builder: (_) => const SettingsView(),
@@ -390,7 +372,7 @@ class AppsView extends ConsumerWidget {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: KabukTheme.surface,
+      backgroundColor: context.kabukSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -454,10 +436,10 @@ class AppsView extends ConsumerWidget {
                 ),
                 const SizedBox(height: KabukTheme.spacingMd),
                 // Icon picker.
-                const Text(
+                Text(
                   'Icon',
                   style: TextStyle(
-                    color: KabukTheme.textSecondary,
+                    color: context.kabukTextSecondary,
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
@@ -481,7 +463,7 @@ class AppsView extends ConsumerWidget {
                         decoration: BoxDecoration(
                           color: isSelected
                               ? KabukTheme.accentGreen.withAlpha(25)
-                              : KabukTheme.surfaceVariant,
+                              : context.kabukSurfaceVariant,
                           borderRadius: BorderRadius.circular(8),
                           border: isSelected
                               ? Border.all(
@@ -495,7 +477,7 @@ class AppsView extends ConsumerWidget {
                           size: 18,
                           color: isSelected
                               ? KabukTheme.accentGreen
-                              : KabukTheme.textSecondary,
+                              : context.kabukTextSecondary,
                         ),
                       ),
                       ),
@@ -504,10 +486,10 @@ class AppsView extends ConsumerWidget {
                 ),
                 const SizedBox(height: KabukTheme.spacingMd),
                 // Color picker.
-                const Text(
+                Text(
                   'Color',
                   style: TextStyle(
-                    color: KabukTheme.textSecondary,
+                    color: context.kabukTextSecondary,
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
@@ -604,7 +586,7 @@ class AppsView extends ConsumerWidget {
     showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: KabukTheme.surface,
+        backgroundColor: context.kabukSurface,
         title: const Text('Remove Bookmark?'),
         content: Text('Unpin "${bm.name}"?'),
         actions: [
@@ -646,7 +628,7 @@ class AppsView extends ConsumerWidget {
     showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: KabukTheme.surface,
+        backgroundColor: context.kabukSurface,
         title: const Text('Delete Saved View?'),
         content: Text('Remove "${view.name}"?'),
         actions: [
@@ -803,10 +785,10 @@ class _BookmarkTile extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
-                  color: KabukTheme.textPrimary,
+                  color: context.kabukTextPrimary,
                   height: 1.2,
                 ),
               ),
@@ -907,9 +889,9 @@ class _SavedViewCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: KabukTheme.cardColor,
+        color: context.kabukCardColor,
         borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
-        border: Border.all(color: KabukTheme.divider, width: 0.5),
+        border: Border.all(color: context.kabukDivider, width: 0.5),
       ),
       child: Material(
         color: Colors.transparent,
@@ -966,8 +948,8 @@ class _SavedViewCard extends StatelessWidget {
                           view.description!,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: KabukTheme.textSecondary,
+                          style: TextStyle(
+                            color: context.kabukTextSecondary,
                             fontSize: 12,
                           ),
                         ),
@@ -978,8 +960,8 @@ class _SavedViewCard extends StatelessWidget {
                 if (view.dateCreated != null)
                   Text(
                     _formatAge(view.dateCreated!),
-                    style: const TextStyle(
-                      color: KabukTheme.textTertiary,
+                    style: TextStyle(
+                      color: context.kabukTextTertiary,
                       fontSize: 11,
                     ),
                   ),
@@ -987,7 +969,7 @@ class _SavedViewCard extends StatelessWidget {
                   const SizedBox(width: 4),
                   IconButton(
                     icon: const Icon(Icons.close, size: 16),
-                    color: KabukTheme.textTertiary,
+                    color: context.kabukTextTertiary,
                     onPressed: onDelete,
                     visualDensity: VisualDensity.compact,
                     padding: EdgeInsets.zero,
@@ -1059,9 +1041,9 @@ class _ToolChip extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
-                    color: KabukTheme.textSecondary,
+                    color: context.kabukTextSecondary,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -1098,9 +1080,9 @@ class _DevSection extends ConsumerWidget {
       ),
       child: Container(
         decoration: BoxDecoration(
-          color: KabukTheme.cardColor,
+          color: context.kabukCardColor,
           borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
-          border: Border.all(color: KabukTheme.divider, width: 0.5),
+          border: Border.all(color: context.kabukDivider, width: 0.5),
         ),
         child: Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -1116,13 +1098,13 @@ class _DevSection extends ConsumerWidget {
             title: Text(
               'Developer  ·  ${libraries.length} ${libraries.length == 1 ? 'library' : 'libraries'}  ·  '
               '${agents.length} ${agents.length == 1 ? 'agent' : 'agents'}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
               ),
             ),
             children: [
-              const Divider(height: 1, color: KabukTheme.divider),
+              Divider(height: 1, color: context.kabukDivider),
               if (libraries.isNotEmpty) ...[
                 for (final lib in libraries)
                   ListTile(
@@ -1140,7 +1122,7 @@ class _DevSection extends ConsumerWidget {
                   ),
               ],
               if (agents.isNotEmpty) ...[
-                const Divider(height: 1, color: KabukTheme.divider),
+                Divider(height: 1, color: context.kabukDivider),
                 for (final agent in agents)
                   ListTile(
                     dense: true,
@@ -1192,27 +1174,27 @@ class _MarketplaceBanner extends StatelessWidget {
             ],
           ),
           borderRadius: BorderRadius.circular(KabukTheme.radiusLg),
-          border: Border.all(color: KabukTheme.divider, width: 0.5),
+          border: Border.all(color: context.kabukDivider, width: 0.5),
         ),
         child: Column(
           children: [
             Icon(
               Icons.storefront_rounded,
               size: 36,
-              color: KabukTheme.textTertiary.withAlpha(120),
+              color: context.kabukTextTertiary.withAlpha(120),
             ),
             const SizedBox(height: KabukTheme.spacingSm),
             Text(
               'App Marketplace',
               style: Theme.of(
                 context,
-              ).textTheme.titleSmall?.copyWith(color: KabukTheme.textSecondary),
+              ).textTheme.titleSmall?.copyWith(color: context.kabukTextSecondary),
             ),
             const SizedBox(height: 4),
-            const Text(
+            Text(
               'Install apps built for Kabuk. Coming soon.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: KabukTheme.textTertiary, fontSize: 12),
+              style: TextStyle(color: context.kabukTextTertiary, fontSize: 12),
             ),
           ],
         ),
@@ -1294,9 +1276,9 @@ class _NoteListTile extends StatelessWidget {
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: KabukTheme.cardColor,
+        color: context.kabukCardColor,
         borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
-        border: Border.all(color: KabukTheme.divider, width: 0.5),
+        border: Border.all(color: context.kabukDivider, width: 0.5),
       ),
       child: Container(
         decoration: const BoxDecoration(
@@ -1332,8 +1314,8 @@ class _NoteListTile extends StatelessWidget {
                   note.text!,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: KabukTheme.textSecondary,
+                  style: TextStyle(
+                    color: context.kabukTextSecondary,
                     fontSize: 13,
                   ),
                 ),
@@ -1342,8 +1324,8 @@ class _NoteListTile extends StatelessWidget {
         trailing: note.dateCreated != null
             ? Text(
                 _formatDate(note.dateCreated!),
-                style: const TextStyle(
-                  color: KabukTheme.textTertiary,
+                style: TextStyle(
+                  color: context.kabukTextTertiary,
                   fontSize: 11,
                 ),
               )
@@ -1398,7 +1380,7 @@ class _CalendarAppViewState extends ConsumerState<_CalendarAppView> {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: KabukTheme.surface,
+        backgroundColor: context.kabukSurface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
         ),
@@ -1528,9 +1510,9 @@ class _CalendarAppViewState extends ConsumerState<_CalendarAppView> {
               return Container(
                 padding: const EdgeInsets.all(KabukTheme.spacingMd),
                 decoration: BoxDecoration(
-                  color: KabukTheme.cardColor,
+                  color: context.kabukCardColor,
                   borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
-                  border: Border.all(color: KabukTheme.divider, width: 0.5),
+                  border: Border.all(color: context.kabukDivider, width: 0.5),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1547,8 +1529,8 @@ class _CalendarAppViewState extends ConsumerState<_CalendarAppView> {
                       Text(
                         event.description!,
                         maxLines: 2,
-                        style: const TextStyle(
-                          color: KabukTheme.textSecondary,
+                        style: TextStyle(
+                          color: context.kabukTextSecondary,
                           fontSize: 13,
                         ),
                       ),
@@ -1615,7 +1597,7 @@ class _ContactsAppView extends ConsumerWidget {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: KabukTheme.surface,
+        backgroundColor: context.kabukSurface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
         ),
@@ -1725,9 +1707,9 @@ class _ContactsAppView extends ConsumerWidget {
               return Container(
                 padding: const EdgeInsets.all(KabukTheme.spacingMd),
                 decoration: BoxDecoration(
-                  color: KabukTheme.cardColor,
+                  color: context.kabukCardColor,
                   borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
-                  border: Border.all(color: KabukTheme.divider, width: 0.5),
+                  border: Border.all(color: context.kabukDivider, width: 0.5),
                 ),
                 child: Row(
                   children: [
@@ -1757,16 +1739,16 @@ class _ContactsAppView extends ConsumerWidget {
                           if (person.email != null)
                             Text(
                               person.email!,
-                              style: const TextStyle(
-                                color: KabukTheme.textSecondary,
+                              style: TextStyle(
+                                color: context.kabukTextSecondary,
                                 fontSize: 12,
                               ),
                             ),
                           if (person.telephone != null)
                             Text(
                               person.telephone!,
-                              style: const TextStyle(
-                                color: KabukTheme.textSecondary,
+                              style: TextStyle(
+                                color: context.kabukTextSecondary,
                                 fontSize: 12,
                               ),
                             ),
@@ -1867,7 +1849,7 @@ class _SearchAppViewState extends ConsumerState<_SearchAppView> {
                       ),
                       itemCount: _results!.length,
                       separatorBuilder: (_, _) =>
-                          const Divider(height: 1, color: KabukTheme.divider),
+                          Divider(height: 1, color: context.kabukDivider),
                       itemBuilder: (_, index) {
                         final triple = _results![index];
                         return ListTile(
@@ -1879,9 +1861,9 @@ class _SearchAppViewState extends ConsumerState<_SearchAppView> {
                           ),
                           subtitle: Text(
                             triple.subject.split('/').last,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 11,
-                              color: KabukTheme.textTertiary,
+                              color: context.kabukTextTertiary,
                             ),
                           ),
                         );

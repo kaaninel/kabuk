@@ -113,6 +113,7 @@ class _KabukShellState extends ConsumerState<KabukShell>
     final showChatSheet = ref.watch(chatSheetVisibleProvider);
     final modelState = ref.watch(modelReadinessProvider);
     final devMode = ref.watch(devModeProvider);
+    final navStyle = ref.watch(navbarStyleProvider);
 
     // Eagerly ensure an identity exists (auto-generates on first launch).
     ref.watch(ensureIdentityProvider);
@@ -216,14 +217,30 @@ class _KabukShellState extends ConsumerState<KabukShell>
                   children: _views,
                 ),
               ),
-              // Thin multicolor indicator bar at the bottom.
-              _NavIndicatorBar(
-                selectedTab: selectedTab,
-                onSwitchTab: _goToPage,
-                onTap: () {
-                  ref.read(chatSheetVisibleProvider.notifier).state = true;
-                },
-              ),
+              // Bottom navigation — style depends on user preference.
+              switch (navStyle) {
+                NavbarStyle.classic => _ClassicNavBar(
+                  selectedTab: selectedTab,
+                  onSwitchTab: _goToPage,
+                  onAiTap: () {
+                    ref.read(chatSheetVisibleProvider.notifier).state = true;
+                  },
+                ),
+                NavbarStyle.compact => _CompactNavBar(
+                  selectedTab: selectedTab,
+                  onSwitchTab: _goToPage,
+                  onAiTap: () {
+                    ref.read(chatSheetVisibleProvider.notifier).state = true;
+                  },
+                ),
+                NavbarStyle.pill => _NavIndicatorBar(
+                  selectedTab: selectedTab,
+                  onSwitchTab: _goToPage,
+                  onTap: () {
+                    ref.read(chatSheetVisibleProvider.notifier).state = true;
+                  },
+                ),
+              },
             ],
           ),
           if (showChatSheet) const _ChatSheetOverlay(),
@@ -234,7 +251,7 @@ class _KabukShellState extends ConsumerState<KabukShell>
 }
 
 // ---------------------------------------------------------------------------
-// Bottom navigation indicator bar
+// Bottom navigation bar variants
 // ---------------------------------------------------------------------------
 
 /// Per-tab accent colors matching the four primary views.
@@ -245,7 +262,255 @@ const _tabColors = [
   KabukTheme.blueAccent, // Apps
 ];
 
-/// A thin multicolor indicator bar that replaces the Material NavigationBar.
+/// Tab icons for the four views.
+const _tabIcons = [
+  Icons.explore_rounded,
+  Icons.chat_rounded,
+  Icons.lock_rounded,
+  Icons.apps_rounded,
+];
+
+/// Tab labels for the four views.
+const _tabLabels = ['Explore', 'Chat', 'Vault', 'Apps'];
+
+// ─── Classic ─────────────────────────────────────────────────────────────────
+
+/// Standard Material 3 NavigationBar with labeled icons and a center AI button.
+class _ClassicNavBar extends StatelessWidget {
+  const _ClassicNavBar({
+    required this.selectedTab,
+    required this.onSwitchTab,
+    required this.onAiTap,
+  });
+
+  final int selectedTab;
+  final ValueChanged<int> onSwitchTab;
+  final VoidCallback onAiTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final bgColor = isDark ? context.kabukSurface : KabukTheme.lightSurfaceElevated;
+    final unselectedColor = context.kabukTextSecondary;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: bgColor,
+        border: Border(
+          top: BorderSide(
+            color: context.kabukDivider,
+            width: 0.5,
+          ),
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            children: [
+              for (var i = 0; i < 4; i++) ...[
+                if (i == 2) _buildAiButton(context),
+                Expanded(
+                  child: _ClassicNavItem(
+                    icon: _tabIcons[i],
+                    label: _tabLabels[i],
+                    color: _tabColors[i],
+                    isSelected: selectedTab == i,
+                    unselectedColor: unselectedColor,
+                    onTap: () => onSwitchTab(i),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAiButton(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: GestureDetector(
+        onTap: onAiTap,
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [KabukTheme.primaryGreen, KabukTheme.accentGreen],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: KabukTheme.primaryGreen.withAlpha(60),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.smart_toy_rounded,
+            color: Colors.white,
+            size: 22,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A single item in the classic navigation bar.
+class _ClassicNavItem extends StatelessWidget {
+  const _ClassicNavItem({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.isSelected,
+    required this.unselectedColor,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final bool isSelected;
+  final Color unselectedColor;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveColor = isSelected ? color : unselectedColor;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+              decoration: BoxDecoration(
+                color: isSelected ? color.withAlpha(25) : Colors.transparent,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, size: 22, color: effectiveColor),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                color: effectiveColor,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Compact ─────────────────────────────────────────────────────────────────
+
+/// Compact nav bar with small icons, no labels, and a centered AI dot.
+class _CompactNavBar extends StatelessWidget {
+  const _CompactNavBar({
+    required this.selectedTab,
+    required this.onSwitchTab,
+    required this.onAiTap,
+  });
+
+  final int selectedTab;
+  final ValueChanged<int> onSwitchTab;
+  final VoidCallback onAiTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final bgColor = isDark ? context.kabukSurface : KabukTheme.lightSurfaceElevated;
+    final unselectedColor = context.kabukTextTertiary;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: bgColor,
+        border: Border(
+          top: BorderSide(
+            color: context.kabukDivider,
+            width: 0.5,
+          ),
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              for (var i = 0; i < 4; i++) ...[
+                if (i == 2)
+                  GestureDetector(
+                    onTap: onAiTap,
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: const BoxDecoration(
+                        color: KabukTheme.primaryGreen,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.smart_toy_rounded,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                    ),
+                  ),
+                GestureDetector(
+                  onTap: () => onSwitchTab(i),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _tabIcons[i],
+                          size: 20,
+                          color: selectedTab == i ? _tabColors[i] : unselectedColor,
+                        ),
+                        const SizedBox(height: 2),
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          width: selectedTab == i ? 16 : 0,
+                          height: 2,
+                          decoration: BoxDecoration(
+                            color: selectedTab == i ? _tabColors[i] : Colors.transparent,
+                            borderRadius: BorderRadius.circular(1),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Pill (original) ─────────────────────────────────────────────────────────
+
+/// A thin multicolor indicator bar — the original Kabuk navigation design.
 ///
 /// The bar sits at the very bottom of the screen, similar to Android's
 /// gesture navigation pill. Horizontal drag switches views; tap opens
@@ -397,12 +662,12 @@ class _ChatSheetOverlayState extends ConsumerState<_ChatSheetOverlay> {
       snapSizes: const [0.15, 0.4, 0.85],
       builder: (context, sheetScrollController) {
         return Container(
-          decoration: const BoxDecoration(
-            color: KabukTheme.surface,
-            borderRadius: BorderRadius.vertical(
+          decoration: BoxDecoration(
+            color: context.kabukSurface,
+            borderRadius: const BorderRadius.vertical(
               top: Radius.circular(KabukTheme.radiusXl),
             ),
-            boxShadow: [
+            boxShadow: const [
               BoxShadow(
                 color: Colors.black54,
                 blurRadius: 20,
@@ -416,7 +681,7 @@ class _ChatSheetOverlayState extends ConsumerState<_ChatSheetOverlay> {
               _buildDragHandle(),
               // Header.
               _buildHeader(),
-              const Divider(height: 1, color: KabukTheme.divider),
+              Divider(height: 1, color: context.kabukDivider),
               // Messages list.
               Expanded(
                 child: conversationId == null
@@ -459,7 +724,7 @@ class _ChatSheetOverlayState extends ConsumerState<_ChatSheetOverlay> {
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-              color: KabukTheme.textSecondary.withAlpha(100),
+              color: context.kabukTextSecondary.withAlpha(100),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -483,11 +748,11 @@ class _ChatSheetOverlayState extends ConsumerState<_ChatSheetOverlay> {
             color: KabukTheme.accentGreen,
           ),
           const SizedBox(width: KabukTheme.spacingSm),
-          const Expanded(
+          Expanded(
             child: Text(
               'Kabuk AI',
               style: TextStyle(
-                color: KabukTheme.textPrimary,
+                color: context.kabukTextPrimary,
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
               ),
@@ -495,7 +760,7 @@ class _ChatSheetOverlayState extends ConsumerState<_ChatSheetOverlay> {
           ),
           IconButton(
             icon: const Icon(Icons.open_in_full, size: 18),
-            color: KabukTheme.textSecondary,
+            color: context.kabukTextSecondary,
             tooltip: 'Open full chat',
             onPressed: () {
               // Dismiss sheet and navigate to conversation detail.
@@ -515,7 +780,7 @@ class _ChatSheetOverlayState extends ConsumerState<_ChatSheetOverlay> {
           ),
           IconButton(
             icon: const Icon(Icons.close, size: 18),
-            color: KabukTheme.textSecondary,
+            color: context.kabukTextSecondary,
             tooltip: 'Close',
             onPressed: () {
               ref.read(chatSheetVisibleProvider.notifier).state = false;
@@ -539,9 +804,9 @@ class _ChatSheetOverlayState extends ConsumerState<_ChatSheetOverlay> {
             color: KabukTheme.accentGreen.withAlpha(100),
           ),
           const SizedBox(height: KabukTheme.spacingSm),
-          const Text(
+          Text(
             'Ask me anything',
-            style: TextStyle(color: KabukTheme.textSecondary, fontSize: 14),
+            style: TextStyle(color: context.kabukTextSecondary, fontSize: 14),
           ),
         ],
       ),
@@ -595,19 +860,19 @@ class _ChatSheetOverlayState extends ConsumerState<_ChatSheetOverlay> {
                 vertical: KabukTheme.spacingSm + 2,
               ),
               decoration: BoxDecoration(
-                color: KabukTheme.cardColor,
+                color: context.kabukCardColor,
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(KabukTheme.radiusMd),
                   topRight: Radius.circular(KabukTheme.radiusMd),
                   bottomLeft: Radius.circular(4),
                   bottomRight: Radius.circular(KabukTheme.radiusMd),
                 ),
-                border: Border.all(color: KabukTheme.divider, width: 0.5),
+                border: Border.all(color: context.kabukDivider, width: 0.5),
               ),
               child: Text(
                 '$text▍',
-                style: const TextStyle(
-                  color: KabukTheme.textPrimary,
+                style: TextStyle(
+                  color: context.kabukTextPrimary,
                   fontSize: 14,
                   height: 1.4,
                 ),
@@ -659,8 +924,8 @@ class _ModelDownloadBanner extends StatelessWidget {
                   children: [
                     Text(
                       'Downloading AI model${state.modelName != null ? ' (${state.modelName})' : ''}...',
-                      style: const TextStyle(
-                        color: KabukTheme.textPrimary,
+                      style: TextStyle(
+                        color: context.kabukTextPrimary,
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
                       ),
@@ -670,7 +935,7 @@ class _ModelDownloadBanner extends StatelessWidget {
                       borderRadius: BorderRadius.circular(3),
                       child: LinearProgressIndicator(
                         value: state.progress,
-                        backgroundColor: KabukTheme.divider,
+                        backgroundColor: context.kabukDivider,
                         color: KabukTheme.accentGreen,
                         minHeight: 4,
                       ),
@@ -681,8 +946,8 @@ class _ModelDownloadBanner extends StatelessWidget {
               const SizedBox(width: KabukTheme.spacingSm),
               Text(
                 '${(state.progress * 100).toStringAsFixed(0)}%',
-                style: const TextStyle(
-                  color: KabukTheme.textSecondary,
+                style: TextStyle(
+                  color: context.kabukTextSecondary,
                   fontSize: 11,
                 ),
               ),
@@ -723,8 +988,8 @@ class _ModelUnavailableBanner extends StatelessWidget {
               Expanded(
                 child: Text(
                   error ?? 'AI model unavailable.',
-                  style: const TextStyle(
-                    color: KabukTheme.textPrimary,
+                  style: TextStyle(
+                    color: context.kabukTextPrimary,
                     fontSize: 12,
                   ),
                   maxLines: 2,
@@ -806,7 +1071,7 @@ class _ThinkingBubbleState extends State<_ThinkingBubble>
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: KabukTheme.surfaceVariant,
+                color: context.kabukSurfaceVariant,
                 borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
               ),
               child: Row(
@@ -823,8 +1088,8 @@ class _ThinkingBubbleState extends State<_ThinkingBubble>
                   const SizedBox(width: 8),
                   Text(
                     label,
-                    style: const TextStyle(
-                      color: KabukTheme.textSecondary,
+                    style: TextStyle(
+                      color: context.kabukTextSecondary,
                       fontSize: 12,
                       fontStyle: FontStyle.italic,
                     ),
@@ -894,7 +1159,7 @@ class _DevInfoBar extends ConsumerWidget {
                     ModelReadyStatus.ready => KabukTheme.success,
                     ModelReadyStatus.downloading => KabukTheme.accentGreen,
                     ModelReadyStatus.unavailable => KabukTheme.error,
-                    _ => KabukTheme.textSecondary,
+                    _ => context.kabukTextSecondary,
                   },
                 ),
                 const SizedBox(width: 4),
@@ -911,10 +1176,10 @@ class _DevInfoBar extends ConsumerWidget {
                   color: KabukTheme.purpleAccent,
                 ),
                 const Spacer(),
-                const Icon(
+                Icon(
                   Icons.chevron_right,
                   size: 12,
-                  color: KabukTheme.textTertiary,
+                  color: context.kabukTextTertiary,
                 ),
               ],
             ),

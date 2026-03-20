@@ -92,10 +92,10 @@ class ArticleCard extends ConsumerWidget {
         opacity: article.read ? 0.7 : 1.0,
         child: Container(
           decoration: BoxDecoration(
-            color: KabukTheme.cardColor,
+            color: context.kabukCardColor,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: article.read ? Colors.transparent : KabukTheme.divider,
+              color: article.read ? Colors.transparent : context.kabukDivider,
             ),
             boxShadow: const [
               BoxShadow(
@@ -132,8 +132,8 @@ class ArticleCard extends ConsumerWidget {
                       fontWeight: FontWeight.w600,
                       height: 1.3,
                       color: article.read
-                          ? KabukTheme.textSecondary
-                          : KabukTheme.textPrimary,
+                          ? context.kabukTextSecondary
+                          : context.kabukTextPrimary,
                     ),
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
@@ -172,15 +172,15 @@ class ArticleCard extends ConsumerWidget {
                           fadeInDuration: const Duration(milliseconds: 300),
                           placeholder: (_, _) => Container(
                             height: 200,
-                            color: KabukTheme.surfaceVariant,
+                            color: context.kabukSurfaceVariant,
                           ),
                           errorWidget: (_, _, _) => Container(
                             height: 200,
-                            color: KabukTheme.surfaceVariant,
-                            child: const Center(
+                            color: context.kabukSurfaceVariant,
+                            child: Center(
                               child: Icon(
                                 Icons.broken_image_outlined,
-                                color: KabukTheme.textTertiary,
+                                color: context.kabukTextTertiary,
                                 size: 32,
                               ),
                             ),
@@ -214,10 +214,10 @@ class ArticleCard extends ConsumerWidget {
                       padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
                       child: Text(
                         cleaned,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
                           height: 1.4,
-                          color: KabukTheme.textSecondary,
+                          color: context.kabukTextSecondary,
                         ),
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
@@ -455,7 +455,7 @@ class _SourceHeader extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                       color: isReddit && subreddit.startsWith('r/')
                           ? KabukTheme.redditOrange
-                          : KabukTheme.textSecondary,
+                          : context.kabukTextSecondary,
                       decoration: isReddit && subreddit.startsWith('r/')
                           ? TextDecoration.none
                           : null,
@@ -483,7 +483,7 @@ class _SourceHeader extends StatelessWidget {
                             ? KabukTheme.blueAccent.withAlpha(200)
                             : authorIsHexPubkey
                                 ? KabukTheme.purpleAccent.withAlpha(200)
-                                : KabukTheme.textTertiary,
+                                : context.kabukTextTertiary,
                       ),
                     ),
                   ),
@@ -495,9 +495,9 @@ class _SourceHeader extends StatelessWidget {
               opacity: 0.7,
               child: Text(
                 timeAgo,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                 ),
               ),
             ),
@@ -647,6 +647,8 @@ class _ActionBar extends ConsumerStatefulWidget {
 }
 
 class _ActionBarState extends ConsumerState<_ActionBar> {
+  final _loading = <String, bool>{};
+
   @override
   Widget build(BuildContext context) {
     final article = widget.article;
@@ -686,9 +688,10 @@ class _ActionBarState extends ConsumerState<_ActionBar> {
                 nostrStats?.whenOrNull(
                   data: (s) => s.userReacted
                       ? const Color(0xFFE91E63)
-                      : KabukTheme.textTertiary,
+                      : context.kabukTextTertiary,
                 ) ??
-                KabukTheme.textTertiary,
+                context.kabukTextTertiary,
+            isLoading: _loading['react'] ?? false,
             onTap: hasUrl ? () => _handleReaction(context) : null,
           ),
           _socialButton(
@@ -699,7 +702,7 @@ class _ActionBarState extends ConsumerState<_ActionBar> {
               stats.comments,
             ),
             semanticLabel: 'Comment',
-            color: KabukTheme.textTertiary,
+            color: context.kabukTextTertiary,
             onTap: hasUrl ? () => _handleComment(context) : null,
           ),
           _socialButton(
@@ -720,9 +723,10 @@ class _ActionBarState extends ConsumerState<_ActionBar> {
                 nostrStats?.whenOrNull(
                   data: (s) => s.userReposted
                       ? KabukTheme.accentGreen
-                      : KabukTheme.textTertiary,
+                      : context.kabukTextTertiary,
                 ) ??
-                KabukTheme.textTertiary,
+                context.kabukTextTertiary,
+            isLoading: _loading['repost'] ?? false,
             onTap: hasUrl ? () => _handleRepost(context) : null,
           ),
           const Spacer(),
@@ -734,7 +738,7 @@ class _ActionBarState extends ConsumerState<_ActionBar> {
               size: 18,
               color: isBookmarked
                   ? KabukTheme.warmAccent
-                  : KabukTheme.textTertiary,
+                  : context.kabukTextTertiary,
             ),
             tooltip:
                 isBookmarked ? 'Remove bookmark' : 'Save to bookmarks',
@@ -753,11 +757,19 @@ class _ActionBarState extends ConsumerState<_ActionBar> {
     String? semanticLabel,
     required Color color,
     VoidCallback? onTap,
+    bool isLoading = false,
   }) {
     final child = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 16, color: color),
+        if (isLoading)
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2, color: color),
+          )
+        else
+          Icon(icon, size: 16, color: color),
         if (label != null) ...[
           const SizedBox(width: 4),
           Text(label, style: TextStyle(fontSize: 12, color: color)),
@@ -797,14 +809,20 @@ class _ActionBarState extends ConsumerState<_ActionBar> {
     unawaited(HapticFeedback.lightImpact());
     final url = widget.article.url;
     if (url == null) return;
-    final success = await reactToUrl(ref, url: url);
-    if (context.mounted && !success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Set up your identity in Settings to interact'),
-          duration: Duration(seconds: 3),
-        ),
-      );
+    setState(() => _loading['react'] = true);
+    try {
+      final success = await reactToUrl(ref, url: url);
+      if (context.mounted && !success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Set up your identity in Settings to interact'),
+            duration: Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading['react'] = false);
     }
   }
 
@@ -814,7 +832,7 @@ class _ActionBarState extends ConsumerState<_ActionBar> {
     final comment = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: KabukTheme.surface,
+        backgroundColor: context.kabukSurface,
         title: const Text('Comment on Nostr'),
         content: TextField(
           controller: controller,
@@ -852,14 +870,16 @@ class _ActionBarState extends ConsumerState<_ActionBar> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Comment posted to Nostr'),
-              duration: Duration(seconds: 1),
+              duration: Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
             ),
           );
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Set up your identity in Settings to comment'),
-              duration: Duration(seconds: 3),
+              duration: Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
             ),
           );
         }
@@ -871,14 +891,20 @@ class _ActionBarState extends ConsumerState<_ActionBar> {
     unawaited(HapticFeedback.lightImpact());
     final url = widget.article.url;
     if (url == null) return;
-    final success = await repostUrl(ref, url: url);
-    if (context.mounted && !success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Set up your identity in Settings to repost'),
-          duration: Duration(seconds: 3),
-        ),
-      );
+    setState(() => _loading['repost'] = true);
+    try {
+      final success = await repostUrl(ref, url: url);
+      if (context.mounted && !success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Set up your identity in Settings to repost'),
+            duration: Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading['repost'] = false);
     }
   }
 
@@ -1029,13 +1055,13 @@ class _GalleryCarouselState extends State<_GalleryCarousel> {
                   width: double.infinity,
                   fadeInDuration: const Duration(milliseconds: 300),
                   placeholder: (_, _) => Container(
-                    color: KabukTheme.surfaceVariant,
+                    color: context.kabukSurfaceVariant,
                   ),
                   errorWidget: (_, _, _) => Container(
-                    color: KabukTheme.cardColor,
-                    child: const Icon(
+                    color: context.kabukCardColor,
+                    child: Icon(
                       Icons.broken_image_outlined,
-                      color: KabukTheme.textTertiary,
+                      color: context.kabukTextTertiary,
                     ),
                   ),
                 );

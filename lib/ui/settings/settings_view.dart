@@ -67,7 +67,7 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
             current ? 'Developer mode disabled' : 'Developer mode enabled',
           ),
           backgroundColor: current
-              ? KabukTheme.textSecondary
+              ? context.kabukTextSecondary
               : KabukTheme.accentGreen,
           duration: const Duration(seconds: 2),
         ),
@@ -103,9 +103,9 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
             iconColor: KabukTheme.accentGreen,
             title: 'My Profile',
             subtitle: 'View your public key & QR code',
-            trailing: const Icon(
+            trailing: Icon(
               Icons.chevron_right,
-              color: KabukTheme.textSecondary,
+              color: context.kabukTextSecondary,
               size: 20,
             ),
             onTap: () => Navigator.of(context).push(
@@ -140,7 +140,7 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
                       shape: BoxShape.circle,
                       color: identity != null
                           ? KabukTheme.success
-                          : KabukTheme.textSecondary,
+                          : context.kabukTextSecondary,
                     ),
                   ),
                 ),
@@ -149,9 +149,9 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
                 ),
               );
             },
-            loading: () => const SettingsTile(
+            loading: () => SettingsTile(
               icon: Icons.hourglass_empty_rounded,
-              iconColor: KabukTheme.textSecondary,
+              iconColor: context.kabukTextSecondary,
               title: 'Loading identity...',
               subtitle: 'Checking keypair',
             ),
@@ -201,9 +201,9 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
             iconColor: KabukTheme.accentGreen,
             title: 'Local Models',
             subtitle: 'Manage on-device GGUF models',
-            trailing: const Icon(
+            trailing: Icon(
               Icons.chevron_right,
-              color: KabukTheme.textSecondary,
+              color: context.kabukTextSecondary,
               size: 20,
             ),
             onTap: () => Navigator.of(context).push(
@@ -286,9 +286,9 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
             subtitle: feedCount > 0
                 ? '$feedCount source${feedCount > 1 ? 's' : ''} configured'
                 : 'No sources configured',
-            trailing: const Icon(
+            trailing: Icon(
               Icons.chevron_right,
-              color: KabukTheme.textSecondary,
+              color: context.kabukTextSecondary,
               size: 20,
             ),
             onTap: () => Navigator.of(context).push(
@@ -320,7 +320,7 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
                   shape: BoxShape.circle,
                   color: _hasConnectedRelays()
                       ? KabukTheme.success
-                      : KabukTheme.textSecondary,
+                      : context.kabukTextSecondary,
                 ),
               ),
             ),
@@ -330,6 +330,16 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
               ),
             ),
           ),
+          const SizedBox(height: KabukTheme.spacingLg),
+
+          // --- Appearance Section ---
+          const SettingsSectionHeader(
+            icon: Icons.palette_rounded,
+            title: 'Appearance',
+            color: KabukTheme.purpleAccent,
+          ),
+          const SizedBox(height: KabukTheme.spacingSm),
+          _AppearanceSection(),
           const SizedBox(height: KabukTheme.spacingLg),
 
           // --- Data & Storage Section (dev mode only – features not yet built) ---
@@ -378,18 +388,18 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
           ],
 
           // --- About Section ---
-          const SettingsSectionHeader(
+          SettingsSectionHeader(
             icon: Icons.info_outline_rounded,
             title: 'About',
-            color: KabukTheme.textSecondary,
+            color: context.kabukTextSecondary,
           ),
           const SizedBox(height: KabukTheme.spacingSm),
           Container(
             padding: const EdgeInsets.all(KabukTheme.spacingMd),
             decoration: BoxDecoration(
-              color: KabukTheme.cardColor,
+              color: context.kabukCardColor,
               borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
-              border: Border.all(color: KabukTheme.divider, width: 0.5),
+              border: Border.all(color: context.kabukDivider, width: 0.5),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -418,11 +428,11 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
                           style: Theme.of(context).textTheme.titleMedium
                               ?.copyWith(fontWeight: FontWeight.w700),
                         ),
-                        const Text(
+                        Text(
                           'Agent-centric personal OS shell',
                           style: TextStyle(
                             fontSize: 12,
-                            color: KabukTheme.textSecondary,
+                            color: context.kabukTextSecondary,
                           ),
                         ),
                       ],
@@ -433,11 +443,11 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
                 GestureDetector(
                   onTap: _onVersionTap,
                   behavior: HitTestBehavior.opaque,
-                  child: const Text(
+                  child: Text(
                     'v${AppConstants.appVersion} · Tap 7× to toggle developer mode',
                     style: TextStyle(
                       fontSize: 11,
-                      color: KabukTheme.textTertiary,
+                      color: context.kabukTextTertiary,
                     ),
                   ),
                 ),
@@ -458,9 +468,9 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
               iconColor: KabukTheme.warmAccent,
               title: 'Developer Tools',
               subtitle: 'Store inspector · Providers · LLM costs',
-              trailing: const Icon(
+              trailing: Icon(
                 Icons.chevron_right,
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
                 size: 20,
               ),
               onTap: () => Navigator.of(context).push(
@@ -508,5 +518,102 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
   bool _hasConnectedRelays() {
     final nostr = ref.watch(nostrServiceProvider);
     return nostr.connectedRelays.isNotEmpty;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Appearance settings section
+// ---------------------------------------------------------------------------
+
+/// Inline appearance settings with theme mode and navbar style pickers.
+class _AppearanceSection extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(themeModeProvider);
+    final navStyle = ref.watch(navbarStyleProvider);
+
+    return Column(
+      children: [
+        // Theme mode
+        SettingsTile(
+          icon: Icons.brightness_6_rounded,
+          iconColor: KabukTheme.purpleAccent,
+          title: 'Theme',
+          subtitle: switch (themeMode) {
+            ThemeMode.dark => 'Dark',
+            ThemeMode.light => 'Light',
+            ThemeMode.system => 'System',
+          },
+          trailing: SegmentedButton<ThemeMode>(
+            segments: const [
+              ButtonSegment(
+                value: ThemeMode.dark,
+                icon: Icon(Icons.dark_mode_rounded, size: 16),
+              ),
+              ButtonSegment(
+                value: ThemeMode.light,
+                icon: Icon(Icons.light_mode_rounded, size: 16),
+              ),
+              ButtonSegment(
+                value: ThemeMode.system,
+                icon: Icon(Icons.settings_brightness_rounded, size: 16),
+              ),
+            ],
+            selected: {themeMode},
+            onSelectionChanged: (set) {
+              ref.read(themeModeProvider.notifier).setMode(set.first);
+            },
+            showSelectedIcon: false,
+            style: ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              padding: WidgetStateProperty.all(
+                const EdgeInsets.symmetric(horizontal: 8),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: KabukTheme.spacingSm),
+        // Navbar style
+        SettingsTile(
+          icon: Icons.dock_rounded,
+          iconColor: KabukTheme.purpleAccent,
+          title: 'Navigation Bar',
+          subtitle: switch (navStyle) {
+            NavbarStyle.classic => 'Classic',
+            NavbarStyle.compact => 'Compact',
+            NavbarStyle.pill => 'Pill',
+          },
+          trailing: SegmentedButton<NavbarStyle>(
+            segments: const [
+              ButtonSegment(
+                value: NavbarStyle.classic,
+                label: Text('Classic', style: TextStyle(fontSize: 11)),
+              ),
+              ButtonSegment(
+                value: NavbarStyle.compact,
+                label: Text('Compact', style: TextStyle(fontSize: 11)),
+              ),
+              ButtonSegment(
+                value: NavbarStyle.pill,
+                label: Text('Pill', style: TextStyle(fontSize: 11)),
+              ),
+            ],
+            selected: {navStyle},
+            onSelectionChanged: (set) {
+              ref.read(navbarStyleProvider.notifier).setStyle(set.first);
+            },
+            showSelectedIcon: false,
+            style: ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              padding: WidgetStateProperty.all(
+                const EdgeInsets.symmetric(horizontal: 6),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
