@@ -5,6 +5,9 @@
 /// are stored as `schema:Article` entities in the knowledge store.
 library;
 
+import 'dart:async' show unawaited;
+
+import 'package:http/http.dart' as http;
 import 'package:kabuk/agents/base.dart';
 import 'package:kabuk/agents/context.dart';
 import 'package:kabuk/agents/llm.dart';
@@ -13,6 +16,8 @@ import 'package:kabuk/agents/messages.dart';
 import 'package:kabuk/config/namespaces.dart';
 import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/services/feed.dart';
+import 'package:kabuk/services/reader_mode.dart';
+import 'package:kabuk/services/web_extractor.dart';
 
 /// Agent specialized in content feed management.
 ///
@@ -659,6 +664,8 @@ discover agent instead
         .toSet();
 
     var newCount = 0;
+    final needsImage = <_PendingImage>[];
+
     for (final item in items) {
       // Skip if we already have this article.
       if (existingUrls.contains(item.url) ||
@@ -666,7 +673,7 @@ discover agent instead
         continue;
       }
 
-      await context.knowledge.createArticle(
+      final uri = await context.knowledge.createArticle(
         title: item.title,
         description: item.description,
         url: item.url,
@@ -678,12 +685,70 @@ discover agent instead
         tags: item.categories,
       );
       newCount++;
+
+      // Track articles without images for og:image enrichment.
+      if (item.imageUrl == null && item.url.isNotEmpty) {
+        needsImage.add(_PendingImage(articleUri: uri, pageUrl: item.url));
+      }
     }
 
     // Update last-fetched timestamp.
     await context.knowledge.updateFeedLastFetched(feedUri);
 
+    // Enrich articles missing images with og:image (fire-and-forget).
+    if (needsImage.isNotEmpty) {
+      unawaited(_enrichArticleImages(context, needsImage));
+    }
+
     return newCount;
+  }
+
+  /// Fetches og:image for articles that lack images from their feed.
+  ///
+  /// Runs in bounded batches (5 at a time, 4s timeout each) so it doesn't
+  /// block feed display or flood the network.
+  static Future<void> _enrichArticleImages(
+    AgentContext context,
+    List<_PendingImage> pending,
+  ) async {
+    for (var i = 0; i < pending.length; i += 5) {
+      final batch = pending.skip(i).take(5).toList();
+      final futures = batch.map((p) async {
+        try {
+          final response = await _httpGet(p.pageUrl);
+          if (response == null) return;
+          final ogImage =
+              ReaderModeService.extractMetaImage(response);
+          if (ogImage != null && ogImage.isNotEmpty) {
+            final resolved =
+                WebExtractor.resolveUrl(p.pageUrl, ogImage);
+            if (resolved != null) {
+              await context.knowledge.updateArticleImage(
+                p.articleUri,
+                resolved,
+              );
+            }
+          }
+        } on Object {
+          // Enrichment is best-effort — failures are silently ignored.
+        }
+      });
+      await Future.wait(futures);
+    }
+  }
+
+  /// HTTP GET with a short timeout for og:image enrichment.
+  static Future<String?> _httpGet(String url) async {
+    try {
+      final uri = Uri.tryParse(url);
+      if (uri == null) return null;
+      final response = await http
+          .get(uri, headers: {'User-Agent': 'Mozilla/5.0 (compatible; Kabuk/1.0)'})
+          .timeout(const Duration(seconds: 4));
+      return response.statusCode == 200 ? response.body : null;
+    } on Object {
+      return null;
+    }
   }
 
   /// Infers a display name from a feed URL.
@@ -729,4 +794,15 @@ discover agent instead
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-'
         '${date.day.toString().padLeft(2, '0')}';
   }
+}
+
+/// Tracks an article that needs og:image enrichment.
+class _PendingImage {
+  const _PendingImage({required this.articleUri, required this.pageUrl});
+
+  /// URI of the article in the knowledge store.
+  final String articleUri;
+
+  /// URL of the article's web page to fetch og:image from.
+  final String pageUrl;
 }

@@ -391,6 +391,29 @@ extension KnowledgeStoreArticleExtension on KnowledgeStore {
     });
   }
 
+  /// Updates the image URL of an existing article.
+  ///
+  /// Used by og:image enrichment to backfill images for RSS articles
+  /// that didn't include media tags in their feed.
+  Future<void> updateArticleImage(String uri, String imageUrl) {
+    return mutate((ctx) async {
+      await ctx.set(uri, NS.schemaImage, imageUrl);
+    });
+  }
+
+  /// Updates the gallery images list for an existing article.
+  ///
+  /// Used when lazy-loading article content discovers multiple images
+  /// on the article page (e.g. photo galleries, house listings).
+  Future<void> updateArticleGalleryImages(
+    String uri,
+    List<String> galleryImages,
+  ) {
+    return mutate((ctx) async {
+      await ctx.set(uri, NS.kabukGalleryImages, jsonEncode(galleryImages));
+    });
+  }
+
   /// Updates the feed source of an existing article.
   ///
   /// Used when a user subscribes to a page after browsing it — the

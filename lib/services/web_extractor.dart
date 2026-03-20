@@ -58,11 +58,13 @@ class WebExtraction {
     this.images = const [],
     this.videos = const [],
     this.articleLinks = const [],
+    this.navigationLinks = const [],
     this.author,
     this.datePublished,
     this.siteName,
     this.favicon,
     this.description,
+    this.nextPageUrl,
   });
 
   /// The source URL of the extracted page.
@@ -83,6 +85,12 @@ class WebExtraction {
   /// Article links discovered on the page (for index/listing pages).
   final List<ExtractedLink> articleLinks;
 
+  /// Navigation links found on the page (categories, sections, related).
+  ///
+  /// These are links that aren't articles but may be useful for the user
+  /// to navigate to other sections of the site.
+  final List<ExtractedLink> navigationLinks;
+
   /// Author name from `<meta name="author">` or `article:author`.
   final String? author;
 
@@ -97,6 +105,12 @@ class WebExtraction {
 
   /// Page description from `og:description` or `<meta name="description">`.
   final String? description;
+
+  /// URL of the next page for paginated content.
+  ///
+  /// Detected from `<link rel="next">`, pagination controls, or common
+  /// URL patterns (e.g. `/page/2`, `?page=2`).
+  final String? nextPageUrl;
 }
 
 /// Extracts structured content from web pages.
@@ -160,6 +174,7 @@ class WebExtractor {
           'User-Agent':
               'Mozilla/5.0 (compatible; Kabuk/1.0; +https://kabuk.app)',
           'Accept': 'text/html,application/xhtml+xml',
+          'Accept-Charset': 'utf-8',
         },
       );
 
@@ -167,11 +182,37 @@ class WebExtractor {
         return WebExtraction(url: url, title: url, textContent: '');
       }
 
-      final html = response.body;
+      // Decode with proper charset from Content-Type header
+      final html = _decodeResponseBody(response);
       return _parseHtml(html, url);
     } catch (e, st) {
       dev.log('HTTP extraction failed for $url', error: e, stackTrace: st);
       return WebExtraction(url: url, title: url, textContent: '');
+    }
+  }
+
+  /// Decodes the HTTP response body using the charset from Content-Type header.
+  ///
+  /// Falls back to UTF-8 if no charset is specified. Handles common charsets
+  /// like ISO-8859-1 and Windows-1252 that cause mojibake when decoded as UTF-8.
+  static String _decodeResponseBody(http.Response response) {
+    final contentType = response.headers['content-type'] ?? '';
+    final charsetMatch =
+        RegExp(r'charset=([^\s;]+)', caseSensitive: false).firstMatch(contentType);
+    final charset = charsetMatch?.group(1)?.toLowerCase().replaceAll('-', '');
+
+    if (charset != null && charset != 'utf8') {
+      // For Latin-1/Windows-1252, decode bytes with latin1 then let Dart handle it
+      if (charset == 'iso88591' || charset == 'latin1' || charset == 'windows1252') {
+        return latin1.decode(response.bodyBytes);
+      }
+    }
+
+    // Default: try UTF-8 with allowMalformed to prevent crashes
+    try {
+      return utf8.decode(response.bodyBytes);
+    } catch (_) {
+      return latin1.decode(response.bodyBytes);
     }
   }
 
@@ -214,18 +255,43 @@ class WebExtractor {
   var main = null;
   for (var i = 0; i < selectors.length; i++) {
     var el = document.querySelector(selectors[i]);
-    if (el && el.innerText.trim().length > 100) { main = el; break; }
+    if (el && el.innerText.trim().length > 100) { main = el.cloneNode(true); break; }
   }
   if (!main) {
     main = document.body.cloneNode(true);
-    var remove = main.querySelectorAll(
-      'nav, header, footer, aside, .sidebar, .nav, .menu, .footer, .header, ' +
-      '.ad, .ads, .advertisement, .social-share, .comments, .comment, ' +
-      'script, style, noscript, svg, [role="navigation"], [role="banner"], ' +
-      '[role="contentinfo"], [aria-hidden="true"]'
-    );
-    for (var r = 0; r < remove.length; r++) remove[r].remove();
   }
+  // Strip boilerplate from whatever we found (including article/main elements)
+  var removeSelectors = [
+    'nav', 'header', 'footer', 'aside', 'script', 'style', 'noscript', 'svg',
+    '.sidebar', '.nav', '.menu', '.footer', '.header',
+    '.ad', '.ads', '.advertisement', '.social-share', '.comments', '.comment',
+    '[role="navigation"]', '[role="banner"]', '[role="contentinfo"]',
+    '[aria-hidden="true"]',
+    // Related/recommended article sections
+    '.related', '.related-articles', '.related-stories', '.related-content',
+    '.recommended', '.more-stories', '.trending', '.popular',
+    '.recirculation', '.recirc', '.promo', '.newsletter',
+    '[data-component="related-list"]', '[data-component="trending"]',
+    '.article-footer', '.story-footer', '.duet--article--article-body-component-container:last-child',
+    // Paywall / subscription / settings UI
+    '.paywall', '.paywall-overlay', '.subscription-prompt', '.gate',
+    '.article-settings', '.font-settings', '.display-settings',
+    '.story-tools', '.article-tools', '.tools-bar',
+    '[data-paywall]', '.metered-content-wall', '.pw-widget',
+    // Author bio sections
+    '.author-bio', '.author-info', '.byline-bio', '.contributor-bio',
+    '.article-author-bio', '.writer-bio',
+    // BBC-specific promotional sections
+    '[data-component="links-block"]', '[data-component="topic-list"]',
+    '[data-component="see-alsos"]', '[data-component="tag-list"]',
+    '.ssrcss-1mrs5ns-PromoLink', '.ssrcss-1h3bnil-StyledLink',
+    '[data-testid="promo"]', '[data-testid="related-content"]',
+    // Generic promo containers
+    '.promo-group', '.content-promo', '.story-promo',
+    '.module--promo', '.block-link', '.faux-block-link'
+  ];
+  var remove = main.querySelectorAll(removeSelectors.join(', '));
+  for (var r = 0; r < remove.length; r++) remove[r].remove();
 
   // --- Convert to markdown ---
   function toMarkdown(node) {
@@ -235,23 +301,50 @@ class WebExtractor {
     for (var i = 0; i < children.length; i++) {
       var c = children[i];
       if (c.nodeType === 3) {
-        md += c.textContent;
+        var txt = c.textContent;
+        // Skip text nodes that are only separator characters
+        if (/^[\s·•|\/\\,;:\-]+$/.test(txt)) continue;
+        md += txt;
       } else if (c.nodeType === 1) {
         var tag = c.tagName.toLowerCase();
         if (tag === 'script' || tag === 'style' || tag === 'noscript' || tag === 'svg') continue;
+        if (tag === 'nav' || tag === 'aside' || tag === 'footer' || tag === 'header') continue;
+        // Skip hidden elements
+        var ariaHidden = c.getAttribute('aria-hidden');
+        if (ariaHidden === 'true') continue;
         if (tag === 'br') { md += '\n'; continue; }
         if (tag === 'h1') md += '\n\n# ' + c.innerText.trim() + '\n\n';
         else if (tag === 'h2') md += '\n\n## ' + c.innerText.trim() + '\n\n';
         else if (tag === 'h3') md += '\n\n### ' + c.innerText.trim() + '\n\n';
         else if (tag === 'h4') md += '\n\n#### ' + c.innerText.trim() + '\n\n';
         else if (tag === 'h5' || tag === 'h6') md += '\n\n##### ' + c.innerText.trim() + '\n\n';
-        else if (tag === 'p' || tag === 'div') md += '\n\n' + toMarkdown(c) + '\n\n';
+        else if (tag === 'figure') {
+          // Extract figcaption as italic text, skip image credits/bios
+          var caption = c.querySelector('figcaption');
+          if (caption) {
+            var capText = caption.innerText.trim();
+            // Skip image credits and author bios
+            if (!/^(Image|Photo|Illustration|Credit|Source)\s*[:by]/i.test(capText)
+                && !/\bis\s+(a|an|the)\s+\w+\s+(editor|reporter|writer|journalist)/i.test(capText)) {
+              md += '\n\n*' + capText + '*\n\n';
+            }
+          }
+        }
+        else if (tag === 'p' || tag === 'div') {
+          var inner = toMarkdown(c).trim();
+          if (inner && !/^[\s·•|\/\\,;:\-]+$/.test(inner)) {
+            md += '\n\n' + inner + '\n\n';
+          }
+        }
         else if (tag === 'blockquote') md += '\n\n> ' + c.innerText.trim().replace(/\n/g, '\n> ') + '\n\n';
         else if (tag === 'ul' || tag === 'ol') {
           var items = c.querySelectorAll(':scope > li');
           for (var li = 0; li < items.length; li++) {
-            var prefix = tag === 'ol' ? ((li + 1) + '. ') : '- ';
-            md += '\n' + prefix + items[li].innerText.trim();
+            var liText = items[li].innerText.trim();
+            if (liText && !/^[\s·•|]+$/.test(liText)) {
+              var prefix = tag === 'ol' ? ((li + 1) + '. ') : '- ';
+              md += '\n' + prefix + liText;
+            }
           }
           md += '\n\n';
         }
@@ -265,7 +358,8 @@ class WebExtractor {
         else if (tag === 'em' || tag === 'i') md += '*' + c.innerText.trim() + '*';
         else if (tag === 'code') md += '`' + c.innerText.trim() + '`';
         else if (tag === 'pre') md += '\n\n```\n' + c.innerText.trim() + '\n```\n\n';
-        else if (tag === 'img') { /* handled separately */ }
+        else if (tag === 'img' || tag === 'picture') { /* handled separately */ }
+        else if (tag === 'figcaption') { /* handled under figure */ }
         else md += toMarkdown(c);
       }
     }
@@ -274,18 +368,74 @@ class WebExtractor {
 
   var textContent = toMarkdown(main).replace(/\n{3,}/g, '\n\n').trim();
 
+  // --- Image filtering helper ---
+  function isContentImage(src) {
+    if (!src) return false;
+    var lower = src.toLowerCase();
+    // Skip tracking pixels, spacer gifs, data URIs, tiny icons
+    if (lower.indexOf('data:') === 0) return false;
+    if (lower.indexOf('pixel') !== -1 || lower.indexOf('spacer') !== -1) return false;
+    if (lower.indexOf('tracking') !== -1 || lower.indexOf('beacon') !== -1) return false;
+    if (lower.indexOf('.svg') !== -1 && (lower.indexOf('icon') !== -1 || lower.indexOf('logo') !== -1)) return false;
+    if (/\b1x1\b|\b1\.gif\b|\b1\.png\b/.test(lower)) return false;
+    // Skip common ad/tracker patterns
+    if (/doubleclick|googlesyndication|facebook\.com\/tr|analytics/.test(lower)) return false;
+    return true;
+  }
+
+  function bestSrc(img) {
+    // Try srcset for highest-resolution image first
+    var srcset = img.getAttribute('srcset');
+    if (srcset) {
+      var parts = srcset.split(',').map(function(s) { return s.trim().split(/\s+/); });
+      var best = null, bestW = 0;
+      for (var p = 0; p < parts.length; p++) {
+        var u = parts[p][0];
+        var desc = parts[p][1] || '';
+        var w = parseInt(desc) || 0;
+        if (w > bestW || !best) { best = u; bestW = w; }
+      }
+      if (best && isContentImage(best)) return best;
+    }
+    // Standard src, then lazy-load attributes
+    return img.getAttribute('src')
+      || img.getAttribute('data-src')
+      || img.getAttribute('data-lazy-src')
+      || img.getAttribute('data-original')
+      || img.getAttribute('data-full')
+      || '';
+  }
+
   // --- Images ---
   var ogImage = meta('property', 'og:image');
   var images = [];
-  if (ogImage) images.push(ogImage);
+  if (ogImage && isContentImage(ogImage)) images.push(ogImage);
+
+  // Collect from main content area
   var imgs = main.querySelectorAll('img');
   for (var i = 0; i < imgs.length; i++) {
-    var src = imgs[i].getAttribute('src') || imgs[i].getAttribute('data-src') || '';
-    if (!src) continue;
+    var src = bestSrc(imgs[i]);
+    if (!src || !isContentImage(src)) continue;
     var w = imgs[i].naturalWidth || parseInt(imgs[i].getAttribute('width') || '0', 10);
     var h = imgs[i].naturalHeight || parseInt(imgs[i].getAttribute('height') || '0', 10);
-    if ((w > 0 && w < 200) || (h > 0 && h < 200)) continue;
+    if ((w > 0 && w < 80) || (h > 0 && h < 80)) continue;
+    // Skip avatar/author images
+    var cls = (imgs[i].getAttribute('class') || '').toLowerCase();
+    var alt = (imgs[i].getAttribute('alt') || '').toLowerCase();
+    if (cls.indexOf('avatar') !== -1 || cls.indexOf('author') !== -1) continue;
+    if (alt.indexOf('avatar') !== -1 || alt.indexOf('headshot') !== -1) continue;
     if (images.indexOf(src) === -1) images.push(src);
+  }
+
+  // Also check <a> tags linking directly to images (common gallery pattern)
+  var galleryLinks = main.querySelectorAll('a[href]');
+  for (var gl = 0; gl < galleryLinks.length; gl++) {
+    var href = galleryLinks[gl].getAttribute('href') || '';
+    if (/\.(jpe?g|png|gif|webp|avif|bmp)(\?|$)/i.test(href)) {
+      if (isContentImage(href) && images.indexOf(href) === -1) {
+        images.push(href);
+      }
+    }
   }
 
   // --- Videos ---
@@ -383,18 +533,58 @@ class WebExtractor {
 
     // --- Images (resolve all to absolute URLs) ---
     final images = <String>[];
-    if (ogImage != null && ogImage.isNotEmpty) {
+    if (ogImage != null &&
+        ogImage.isNotEmpty &&
+        !_isTrackingOrAdUrl(ogImage)) {
       final resolved = _resolveUrl(url, ogImage);
       if (resolved != null) images.add(resolved);
     }
-    final imgRegex = RegExp(
-      r'<img[^>]+src=["' "'" r']([^"' "'" r']+)["' "'" r']',
+
+    // Match <img> tags with src, data-src, data-lazy-src, data-original
+    final imgTagRegex = RegExp(
+      r'<img\b([^>]*)>',
       caseSensitive: false,
     );
-    for (final m in imgRegex.allMatches(html)) {
-      final src = m.group(1) ?? '';
-      if (src.isNotEmpty) {
-        final resolved = _resolveUrl(url, src);
+    final attrRegex = RegExp(
+      r'''(?:src|data-src|data-lazy-src|data-original|data-full)=["']([^"']+)["']''',
+      caseSensitive: false,
+    );
+    final srcsetRegex = RegExp(
+      r'''srcset=["']([^"']+)["']''',
+      caseSensitive: false,
+    );
+
+    for (final m in imgTagRegex.allMatches(html)) {
+      final attrs = m.group(1) ?? '';
+
+      // Try srcset first for highest resolution
+      String? bestUrl;
+      final srcsetMatch = srcsetRegex.firstMatch(attrs);
+      if (srcsetMatch != null) {
+        final srcsetVal = srcsetMatch.group(1) ?? '';
+        bestUrl = _bestFromSrcset(srcsetVal);
+      }
+
+      // Fall back to src/data-src/etc.
+      bestUrl ??= attrRegex.firstMatch(attrs)?.group(1);
+      if (bestUrl == null || bestUrl.isEmpty) continue;
+      if (_isTrackingOrAdUrl(bestUrl)) continue;
+
+      final resolved = _resolveUrl(url, bestUrl);
+      if (resolved != null && !images.contains(resolved)) {
+        images.add(resolved);
+      }
+    }
+
+    // <a> tags linking directly to images (gallery lightbox pattern)
+    final linkToImageRegex = RegExp(
+      r'''<a\b[^>]+href=["']([^"']+\.(?:jpe?g|png|gif|webp|avif|bmp))(?:\?[^"']*)?"[^>]*>''',
+      caseSensitive: false,
+    );
+    for (final m in linkToImageRegex.allMatches(html)) {
+      final href = m.group(1) ?? '';
+      if (href.isNotEmpty && !_isTrackingOrAdUrl(href)) {
+        final resolved = _resolveUrl(url, href);
         if (resolved != null && !images.contains(resolved)) {
           images.add(resolved);
         }
@@ -433,6 +623,12 @@ class WebExtractor {
         : null;
     final articleLinks = _extractArticleLinks(html, url, resolvedOgImage);
 
+    // --- Pagination (next page) ---
+    final nextPageUrl = _extractNextPageUrl(html, url);
+
+    // --- Navigation links (categories, sections) ---
+    final navigationLinks = _extractNavigationLinks(html, url);
+
     return WebExtraction(
       url: url,
       title: _decodeEntities(title).trim(),
@@ -440,11 +636,13 @@ class WebExtractor {
       images: images,
       videos: videos,
       articleLinks: articleLinks,
+      navigationLinks: navigationLinks,
       author: _nonEmpty(author),
       datePublished: published,
       siteName: _nonEmpty(ogSiteName),
       favicon: _resolveUrl(url, faviconMatch ?? faviconAlt),
       description: ogDesc != null ? _decodeEntities(ogDesc) : null,
+      nextPageUrl: nextPageUrl,
     );
   }
 
@@ -617,6 +815,10 @@ class WebExtractor {
 
       // Try to find an associated image. Modern sites use lazy loading
       // (data-src, srcset, data-original) so we check multiple attributes.
+      // Only trust images found INSIDE the link element — context-based
+      // searches (before/after the link) often pick up site logos, nav icons,
+      // or unrelated images. Let _enrichLinksWithImages() fetch each article's
+      // own og:image for better quality.
       String? image;
       final imgTagRegex = RegExp(r'<img\s[^>]+>', caseSensitive: false);
 
@@ -640,30 +842,8 @@ class WebExtractor {
         }
       }
 
-      // Then check backward context (~800 chars).
-      if (image == null) {
-        final linkStart = match.start;
-        final searchStart = (linkStart - 800).clamp(0, linkStart);
-        final beforeHtml = cleanedHtml.substring(searchStart, linkStart);
-        final beforeImgTags = imgTagRegex.allMatches(beforeHtml);
-        if (beforeImgTags.isNotEmpty) {
-          image = _bestImgUrl(beforeImgTags.last.group(0)!, baseUrl);
-        }
-      }
-
-      // Finally check forward context (~800 chars).
-      if (image == null) {
-        final linkEnd = match.end;
-        final searchEnd = (linkEnd + 800).clamp(linkEnd, cleanedHtml.length);
-        final afterHtml = cleanedHtml.substring(linkEnd, searchEnd);
-        final afterImgTag = imgTagRegex.firstMatch(afterHtml);
-        if (afterImgTag != null) {
-          image = _bestImgUrl(afterImgTag.group(0)!, baseUrl);
-        }
-      }
-
-      // Fall back to page-level og:image when no article-specific image found.
-      image ??= pageOgImage;
+      // Don't fall back to page-level og:image or context-based search —
+      // _enrichLinksWithImages() will fetch each article's own og:image.
 
       links.add(ExtractedLink(
         url: canonical,
@@ -693,6 +873,85 @@ class WebExtractor {
   // HTML regex helpers
   // ---------------------------------------------------------------------------
 
+  /// Detects if a URL likely points to a site logo, icon, or branding image
+  /// rather than article-specific content.
+  static bool _isLikelyLogo(String url) {
+    final lower = url.toLowerCase();
+    // Check path segments for common logo/icon patterns.
+    final pathPart = Uri.tryParse(lower)?.path ?? lower;
+    // Check the filename (last segment) for logo/icon keywords.
+    final filename = pathPart.split('/').last;
+    const logoKeywords = [
+      'logo',
+      'icon',
+      'brand',
+      'favicon',
+      'badge',
+      'site-image',
+      'default-image',
+      'default_image',
+      'fallback',
+    ];
+    if (logoKeywords.any(filename.contains)) return true;
+    // Also check full path for explicit logo/icon directories.
+    const pathPatterns = [
+      '/logo/',
+      '/icons/',
+      '/brand/',
+      '/favicon/',
+    ];
+    return pathPatterns.any(pathPart.contains);
+  }
+
+  /// Public API for checking if a URL is likely a site logo.
+  static bool isLikelyLogoUrl(String url) => _isLikelyLogo(url);
+
+  /// Returns `true` when [url] looks like a tracking pixel, ad beacon, or
+  /// other non-content image.
+  static bool _isTrackingOrAdUrl(String url) {
+    final lower = url.toLowerCase();
+    if (lower.startsWith('data:')) return true;
+    const patterns = [
+      'pixel',
+      'spacer',
+      'tracking',
+      'beacon',
+      '1x1',
+      '1.gif',
+      '1.png',
+      'doubleclick',
+      'googlesyndication',
+      'facebook.com/tr',
+      'analytics',
+      'ad-banner',
+      'ad_banner',
+      'advertisement',
+    ];
+    for (final p in patterns) {
+      if (lower.contains(p)) return true;
+    }
+    return false;
+  }
+
+  /// Picks the highest-resolution URL from an HTML `srcset` attribute value.
+  static String? _bestFromSrcset(String srcset) {
+    if (srcset.isEmpty) return null;
+    String? best;
+    var bestW = 0;
+    for (final entry in srcset.split(',')) {
+      final parts = entry.trim().split(RegExp(r'\s+'));
+      if (parts.isEmpty) continue;
+      final u = parts[0];
+      final desc = parts.length > 1 ? parts[1] : '';
+      final w = int.tryParse(desc.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      if (w > bestW || best == null) {
+        best = u;
+        bestW = w;
+      }
+    }
+    return (best != null && !best.startsWith('data:')) ? best : null;
+  }
+
   /// Extracts the best image URL from an `<img>` tag string, handling
   /// lazy-loading attributes (`data-src`, `data-original`, `srcset`, etc.).
   static String? _bestImgUrl(String imgTag, String baseUrl) {
@@ -718,7 +977,8 @@ class WebExtractor {
             !val.contains('placeholder') &&
             !val.contains('loading.') &&
             !val.contains('grey-placeholder') &&
-            !val.contains('lazy-load')) {
+            !val.contains('lazy-load') &&
+            !_isLikelyLogo(val)) {
           return _resolveUrl(baseUrl, val);
         }
       }
@@ -919,4 +1179,142 @@ class WebExtractor {
   /// Public wrapper for use by other services (e.g., ReaderModeService).
   static String? resolveUrl(String baseUrl, String path) =>
       _resolveUrl(baseUrl, path);
+
+  // ---------------------------------------------------------------------------
+  // Pagination detection
+  // ---------------------------------------------------------------------------
+
+  /// Detects the URL of the next page for paginated content.
+  ///
+  /// Checks (in order of priority):
+  /// 1. `<link rel="next">` — standards-based pagination hint
+  /// 2. `<a rel="next">` — explicit next-page links
+  /// 3. Common "Next" link patterns in pagination controls
+  static String? _extractNextPageUrl(String html, String baseUrl) {
+    // 1. <link rel="next" href="...">
+    final linkRelNext = RegExp(
+      r'''<link[^>]+rel=["']next["'][^>]+href=["']([^"']+)["']''',
+      caseSensitive: false,
+    ).firstMatch(html);
+    // Also try reversed attribute order: href before rel
+    final linkRelNextAlt = linkRelNext ?? RegExp(
+      r'''<link[^>]+href=["']([^"']+)["'][^>]+rel=["']next["']''',
+      caseSensitive: false,
+    ).firstMatch(html);
+    if (linkRelNextAlt != null) {
+      final href = linkRelNextAlt.group(1);
+      if (href != null && href.isNotEmpty) {
+        return _resolveUrl(baseUrl, href);
+      }
+    }
+
+    // 2. <a rel="next" href="...">
+    final aRelNext = RegExp(
+      r'''<a[^>]+rel=["']next["'][^>]+href=["']([^"']+)["']''',
+      caseSensitive: false,
+    ).firstMatch(html);
+    final aRelNextAlt = aRelNext ?? RegExp(
+      r'''<a[^>]+href=["']([^"']+)["'][^>]+rel=["']next["']''',
+      caseSensitive: false,
+    ).firstMatch(html);
+    if (aRelNextAlt != null) {
+      final href = aRelNextAlt.group(1);
+      if (href != null && href.isNotEmpty) {
+        return _resolveUrl(baseUrl, href);
+      }
+    }
+
+    // 3. Common pagination link patterns: links with text like
+    //    "Next", "Next Page", "Older", "→", "»"
+    final nextPatterns = RegExp(
+      r'''<a[^>]+href=["']([^"']+)["'][^>]*>\s*'''
+      r'(?:Next(?:\s+Page)?|Older(?:\s+Posts?)?|›|→|»|&raquo;|&#8250;|&gt;)'
+      r'\s*</a>',
+      caseSensitive: false,
+    );
+    final nextMatch = nextPatterns.firstMatch(html);
+    if (nextMatch != null) {
+      final href = nextMatch.group(1);
+      if (href != null && href.isNotEmpty) {
+        return _resolveUrl(baseUrl, href);
+      }
+    }
+
+    return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Navigation link extraction
+  // ---------------------------------------------------------------------------
+
+  /// Extracts navigation links from the page.
+  ///
+  /// These are category, section, and related links from nav elements
+  /// that might help the user discover more content on the same site.
+  /// Limited to same-domain links.
+  static List<ExtractedLink> _extractNavigationLinks(
+    String html,
+    String baseUrl,
+  ) {
+    final baseUri = Uri.tryParse(baseUrl);
+    if (baseUri == null) return const [];
+    final baseHost = baseUri.host;
+
+    // Extract links from <nav> elements and common nav containers.
+    final navRegex = RegExp(
+      r'<(?:nav|ul[^>]+class=["\x27][^"\x27]*(?:nav|menu|categories|sections)[^"\x27]*["\x27])[^>]*>(.*?)</(?:nav|ul)>',
+      caseSensitive: false,
+      dotAll: true,
+    );
+
+    final linkRegex = RegExp(
+      r'<a\s[^>]*href=["' "'" r']([^"' "'" r']+)["' "'" r'][^>]*>(.*?)</a>',
+      caseSensitive: false,
+      dotAll: true,
+    );
+
+    final seen = <String>{};
+    final links = <ExtractedLink>[];
+
+    for (final navMatch in navRegex.allMatches(html)) {
+      if (links.length >= 20) break;
+
+      final navContent = navMatch.group(1) ?? '';
+      for (final linkMatch in linkRegex.allMatches(navContent)) {
+        if (links.length >= 20) break;
+
+        final rawHref = linkMatch.group(1) ?? '';
+        final innerHtml = linkMatch.group(2) ?? '';
+        if (rawHref.isEmpty) continue;
+
+        final resolved = _resolveUrl(baseUrl, rawHref);
+        if (resolved == null || resolved.isEmpty) continue;
+
+        final linkUri = Uri.tryParse(resolved);
+        if (linkUri == null) continue;
+
+        // Same domain only.
+        if (!linkUri.host.endsWith(baseHost) &&
+            !baseHost.endsWith(linkUri.host)) {
+          continue;
+        }
+
+        // Skip root/empty links and anchors.
+        if (linkUri.path == '/' || linkUri.path.isEmpty) continue;
+        if (rawHref.startsWith('#')) continue;
+
+        final title = _decodeEntities(_stripTags(innerHtml)).trim();
+        if (title.isEmpty || title.length < 2) continue;
+        if (title.length > 100) continue;
+
+        final canonical = linkUri.replace(fragment: '').toString();
+        if (seen.contains(canonical) || canonical == baseUrl) continue;
+        seen.add(canonical);
+
+        links.add(ExtractedLink(url: canonical, title: title));
+      }
+    }
+
+    return links;
+  }
 }

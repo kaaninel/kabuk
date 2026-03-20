@@ -117,6 +117,24 @@ Future<int?> pushArticleDetail(
 // ArticleDetailPage
 // =============================================================================
 
+/// Maps a gallery image back to its source article.
+class _ChannelImage {
+  const _ChannelImage({
+    required this.url,
+    required this.articleIndex,
+    this.tag,
+  });
+
+  /// Image URL.
+  final String url;
+
+  /// Index of the article this image belongs to within the channel.
+  final int articleIndex;
+
+  /// Hero animation tag, if any.
+  final String? tag;
+}
+
 /// Full-screen article detail page.
 ///
 /// When [articles] is provided, supports Reddit-style swipe-to-next-article
@@ -151,12 +169,43 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
   /// True = slide from right (next), false = slide from left (previous).
   bool _slideForward = true;
 
+  /// All images across the channel for gallery navigation.
+  late final List<_ChannelImage> _channelImages = _buildChannelImages();
+
   bool get _hasNext =>
       widget.articles != null &&
       _currentIndex < widget.articles!.length - 1;
 
   bool get _hasPrevious =>
       widget.articles != null && _currentIndex > 0;
+
+  List<_ChannelImage> _buildChannelImages() {
+    final articles = widget.articles;
+    if (articles == null || articles.isEmpty) return [];
+    final images = <_ChannelImage>[];
+    for (var i = 0; i < articles.length; i++) {
+      final a = articles[i];
+      if (FeedImage.isValidImageUrl(a.image)) {
+        images.add(_ChannelImage(
+          url: a.image!,
+          articleIndex: i,
+          tag: 'article_img_${a.uri}',
+        ));
+      }
+      // Include gallery images too.
+      for (var g = 0; g < a.galleryImages.length; g++) {
+        final gUrl = a.galleryImages[g];
+        if (gUrl != a.image && FeedImage.isValidImageUrl(gUrl)) {
+          images.add(_ChannelImage(
+            url: gUrl,
+            articleIndex: i,
+            tag: 'gallery_${a.uri}_$g',
+          ));
+        }
+      }
+    }
+    return images;
+  }
 
   @override
   void initState() {
@@ -200,6 +249,21 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
     setState(() {
       _currentIndex--;
       _currentArticle = widget.articles![_currentIndex];
+    });
+    _scrollController.jumpTo(0);
+  }
+
+  /// Navigates directly to a specific article by index (e.g. from gallery).
+  void _navigateToArticle(int index) {
+    if (widget.articles == null) return;
+    if (index < 0 || index >= widget.articles!.length) return;
+    if (index == _currentIndex) return;
+    HapticFeedback.mediumImpact();
+    ref.read(keyboardModeProvider.notifier).state = KeyboardMode.none;
+    setState(() {
+      _slideForward = index > _currentIndex;
+      _currentIndex = index;
+      _currentArticle = widget.articles![index];
     });
     _scrollController.jumpTo(0);
   }
@@ -253,6 +317,13 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
             key: ValueKey(_currentArticle.uri),
             article: _currentArticle,
             scrollController: _scrollController,
+            channelImages: _channelImages.isNotEmpty ? _channelImages : null,
+            onNavigateToImage: (imageIndex) {
+              if (imageIndex < 0 || imageIndex >= _channelImages.length) return;
+              final targetArticleIdx = _channelImages[imageIndex].articleIndex;
+              if (targetArticleIdx == _currentIndex) return;
+              _navigateToArticle(targetArticleIdx);
+            },
             onViewInBrowser: () {
               final url = _currentArticle.url;
               if (url == null) return;
@@ -283,6 +354,8 @@ class _ArticleDetailContent extends ConsumerStatefulWidget {
     required this.article,
     required this.onViewInBrowser,
     this.scrollController,
+    this.channelImages,
+    this.onNavigateToImage,
     super.key,
   });
 
@@ -291,6 +364,12 @@ class _ArticleDetailContent extends ConsumerStatefulWidget {
 
   /// Scroll controller shared with the parent.
   final ScrollController? scrollController;
+
+  /// All images across the channel for gallery navigation.
+  final List<_ChannelImage>? channelImages;
+
+  /// Called when the gallery viewer closes on a different article's image.
+  final void Function(int imageIndex)? onNavigateToImage;
 
   @override
   ConsumerState<_ArticleDetailContent> createState() =>
@@ -342,7 +421,7 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
     if (!mounted) return;
 
     if (blocks.isNotEmpty) {
-      setState(() => _contentBlocks = blocks);
+      setState(() => _contentBlocks = _cleanContentBlocks(blocks));
     } else if (_needsContentFetch) {
       unawaited(_fetchContent());
     }
@@ -372,7 +451,7 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
       if (!mounted) return;
       setState(() {
         _enrichedArticle = updatedArticle;
-        _contentBlocks = blocks;
+        _contentBlocks = _cleanContentBlocks(blocks);
         _isFetchingContent = false;
       });
     } on Object catch (e, st) {
@@ -383,6 +462,34 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
         stackTrace: st,
       );
       if (mounted) setState(() => _isFetchingContent = false);
+    }
+  }
+
+  /// Opens the fullscreen gallery at the image matching [imageUrl].
+  ///
+  /// If channel images are available, uses the full channel gallery.
+  /// When the user closes the gallery on a different article's image,
+  /// navigates to that article.
+  Future<void> _openGallery(String imageUrl, String? tag) async {
+    final ci = widget.channelImages;
+    if (ci != null && ci.isNotEmpty) {
+      final idx = ci.indexWhere((img) => img.url == imageUrl);
+      final startIdx = idx >= 0 ? idx : 0;
+      final result = await FullscreenImageViewer.showGallery(
+        context,
+        images: ci.map((img) => img.url).toList(),
+        initialIndex: startIdx,
+        tag: tag,
+      );
+      if (result != null && result != startIdx) {
+        widget.onNavigateToImage?.call(result);
+      }
+    } else {
+      FullscreenImageViewer.show(
+        context,
+        imageUrl: imageUrl,
+        tag: tag,
+      );
     }
   }
 
@@ -418,11 +525,7 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
           )
         else if (hasImage)
           GestureDetector(
-            onTap: () => FullscreenImageViewer.show(
-              context,
-              imageUrl: article.image!,
-              tag: 'article_img_${article.uri}',
-            ),
+            onTap: () => _openGallery(article.image!, 'article_img_${article.uri}'),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
               child: Hero(
@@ -519,8 +622,10 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
           ),
         ),
 
-        // ── Description ────────────────────────────────────────────────────
-        if (article.description != null && article.description!.isNotEmpty)
+        // ── Description (only show when content blocks aren't loaded) ──────
+        if (article.description != null &&
+            article.description!.isNotEmpty &&
+            (_contentBlocks == null || _contentBlocks!.isEmpty))
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
             child: _hasMarkdown(article.description!)
@@ -836,6 +941,78 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
   String _normContent(String s) =>
       s.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 
+  /// Post-processes content blocks to remove duplicates, separator-only
+  /// blocks, image credits, and other noise from cached extractions.
+  static final _separatorPattern =
+      RegExp(r'^[\s\u00B7\u2022\u2013\u2014\u2027\-|/\\,;:.*]+$');
+  static final _imageCreditPattern = RegExp(
+      r'^(Image|Photo|Illustration|Credit|Source)\s*[:by]',
+      caseSensitive: false);
+  static final _authorBioPattern = RegExp(
+      r"(?:\b(?:is|was)\s+(?:a|an|the)\s+\w+\s+(?:editor|reporter|writer|journalist|correspondent))"
+      r"|(?:^By\s+[A-Z][\w\s]+\b(?:BBC|CNN|AP|Reuters|Sport|News|Channel|Press|Editor|Reporter|Journalist|Correspondent)\b)",
+      caseSensitive: false);
+  static final _noisePatterns = [
+    // BBC "Media caption," placeholder
+    RegExp(r'^Media\s+caption\s*[,.]?\s*$', caseSensitive: false),
+    // "By Author Name ..." byline (any length)
+    RegExp(r"^By\s+[A-Z][a-zA-Z\-']+\s+[A-Z][\w\s\-']*$"),
+    // "Published X ago" metadata (with or without space)
+    RegExp(r'^Published\s*\d+\s+(hours?|minutes?|days?|mins?)\s+ago\s*$',
+        caseSensitive: false),
+    // "X hours/minutes/days ago" standalone time
+    RegExp(r'^\d+\s+(hours?|minutes?|days?|mins?)\s+ago\s*$',
+        caseSensitive: false),
+    // Byline with role description
+    RegExp(
+        r"^By\s+[\w\s\-']+\b(reporter|editor|journalist|correspondent|writer|analyst|contributor)\b",
+        caseSensitive: false),
+    // "Share" / "Copy link" / "Save" standalone button text
+    RegExp(r'^(Share|Copy\s+link|Save|Bookmark|Print|Follow|Subscribe)\s*$',
+        caseSensitive: false),
+    // "Related Topics" / "More on this story" section headers
+    RegExp(r'^(Related\s+Topics?|More\s+on\s+this|Top\s+Stories?|Also\s+in)\b',
+        caseSensitive: false),
+    // Standalone "Getty Images", "AFP", etc. credit lines
+    RegExp(r'^(Getty\s+Images?|AFP|Reuters|AP\s+Photo|PA\s+Media|Alamy)\s*$',
+        caseSensitive: false),
+  ];
+
+  List<ContentBlockData> _cleanContentBlocks(List<ContentBlockData> blocks) {
+    final seen = <String>{};
+    return blocks.where((b) {
+      if (b.type == BlockType.text && b.content != null) {
+        final trimmed = b.content!.trim();
+        if (trimmed.isEmpty) return false;
+        // Remove separator-only blocks
+        if (_separatorPattern.hasMatch(trimmed)) return false;
+        // Remove image credits and author bios
+        if (_imageCreditPattern.hasMatch(trimmed)) return false;
+        if (_authorBioPattern.hasMatch(trimmed)) return false;
+        // Remove known noise patterns
+        if (_noisePatterns.any((p) => p.hasMatch(trimmed))) return false;
+        // Remove paywall/settings UI text
+        final lower = trimmed.toLowerCase();
+        if (lower == 'subscribers only' || lower == 'learn more' ||
+            lower == 'story text') {
+          return false;
+        }
+        // Remove single-word UI labels (e.g. "Size", "Standard", "Wide")
+        if (trimmed.length <= 15 && !trimmed.contains(' ') &&
+            RegExp(r'^[A-Z][a-z]+\s*\*?$').hasMatch(trimmed)) {
+          return false;
+        }
+        // Dedup: skip blocks with identical normalized content
+        final norm = _normContent(trimmed);
+        if (norm.length >= 10) {
+          if (seen.contains(norm)) return false;
+          seen.add(norm);
+        }
+      }
+      return true;
+    }).toList();
+  }
+
   /// Renders a single content block as a widget.
   Widget _renderContentBlock(BuildContext context, ContentBlockData block) {
     return switch (block.type) {
@@ -889,10 +1066,9 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
             children: [
               if (block.mediaUri != null)
                 GestureDetector(
-                  onTap: () => FullscreenImageViewer.show(
-                    context,
-                    imageUrl: block.mediaUri!,
-                    tag: 'block_img_${block.uri}',
+                  onTap: () => _openGallery(
+                    block.mediaUri!,
+                    'block_img_${block.uri}',
                   ),
                   child: Hero(
                     tag: 'block_img_${block.uri}',
@@ -2348,9 +2524,10 @@ class _DetailGalleryCarouselState extends State<_DetailGalleryCarousel> {
               onPageChanged: (i) => setState(() => _current = i),
               itemBuilder: (context, i) {
                 return GestureDetector(
-                  onTap: () => FullscreenImageViewer.show(
+                  onTap: () => FullscreenImageViewer.showGallery(
                     context,
-                    imageUrl: widget.images[i],
+                    images: widget.images,
+                    initialIndex: i,
                     tag: 'gallery_${widget.articleUri}_$i',
                   ),
                   child: Hero(

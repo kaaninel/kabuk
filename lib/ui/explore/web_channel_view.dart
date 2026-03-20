@@ -14,6 +14,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/types/article.dart';
+import 'package:kabuk/services/reader_mode.dart';
+import 'package:kabuk/services/web_extractor.dart';
 import 'package:kabuk/ui/explore/article_card.dart';
 import 'package:kabuk/ui/explore/explore_view.dart';
 import 'package:kabuk/ui/explore/reader_view.dart';
@@ -30,12 +32,15 @@ import 'package:kabuk/ui/theme.dart';
 /// Multi-article pages (index/listing) show article cards.
 ///
 /// The follow button lets users subscribe to the page for future updates.
+/// Supports pagination (load more) and navigation links.
 class WebChannelView extends ConsumerStatefulWidget {
   /// Creates a [WebChannelView].
   const WebChannelView({
     required this.url,
     required this.articleUris,
     required this.isMultiArticle,
+    this.nextPageUrl,
+    this.navigationLinks = const [],
     super.key,
   });
 
@@ -48,6 +53,12 @@ class WebChannelView extends ConsumerStatefulWidget {
   /// Whether the page contained multiple articles (index/listing page).
   final bool isMultiArticle;
 
+  /// URL of the next page, if pagination was detected.
+  final String? nextPageUrl;
+
+  /// Navigation links for browsing other sections of the site.
+  final List<ExtractedLink> navigationLinks;
+
   @override
   ConsumerState<WebChannelView> createState() => _WebChannelViewState();
 }
@@ -57,6 +68,9 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
   bool _isLoading = true;
   bool _isSubscribed = false;
   String? _subscriptionUri;
+  bool _isLoadingMore = false;
+  String? _nextPageUrl;
+  final _scrollController = ScrollController();
 
   String get _domain =>
       Uri.tryParse(widget.url)?.host.replaceFirst('www.', '') ?? widget.url;
@@ -64,8 +78,31 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
   @override
   void initState() {
     super.initState();
+    _nextPageUrl = widget.nextPageUrl;
     _loadArticles();
     _checkSubscriptionState();
+    _scrollController.addListener(_onScroll);
+    // Schedule periodic refreshes to pick up background image updates.
+    // Background enrichment processes 5 articles per batch with 5s timeout,
+    // so larger channels need multiple refresh cycles.
+    for (final delay in [5, 12, 25, 45]) {
+      Future.delayed(Duration(seconds: delay), _refreshArticleImages);
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_isLoadingMore || _nextPageUrl == null) return;
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    final currentScroll = _scrollController.position.pixels;
+    if (currentScroll >= maxScroll - 400) {
+      _loadMoreArticles();
+    }
   }
 
   Future<void> _loadArticles() async {
@@ -85,6 +122,28 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
     }
   }
 
+  /// Re-reads articles from the store to pick up background image updates.
+  Future<void> _refreshArticleImages() async {
+    if (!mounted || _articles.isEmpty) return;
+    final store = ref.read(knowledgeStoreProvider);
+    final refreshed = <ArticleData>[];
+    var hasChanges = false;
+
+    for (final article in _articles) {
+      final fresh = await store.getArticleData(article.uri);
+      if (fresh != null) {
+        refreshed.add(fresh);
+        if (fresh.image != article.image) hasChanges = true;
+      } else {
+        refreshed.add(article);
+      }
+    }
+
+    if (mounted && hasChanges) {
+      setState(() => _articles = refreshed);
+    }
+  }
+
   Future<void> _checkSubscriptionState() async {
     final store = ref.read(knowledgeStoreProvider);
     final subs = await store.listFeedSubscriptions();
@@ -97,6 +156,55 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
         _subscriptionUri = match?.uri;
       });
     }
+  }
+
+  /// Fetches the next page of articles when pagination is available.
+  Future<void> _loadMoreArticles() async {
+    final nextUrl = _nextPageUrl;
+    if (nextUrl == null || _isLoadingMore) return;
+
+    setState(() => _isLoadingMore = true);
+
+    try {
+      final service = ref.read(readerModeServiceProvider);
+      final result = await service.processUrl(nextUrl);
+
+      if (!mounted) return;
+
+      // Load the new article data.
+      final store = ref.read(knowledgeStoreProvider);
+      final newArticles = <ArticleData>[];
+      for (final uri in result.articleUris) {
+        final article = await store.getArticleData(uri);
+        if (article != null) newArticles.add(article);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _articles = [..._articles, ...newArticles];
+        _nextPageUrl = result.nextPageUrl;
+        _isLoadingMore = false;
+      });
+    } on Object catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingMore = false;
+          _nextPageUrl = null; // Don't retry on failure.
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load more: $e')),
+        );
+      }
+    }
+  }
+
+  /// Navigates to a URL within the current channel context.
+  void _browseLink(String url) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _LinkLoader(url: url),
+      ),
+    );
   }
 
   Future<void> _toggleSubscription() async {
@@ -160,6 +268,7 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
     return Scaffold(
       backgroundColor: KabukTheme.background,
       body: CustomScrollView(
+        controller: _scrollController,
         slivers: [
           // ── App bar ──
           SliverAppBar(
@@ -243,6 +352,35 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
             ),
           ),
 
+          // ── Navigation links (categories/sections) ──
+          if (widget.navigationLinks.isNotEmpty)
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 40,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: KabukTheme.spacingMd,
+                  ),
+                  itemCount: widget.navigationLinks.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) {
+                    final link = widget.navigationLinks[index];
+                    return ActionChip(
+                      avatar: const Icon(Icons.link_rounded, size: 14),
+                      label: Text(
+                        link.title,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      backgroundColor: KabukTheme.surface,
+                      side: const BorderSide(color: KabukTheme.divider),
+                      onPressed: () => _browseLink(link.url),
+                    );
+                  },
+                ),
+              ),
+            ),
+
           const SliverToBoxAdapter(
             child: Divider(color: KabukTheme.divider, height: 1),
           ),
@@ -278,6 +416,36 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
                   );
                 },
                 childCount: _articles.length,
+              ),
+            ),
+
+          // ── Load more indicator ──
+          if (_isLoadingMore)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(
+                  child: CircularProgressIndicator(
+                    color: KabukTheme.blueAccent,
+                    strokeWidth: 2,
+                  ),
+                ),
+              ),
+            )
+          else if (_nextPageUrl != null && _articles.isNotEmpty)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Center(
+                  child: TextButton.icon(
+                    onPressed: _loadMoreArticles,
+                    icon: const Icon(Icons.expand_more_rounded),
+                    label: const Text('Load more'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: KabukTheme.blueAccent,
+                    ),
+                  ),
+                ),
               ),
             ),
 
@@ -362,6 +530,78 @@ class _SubscribeButton extends StatelessWidget {
                 visualDensity: VisualDensity.compact,
               ),
             ),
+    );
+  }
+}
+
+// =============================================================================
+// Link loader — navigates to a URL and shows it as a WebChannelView
+// =============================================================================
+
+/// Loads a URL through the reader mode pipeline and displays it.
+class _LinkLoader extends ConsumerStatefulWidget {
+  const _LinkLoader({required this.url});
+
+  final String url;
+
+  @override
+  ConsumerState<_LinkLoader> createState() => _LinkLoaderState();
+}
+
+class _LinkLoaderState extends ConsumerState<_LinkLoader> {
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final service = ref.read(readerModeServiceProvider);
+      final result = await service.processUrl(widget.url);
+
+      if (!mounted) return;
+
+      // Replace this page with the channel view.
+      await Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => WebChannelView(
+            url: widget.url,
+            articleUris: result.articleUris,
+            isMultiArticle: result.isMultiArticle,
+            nextPageUrl: result.nextPageUrl,
+            navigationLinks: result.navigationLinks,
+          ),
+        ),
+      );
+    } on Object catch (e) {
+      if (mounted) setState(() { _error = '$e'; _isLoading = false; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: KabukTheme.background,
+      appBar: AppBar(
+        backgroundColor: KabukTheme.surface,
+        foregroundColor: KabukTheme.textPrimary,
+        title: Text(
+          Uri.tryParse(widget.url)?.host ?? widget.url,
+          style: const TextStyle(fontSize: 14),
+        ),
+      ),
+      body: Center(
+        child: _isLoading
+            ? const CircularProgressIndicator(color: KabukTheme.blueAccent)
+            : Text(
+                _error ?? 'Failed to load',
+                style: const TextStyle(color: KabukTheme.textSecondary),
+              ),
+      ),
     );
   }
 }

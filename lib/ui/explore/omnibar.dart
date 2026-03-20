@@ -541,48 +541,6 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
     }
   }
 
-  Future<void> _subscribeToRss(String url) async {
-    var feedUrl = url.trim();
-    if (!feedUrl.startsWith('http://') && !feedUrl.startsWith('https://')) {
-      feedUrl = 'https://$feedUrl';
-    }
-    final store = ref.read(knowledgeStoreProvider);
-
-    final existing = await store.listFeedSubscriptions();
-    if (existing.any((s) => s.feedUrl == feedUrl)) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Already subscribed to this feed')),
-        );
-      }
-      return;
-    }
-
-    // Extract domain for name.
-    final domain = Uri.tryParse(feedUrl)?.host ?? feedUrl;
-    await store.createFeedSubscription(
-      name: domain,
-      feedUrl: feedUrl,
-      feedType: 'rss',
-    );
-
-    ref.invalidate(subscriptionsProvider);
-    ref.invalidate(articlesProvider);
-
-    // Auto-fetch the new feed in the background.
-    unawaited(
-      refreshAllFeeds(ref).then((_) {
-        if (mounted) ref.invalidate(articlesProvider);
-      }),
-    );
-
-    if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Subscribed to $domain!')));
-    }
-  }
-
   Future<void> _followHashtag(String hashtag) async {
     final clean = _hashtagName(hashtag);
     try {
@@ -668,6 +626,8 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
             url: feedUrl,
             articleUris: result.articleUris,
             isMultiArticle: result.isMultiArticle,
+            nextPageUrl: result.nextPageUrl,
+            navigationLinks: result.navigationLinks,
           ),
         ),
       );
@@ -1581,31 +1541,14 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
     }
 
     if (_isUrlQuery(_query)) {
+      final displayUrl = _query.trim().replaceFirst(RegExp(r'^https?://'), '');
       actions.add(
         _actionTile(
-          icon: Icons.language_rounded,
+          icon: Icons.arrow_forward_rounded,
           iconColor: KabukTheme.blueAccent,
-          title: 'Browse',
-          subtitle: 'View this page natively',
+          title: displayUrl,
+          subtitle: 'Go to this page',
           onTap: () => _browseUrl(_query),
-        ),
-      );
-      actions.add(
-        _actionTile(
-          icon: Icons.rss_feed_rounded,
-          iconColor: KabukTheme.warmAccent,
-          title: 'Subscribe as RSS feed',
-          subtitle: 'Follow updates from this URL',
-          onTap: () => _subscribeToRss(_query),
-        ),
-      );
-      actions.add(
-        _actionTile(
-          icon: Icons.open_in_new_rounded,
-          iconColor: KabukTheme.accentGreen,
-          title: 'Open in browser',
-          subtitle: 'View raw page in WebView',
-          onTap: () => _openExternal(_query),
         ),
       );
     }

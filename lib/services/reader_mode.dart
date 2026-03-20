@@ -1,16 +1,13 @@
-/// Reader Mode orchestration service — AI-enhanced article extraction pipeline.
+/// Reader Mode orchestration service — article extraction pipeline.
 ///
-/// Orchestrates the full "AI Reader Mode" flow:
+/// Orchestrates the full "Reader Mode" flow:
 /// 1. **Extract** — Pull structured content from a URL or WebView via
 ///    [WebExtractor].
 /// 2. **Store** — Persist the article and its content blocks in the
-///    knowledge store immediately so the UI can render basic content fast.
-/// 3. **Enhance** — Optionally send the extracted text through the local LLM
-///    to clean up navigation remnants, fix formatting, and improve readability.
+///    knowledge store so the UI can render the content.
 ///
-/// The two-phase approach (store basic → enhance async) gives a responsive UX:
-/// the user sees content immediately while the LLM polishes it in the
-/// background.
+/// Content is served as raw markdown extracted from the page — no LLM
+/// modifications are applied to preserve the original content faithfully.
 library;
 
 import 'dart:developer' as dev;
@@ -29,11 +26,10 @@ import 'package:webview_flutter/webview_flutter.dart';
 // Service
 // ---------------------------------------------------------------------------
 
-/// Orchestrates the AI Reader Mode pipeline.
+/// Orchestrates the Reader Mode pipeline.
 ///
-/// Flow: URL → extract → LLM enhance → store as Article + ContentBlocks.
-/// Provides both immediate (basic extraction) and enhanced (LLM-processed)
-/// modes for responsive UX — show basic content fast, enhance in background.
+/// Flow: URL → extract → store as Article + ContentBlocks.
+/// Content is served as-is from the page without LLM modifications.
 ///
 /// ```dart
 /// final service = ref.read(readerModeServiceProvider);
@@ -48,7 +44,8 @@ class ReaderModeService {
         _llm = llm;
 
   final KnowledgeStore _store;
-  final LlmService _llm;
+  // ignore: unused_field
+  final LlmService _llm; // Kept for API compat; future knowledge distillation.
 
   // -------------------------------------------------------------------------
   // Public API
@@ -100,6 +97,7 @@ class ReaderModeService {
   ///
   /// Used for lazy-loading article body when only title/description are
   /// available (e.g. stub articles parsed from index pages).
+  /// Also extracts and stores gallery images found on the article page.
   Future<void> fetchContentForArticle(String articleUri, String url) async {
     final extraction = await WebExtractor.fromUrl(url).timeout(
       const Duration(seconds: 15),
@@ -108,16 +106,19 @@ class ReaderModeService {
 
     if (extraction.textContent.isEmpty) return;
 
-    // Create content blocks under the existing article URI.
-    final blockUris = await _createContentBlocks(
+    // Create content blocks from the raw extracted markdown.
+    await _createContentBlocks(
       articleUri,
       extraction.textContent,
       extraction.images,
       extraction.videos,
     );
 
-    // Best-effort LLM enhancement.
-    await _enhanceWithLlm(articleUri, extraction.textContent, blockUris);
+    // Store gallery images if the article page had multiple images.
+    final contentImages = _filterContentImages(extraction.images);
+    if (contentImages.length > 1) {
+      await _store.updateArticleGalleryImages(articleUri, contentImages);
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -154,10 +155,24 @@ class ReaderModeService {
       // Collect URIs of already-cached articles that match extracted links.
       final existingMatchUris = <String>[];
       final linksToProcess = <ExtractedLink>[];
+      final cachedNeedingImages = <_CachedImageFix>[];
       for (final link in articleLinks) {
         final cachedUri = existingUrlToUri[link.url];
         if (cachedUri != null) {
           existingMatchUris.add(cachedUri);
+          // Check if the cached article has a logo-like image that needs fixing.
+          final cached = existingArticles.firstWhere(
+            (a) => a.url == link.url,
+            orElse: () => existingArticles.first,
+          );
+          if (cached.url == link.url &&
+              (cached.image == null ||
+                  WebExtractor.isLikelyLogoUrl(cached.image!) ||
+                  _isGenericOgImage(cached.image!, link.url))) {
+            cachedNeedingImages.add(
+              _CachedImageFix(uri: cachedUri, pageUrl: link.url),
+            );
+          }
         } else {
           linksToProcess.add(link);
         }
@@ -188,12 +203,19 @@ class ReaderModeService {
         }
       }
 
+      // Re-enrich cached articles that have logo-like or missing images.
+      if (cachedNeedingImages.isNotEmpty) {
+        _fixCachedImages(cachedNeedingImages);
+      }
+
       // Return multi-article result with both new and cached article URIs.
       final allUris = [...createdUris, ...existingMatchUris];
       if (allUris.isNotEmpty) {
         return ReaderModeResult(
           articleUris: allUris,
           isMultiArticle: true,
+          nextPageUrl: extraction.nextPageUrl,
+          navigationLinks: extraction.navigationLinks,
         );
       }
       // Fall through to single-article path if no links were stored.
@@ -204,20 +226,19 @@ class ReaderModeService {
     // Step 1 — Store basic article immediately.
     final articleUri = await _storeArticle(extraction, feedSource: feedSource);
 
-    // Step 2 — Create content blocks from the extracted markdown.
-    final blockUris = await _createContentBlocks(
+    // Step 2 — Create content blocks from the raw extracted markdown.
+    await _createContentBlocks(
       articleUri,
       extraction.textContent,
       extraction.images,
       extraction.videos,
     );
 
-    // Step 3 — LLM enhancement (best-effort, graceful degradation).
-    await _enhanceWithLlm(articleUri, extraction.textContent, blockUris);
-
     return ReaderModeResult(
       articleUris: [articleUri],
       isMultiArticle: false,
+      nextPageUrl: extraction.nextPageUrl,
+      navigationLinks: extraction.navigationLinks,
     );
   }
 
@@ -283,107 +304,60 @@ class ReaderModeService {
   }
 
   // -------------------------------------------------------------------------
-  // Step 3 — LLM Enhancement
+  // Image Filtering
   // -------------------------------------------------------------------------
 
-  /// System prompt for the content-enhancement LLM call.
-  static const _enhanceSystemPrompt =
-      'You are a content processor. Clean up and improve the following web '
-      'page content. Fix formatting, remove navigation/ad remnants, improve '
-      'readability. Return the cleaned content as markdown.';
-
-  /// Attempts to enhance article content using the LLM.
+  /// Filters a list of image URLs to keep only content-relevant images.
   ///
-  /// On success, replaces the existing content blocks with blocks derived
-  /// from the LLM-enhanced text. On failure the basic extraction is kept
-  /// (graceful degradation).
-  Future<void> _enhanceWithLlm(
-    String articleUri,
-    String rawText,
-    List<String> existingBlockUris,
-  ) async {
-    if (rawText.trim().isEmpty) return;
-
-    // Skip LLM for image-only or navigation-heavy pages (e.g. Reddit
-    // image posts where the extracted text is only sidebar/nav elements).
-    if (_isBoilerplateOnly(rawText)) {
-      dev.log(
-        'Skipping LLM: content is mostly navigation/boilerplate',
-        name: 'ReaderModeService',
-      );
-      return;
-    }
-
-    try {
-      final response = await _llm.complete(
-        LlmRequest(
-          systemPrompt: _enhanceSystemPrompt,
-          messages: [LlmMessage.user(rawText)],
-          temperature: 0.3,
-          maxTokens: 4096,
-        ),
-      );
-
-      final enhanced = switch (response) {
-        TextLlmResponse(:final content) => content,
-        ToolCallsLlmResponse(:final content) => content,
-        ErrorLlmResponse(:final message) => throw Exception(message),
-      };
-
-      if (enhanced == null || enhanced.trim().isEmpty) return;
-
-      // Delete old blocks.
-      for (final uri in existingBlockUris) {
-        await _store.deleteContentBlock(uri);
+  /// Removes logos, tracking pixels, avatars, thumbnails, and other
+  /// non-content images. Also deduplicates by normalized URL.
+  static List<String> _filterContentImages(List<String> images) {
+    final seen = <String>{};
+    return images.where((url) {
+      if (WebExtractor.isLikelyLogoUrl(url)) return false;
+      final lower = url.toLowerCase();
+      if (lower.contains('pixel') || lower.contains('spacer')) return false;
+      if (lower.contains('tracking') || lower.contains('beacon')) return false;
+      if (lower.contains('1x1') || lower.contains('1.gif')) return false;
+      if (lower.startsWith('data:')) return false;
+      // Filter out avatar/author images
+      if (lower.contains('avatar') || lower.contains('headshot')) return false;
+      if (lower.contains('author') && lower.contains('photo')) return false;
+      // Filter out social/share icons
+      if (lower.contains('social') && lower.contains('icon')) return false;
+      if (lower.contains('share-') || lower.contains('share_')) return false;
+      // Filter out ad images
+      if (lower.contains('/ad/') || lower.contains('/ads/')) return false;
+      if (lower.contains('doubleclick') || lower.contains('googlesyndication')) {
+        return false;
       }
-
-      // Re-create blocks from enhanced content (reuse original media lists).
-      // We don't have a separate images/videos list from the LLM output so
-      // we pass empty lists — the LLM output is purely textual.
-      await _createContentBlocks(articleUri, enhanced, const [], const []);
-    } on Object catch (e, st) {
-      // Graceful degradation — keep the basic extraction.
-      dev.log(
-        'LLM enhancement failed, keeping basic extraction',
-        name: 'ReaderModeService',
-        error: e,
-        stackTrace: st,
-      );
-    }
+      // Filter out promotional/banner/show images
+      if (_promoPathPattern.hasMatch(lower)) return false;
+      // Filter out tiny images (likely icons/buttons, dimension in URL)
+      if (_tinyImagePattern.hasMatch(lower)) return false;
+      // Dedup by normalized URL (strip query params for comparison)
+      final normalized =
+          Uri.tryParse(url)?.replace(query: '')?.toString() ?? url;
+      if (seen.contains(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    }).toList();
   }
 
-  // -------------------------------------------------------------------------
-  // Boilerplate Detection
-  // -------------------------------------------------------------------------
+  /// Matches promotional, banner, sidebar, and non-article image paths.
+  static final _promoPathPattern = RegExp(
+    r'[/\-_](promo|banner|promoted|shows?|podcasts?|highlight|'
+    r'featured|sidebar|widget|related|recommend|trending|popular|'
+    r'footer|header-bg|masthead|hero-banner|placeholder|thumbnail-default|'
+    r'newsletter|sponsor|partner|campaign)[/\-_.]',
+    caseSensitive: false,
+  );
 
-  /// Navigation/boilerplate patterns commonly seen on Reddit, forums, etc.
-  static final _navPatterns = [
-    RegExp(r'\bgo to\s+\w+', caseSensitive: false),
-    RegExp(r'^r/\w+$', multiLine: true),
-    RegExp(r'\bjoin\b.*\bcommunity\b', caseSensitive: false),
-    RegExp(r'\bcreate\s+post\b', caseSensitive: false),
-    RegExp(r'\bget\s+app\b', caseSensitive: false),
-    RegExp(r'\blog\s*in\b', caseSensitive: false),
-    RegExp(r'\bsign\s*up\b', caseSensitive: false),
-    RegExp(r'\bupvote\b|\bdownvote\b', caseSensitive: false),
-  ];
-
-  /// Returns `true` when [text] is too short to be real article content or
-  /// is dominated by navigation / boilerplate patterns.
-  bool _isBoilerplateOnly(String text) {
-    final words =
-        text.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
-    // Fewer than 30 words is almost never a real article.
-    if (words.length < 30) return true;
-
-    final lines = text.split('\n').where((l) => l.trim().isNotEmpty).length;
-    final navHits =
-        _navPatterns.expand((p) => p.allMatches(text)).length;
-    // If more than a third of non-empty lines match nav patterns, skip.
-    if (lines > 0 && navHits > lines / 3) return true;
-
-    return false;
-  }
+  /// Matches tiny images likely to be icons (e.g. 16x16, 24x24, 32x32 in URL).
+  static final _tinyImagePattern = RegExp(
+    r'[/\-_](1[0-6]|2[0-4]|32)x\1[/\-_.]',
+    caseSensitive: false,
+  );
 
   // -------------------------------------------------------------------------
   // Markdown Parsing
@@ -525,6 +499,38 @@ class ReaderModeService {
     // -- Strip trailing boilerplate blocks (CTAs, follow prompts, etc.) ------
     _stripTrailingBoilerplate(blocks);
 
+    // -- Remove separator-only, whitespace-only, and boilerplate text blocks --
+    blocks.removeWhere((b) {
+      if (b.type != BlockType.text) return false;
+      final trimmed = b.content?.trim() ?? '';
+      if (trimmed.isEmpty) return true;
+      // Remove blocks that are only punctuation/separator characters
+      // (includes middle dot ·, bullet •, em-dash —, en-dash –, etc.)
+      if (RegExp(r'^[\s\u00B7\u2022\u2013\u2014\u2027\-|/\\,;:.*]+$')
+          .hasMatch(trimmed)) {
+        return true;
+      }
+      // Remove very short single-word blocks that look like UI labels
+      // (e.g. "Size", "Small", "Standard", "Large", "Wide", "Links")
+      if (trimmed.length <= 15 && !trimmed.contains(' ') &&
+          RegExp(r'^[A-Z][a-z]+\s*\*?$').hasMatch(trimmed)) {
+        return true;
+      }
+      // Remove very short blocks that look like metadata fragments
+      if (trimmed.length < 4 &&
+          !RegExp(r'[a-zA-Z0-9]').hasMatch(trimmed)) {
+        return true;
+      }
+      // Remove image credit / author bio lines
+      if (_isImageCreditOrBio(trimmed)) return true;
+      // Remove paywall/subscription prompts
+      if (_isPaywallPrompt(trimmed)) return true;
+      return false;
+    });
+
+    // -- Remove consecutive duplicate text blocks -----------------------------
+    _removeDuplicateBlocks(blocks);
+
     return blocks;
   }
 
@@ -578,6 +584,82 @@ class ReaderModeService {
     return _boilerplatePatterns.any((p) => p.hasMatch(trimmed));
   }
 
+  /// Returns true if a text block is an image credit or author bio line.
+  ///
+  /// Common patterns: "Image: Reuters", "Photo by John Doe",
+  /// "Andrew J. Hawkins is a transportation editor with 10+ years..."
+  static bool _isImageCreditOrBio(String text) {
+    final trimmed = text.trim();
+    // "Image: ..." or "Photo: ..." or "Photo by ..."
+    if (RegExp(r'^(Image|Photo|Illustration|Credit|Source)\s*[:by]',
+            caseSensitive: false)
+        .hasMatch(trimmed)) {
+      return true;
+    }
+    // Author bio: "X is a/an Y editor/reporter/writer/journalist..."
+    if (RegExp(
+            r'\b(is\s+(a|an|the)\s+\w+\s+(editor|reporter|writer|journalist|correspondent))',
+            caseSensitive: false)
+        .hasMatch(trimmed)) {
+      return true;
+    }
+    // "Reporting by ..." or "Written by ..."
+    if (RegExp(r'^(Reporting|Written|Edited|Photography)\s+by\b',
+            caseSensitive: false)
+        .hasMatch(trimmed)) {
+      return true;
+    }
+    return false;
+  }
+
+  /// Returns true if a text block is a paywall or subscription prompt,
+  /// or common site-specific noise (media caption placeholders, share
+  /// buttons, standalone timestamps, etc.).
+  static bool _isPaywallPrompt(String text) {
+    final lower = text.trim().toLowerCase();
+    if (lower == 'subscribers only' || lower == 'premium content') return true;
+    if (lower == 'learn more' || lower == 'sign in') return true;
+    if (lower == 'story text') return true;
+    if (lower == 'share' || lower == 'copy link' || lower == 'save' ||
+        lower == 'bookmark' || lower == 'print') {
+      return true;
+    }
+    // BBC "Media caption," placeholder
+    if (RegExp(r'^media\s+caption\s*[,.]?\s*$').hasMatch(lower)) return true;
+    // "PublishedX hours ago" with missing space
+    if (RegExp(r'^published\d').hasMatch(lower)) return true;
+    // Standalone time: "6 hours ago"
+    if (RegExp(r'^\d+\s+(hours?|minutes?|days?|mins?)\s+ago\s*$')
+        .hasMatch(lower)) {
+      return true;
+    }
+    if (RegExp(r'(subscribe|sign\s+up|log\s*in)\s+(to|for)\s+(read|access|view|continue)',
+            caseSensitive: false)
+        .hasMatch(text)) {
+      return true;
+    }
+    if (RegExp(r'(already\s+a\s+(subscriber|member)|create\s+an?\s+account)',
+            caseSensitive: false)
+        .hasMatch(text)) {
+      return true;
+    }
+    return false;
+  }
+
+  /// Removes consecutive duplicate text blocks (same normalized content).
+  static void _removeDuplicateBlocks(List<_ParsedBlock> blocks) {
+    if (blocks.length < 2) return;
+    final seen = <String>{};
+    blocks.removeWhere((b) {
+      if (b.type != BlockType.text || b.content == null) return false;
+      final norm = b.content!.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+      if (norm.length < 10) return false; // don't dedup very short blocks
+      if (seen.contains(norm)) return true;
+      seen.add(norm);
+      return false;
+    });
+  }
+
   /// Matches `# `, `## `, or `### ` heading lines.
   static final _headingPattern = RegExp(r'^(#{1,3})\s+(.+)$');
 
@@ -626,7 +708,9 @@ class ReaderModeService {
     for (var i = 0; i < links.length; i += 10) {
       final batch = links.skip(i).take(10).toList();
       final futures = batch.map((link) async {
-        if (link.image != null) return link;
+        if (link.image != null && !WebExtractor.isLikelyLogoUrl(link.image!)) {
+          return link;
+        }
         try {
           final response = await http
               .get(
@@ -640,7 +724,7 @@ class ReaderModeService {
 
           final html = response.body;
           // Extract og:image and og:title for better quality.
-          final ogImage = _extractMetaImage(html);
+          final ogImage = extractMetaImage(html);
           final ogTitle = _extractMetaTitle(html);
           final ogDesc = _extractMetaDescription(html);
 
@@ -687,7 +771,9 @@ class ReaderModeService {
   }
 
   /// Extracts `og:image` or `twitter:image` from HTML meta tags.
-  static String? _extractMetaImage(String html) {
+  ///
+  /// Public so feed enrichment can reuse this without duplicating logic.
+  static String? extractMetaImage(String html) {
     for (final prop in ['og:image', 'twitter:image', 'twitter:image:src']) {
       // property="og:image" content="..."
       final m1 = RegExp(
@@ -756,6 +842,75 @@ class ReaderModeService {
           return code != null ? String.fromCharCode(code) : m.group(0)!;
         });
   }
+
+  /// Checks if an image URL is a generic site-wide og:image rather than
+  /// an article-specific hero image.
+  static bool _isGenericOgImage(String imageUrl, String articleUrl) {
+    final imageUri = Uri.tryParse(imageUrl);
+    final articleUri = Uri.tryParse(articleUrl);
+    if (imageUri == null || articleUri == null) return false;
+
+    // If the image path is very short (e.g. /logo.png, /og.png), it's generic.
+    final segments = imageUri.pathSegments
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (segments.length <= 2) return true;
+
+    // Check for common generic image filenames.
+    final filename = segments.last.toLowerCase();
+    const genericNames = [
+      'og-image',
+      'og_image',
+      'social-share',
+      'social_share',
+      'default-og',
+      'default_og',
+      'share-image',
+      'share_image',
+      'site-image',
+      'featured-default',
+    ];
+    return genericNames.any(filename.contains);
+  }
+
+  /// Fixes images for cached articles that have logo/generic images.
+  ///
+  /// Runs in the background (fire-and-forget) so it doesn't block UI.
+  void _fixCachedImages(List<_CachedImageFix> items) {
+    Future<void> run() async {
+      for (var i = 0; i < items.length; i += 5) {
+        final batch = items.skip(i).take(5).toList();
+        final futures = batch.map((item) async {
+          try {
+            final response = await http
+                .get(
+                  Uri.parse(item.pageUrl),
+                  headers: {
+                    'User-Agent': 'Mozilla/5.0 (compatible; Kabuk/1.0)',
+                  },
+                )
+                .timeout(const Duration(seconds: 5));
+            if (response.statusCode != 200) return;
+
+            final ogImage = extractMetaImage(response.body);
+            if (ogImage != null && ogImage.isNotEmpty) {
+              final resolved = WebExtractor.resolveUrl(item.pageUrl, ogImage);
+              if (resolved != null &&
+                  !WebExtractor.isLikelyLogoUrl(resolved)) {
+                await _store.updateArticleImage(item.uri, resolved);
+              }
+            }
+          } on Object {
+            // Best-effort — failures are silently ignored.
+          }
+        });
+        await Future.wait(futures);
+      }
+    }
+
+    // Fire and forget.
+    run();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -773,6 +928,8 @@ class ReaderModeResult {
   const ReaderModeResult({
     required this.articleUris,
     required this.isMultiArticle,
+    this.nextPageUrl,
+    this.navigationLinks = const [],
   });
 
   /// URIs of the articles created in the knowledge store.
@@ -781,8 +938,29 @@ class ReaderModeResult {
   /// Whether multiple articles were discovered from an index/listing page.
   final bool isMultiArticle;
 
+  /// URL of the next page, if pagination was detected.
+  final String? nextPageUrl;
+
+  /// Navigation links for site navigation (categories, sections).
+  final List<ExtractedLink> navigationLinks;
+
   /// Convenience getter for the first (or only) article URI.
   String get primaryArticleUri => articleUris.first;
+}
+
+// ---------------------------------------------------------------------------
+// Helper for cached image fixes
+// ---------------------------------------------------------------------------
+
+/// A cached article whose image needs to be re-fetched.
+class _CachedImageFix {
+  const _CachedImageFix({required this.uri, required this.pageUrl});
+
+  /// URI of the article in the knowledge store.
+  final String uri;
+
+  /// URL of the article's web page to fetch og:image from.
+  final String pageUrl;
 }
 
 // ---------------------------------------------------------------------------
