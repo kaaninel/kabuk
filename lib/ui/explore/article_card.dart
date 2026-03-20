@@ -77,7 +77,8 @@ class ArticleCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final hasImage = FeedImage.isValidImageUrl(article.image);
+    final hasImage = FeedImage.isValidImageUrl(article.image) &&
+        filterGalleryImages([article.image!]).isNotEmpty;
     final isVideo = _isVideoContent(article);
     final isGif = _isGif(article);
     final filteredGallery = filterGalleryImages(article.galleryImages);
@@ -263,8 +264,17 @@ class ArticleCard extends ConsumerWidget {
     final cleaned = _cleanDescription(desc);
     if (cleaned.isEmpty) return false;
     if (RegExp(r'^https?://\S+$').hasMatch(cleaned)) return false;
+    // Hide description that duplicates the title.
+    final title = article.name?.trim() ?? '';
+    if (title.isNotEmpty && _normForCompare(cleaned) == _normForCompare(title)) {
+      return false;
+    }
     return true;
   }
+
+  /// Normalize text for duplicate comparison — lowercase, strip punctuation.
+  String _normForCompare(String s) =>
+      s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
 
   String _cleanDescription(String desc) {
     return desc

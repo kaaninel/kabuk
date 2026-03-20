@@ -126,7 +126,8 @@ final _displayPromoPattern = RegExp(
   r'[/\-_](promo|banner|promoted|shows?|podcasts?|highlight|'
   r'featured|sidebar|widget|related|recommend|trending|popular|'
   r'footer|header-bg|masthead|hero-banner|placeholder|thumbnail-default|'
-  r'newsletter|sponsor|partner|campaign)[/\-_.]',
+  r'newsletter|sponsor|partner|campaign|logo|brand|badge|'
+  r'cta|signup|subscribe|advert|commercial)[/\-_.]',
   caseSensitive: false,
 );
 

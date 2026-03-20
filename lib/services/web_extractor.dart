@@ -668,7 +668,10 @@ class WebExtractor {
   static final _promoTitlePattern = RegExp(
     r'(?:^subscribe\s+to\b|^sign\s+up\b|^join\s+(our|the)\b|'
     r'^follow\s+us\b|^download\s+(our|the)\b|^get\s+the\s+app\b|'
-    r'^create\s+(an?\s+)?account\b|^start\s+your\b|^try\s+it\b)',
+    r'^create\s+(an?\s+)?account\b|^start\s+your\b|^try\s+it\b|'
+    r'benefits\s+of\s+a(n?\s+)?\w+\s+sub|^discover\s+all\s+the\b|'
+    r'^become\s+a\s+(member|subscriber)\b|^why\s+subscribe\b|'
+    r'^unlock\s+(full|premium|exclusive)\b|^go\s+ad[\s-]?free\b)',
     caseSensitive: false,
   );
 

@@ -553,6 +553,11 @@ class ReaderModeService {
     RegExp(r'read\s+more\s+at\s+', caseSensitive: false),
     RegExp(r'most\s+popular$', caseSensitive: false),
     RegExp(r'^related\s+(stories|articles|posts)$', caseSensitive: false),
+    RegExp(r'discover\s+all\s+the\s+benefits', caseSensitive: false),
+    RegExp(r'benefits\s+of\s+a(n)?\s+\w+\s+subscription',
+        caseSensitive: false),
+    RegExp(r'^become\s+a\s+(member|subscriber)', caseSensitive: false),
+    RegExp(r'^(already\s+a\s+(subscriber|member))', caseSensitive: false),
   ];
 
   /// Removes trailing boilerplate blocks (from the end backwards) and any
