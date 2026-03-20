@@ -262,26 +262,157 @@ class SemanticExtractorService {
     final entities = <SemanticEntity>[];
 
     for (final ld in jsonLdList) {
-      // Handle @graph arrays (common in WordPress, news sites)
-      final graph = ld['@graph'];
-      if (graph is List) {
-        for (final item in graph) {
-          if (item is Map<String, dynamic>) {
-            final entity = _jsonLdItemToEntity(item);
-            if (entity != null) {
-              _extractRelationships(item, entity, entities);
-            }
-          }
-        }
-      } else {
-        final entity = _jsonLdItemToEntity(ld);
-        if (entity != null) {
-          _extractRelationships(ld, entity, entities);
-        }
-      }
+      _extractJsonLdRecursive(ld, entities);
     }
 
     return entities;
+  }
+
+  /// Recursively extracts entities from a JSON-LD node.
+  ///
+  /// Handles `@graph` arrays, container types (`WebSite`, `WebPage`,
+  /// `BreadcrumbList` → `ListItem`), and deeply nested typed objects.
+  void _extractJsonLdRecursive(
+    Map<String, dynamic> node,
+    List<SemanticEntity> entities, {
+    int depth = 0,
+  }) {
+    // Guard against excessively deep nesting
+    if (depth > 10) return;
+
+    // Handle @graph arrays — iterate ALL items
+    final graph = node['@graph'];
+    if (graph is List) {
+      for (final item in graph) {
+        if (item is Map<String, dynamic>) {
+          _extractJsonLdRecursive(item, entities, depth: depth + 1);
+        }
+      }
+      // If the node itself has a @type beyond the graph, also process it
+      if (node['@type'] == null) return;
+    }
+
+    final rawType = node['@type'];
+    String? type;
+    if (rawType is List) {
+      type = rawType.firstOrNull?.toString();
+    } else if (rawType is String) {
+      type = rawType;
+    }
+
+    // Handle container types that hold sub-entities
+    if (type == 'BreadcrumbList') {
+      _extractBreadcrumbEntities(node, entities, depth);
+      return;
+    }
+
+    if (type == 'WebSite' || type == 'WebPage' || type == 'CollectionPage' ||
+        type == 'SearchResultsPage' || type == 'ItemPage') {
+      // Extract the container itself, then recurse into sub-entities
+      final entity = _jsonLdItemToEntity(node);
+      if (entity != null) {
+        _extractRelationships(node, entity, entities);
+      }
+      // Recurse into nested objects that may hold additional entities
+      _extractNestedTypedObjects(node, entities, depth);
+      return;
+    }
+
+    // Standard entity extraction
+    final entity = _jsonLdItemToEntity(node);
+    if (entity != null) {
+      _extractRelationships(node, entity, entities);
+    }
+
+    // Still recurse into any nested typed objects not covered by
+    // _extractRelationships (which only handles _relationshipProperties)
+    _extractNestedTypedObjects(node, entities, depth);
+  }
+
+  /// Extracts entities from `BreadcrumbList` → `ListItem` chains.
+  ///
+  /// Each `ListItem` with an `item` property that has a `@type` is extracted
+  /// as a separate entity.
+  void _extractBreadcrumbEntities(
+    Map<String, dynamic> node,
+    List<SemanticEntity> entities,
+    int depth,
+  ) {
+    final itemListElement = node['itemListElement'];
+    if (itemListElement is! List) return;
+
+    for (final listItem in itemListElement) {
+      if (listItem is! Map<String, dynamic>) continue;
+
+      // ListItem's "item" can be a typed entity
+      final item = listItem['item'];
+      if (item is Map<String, dynamic> && item['@type'] != null) {
+        _extractJsonLdRecursive(item, entities, depth: depth + 1);
+      } else if (item is Map<String, dynamic> && item['name'] != null) {
+        // Some breadcrumbs have name/url but no @type — create a WebPage
+        final name = item['name']?.toString();
+        final url = item['@id']?.toString() ?? item['url']?.toString();
+        if (name != null && name.isNotEmpty) {
+          final candidate = SemanticEntity(
+            type: 'WebPage',
+            properties: {
+              'name': name,
+              if (url != null) 'url': url,
+            },
+            confidence: 0.6,
+          );
+          if (!_hasSimilarEntity(entities, candidate)) {
+            entities.add(candidate);
+          }
+        }
+      }
+
+      // Also check for nested "name" in the ListItem itself
+      if (listItem['name'] != null && item == null) {
+        final name = listItem['name'].toString();
+        final url = listItem['url']?.toString() ??
+            listItem['@id']?.toString();
+        if (name.isNotEmpty) {
+          final candidate = SemanticEntity(
+            type: 'WebPage',
+            properties: {
+              'name': name,
+              if (url != null) 'url': url,
+            },
+            confidence: 0.6,
+          );
+          if (!_hasSimilarEntity(entities, candidate)) {
+            entities.add(candidate);
+          }
+        }
+      }
+    }
+  }
+
+  /// Recursively scans all values of [node] for nested objects with `@type`
+  /// that aren't already handled by [_extractRelationships].
+  void _extractNestedTypedObjects(
+    Map<String, dynamic> node,
+    List<SemanticEntity> entities,
+    int depth,
+  ) {
+    for (final entry in node.entries) {
+      // Skip keys already handled by _extractRelationships
+      if (_relationshipProperties.containsKey(entry.key)) continue;
+      // Skip JSON-LD structural keys
+      if (entry.key.startsWith('@')) continue;
+
+      final value = entry.value;
+      if (value is Map<String, dynamic> && value['@type'] != null) {
+        _extractJsonLdRecursive(value, entities, depth: depth + 1);
+      } else if (value is List) {
+        for (final elem in value) {
+          if (elem is Map<String, dynamic> && elem['@type'] != null) {
+            _extractJsonLdRecursive(elem, entities, depth: depth + 1);
+          }
+        }
+      }
+    }
   }
 
   /// Extracts nested objects from [item] as separate entities, adds
@@ -552,6 +683,7 @@ class SemanticExtractorService {
   List<SemanticEntity> _extractFromOpenGraph(Map<String, String> og, String url) {
     if (og.isEmpty) return const [];
 
+    final results = <SemanticEntity>[];
     final properties = <String, dynamic>{};
     final ogType = og['og:type'] ?? 'website';
 
@@ -577,6 +709,32 @@ class SemanticExtractorService {
       properties['priceCurrency'] = og['product:price:currency'];
     }
 
+    // article:section → category
+    if (og['article:section'] != null) {
+      properties['articleSection'] = og['article:section'];
+    }
+
+    // article:tag → keywords
+    final tags = <String>[];
+    if (og['article:tag'] != null) {
+      tags.add(og['article:tag']!);
+    }
+    // Handle multiple article:tag values (some pages use indexed keys)
+    for (var i = 0; i < 20; i++) {
+      final tagKey = 'article:tag:$i';
+      if (og[tagKey] != null) {
+        tags.add(og[tagKey]!);
+      }
+    }
+    if (tags.isNotEmpty) {
+      properties['keywords'] = tags;
+    }
+
+    // og:locale → language
+    if (og['og:locale'] != null) {
+      properties['inLanguage'] = og['og:locale'];
+    }
+
     if (properties.isEmpty) return const [];
 
     // Map og:type to Schema.org type
@@ -594,11 +752,42 @@ class SemanticExtractorService {
         schemaType = 'VideoObject';
       case 'book':
         schemaType = 'Book';
+      case 'place':
+        schemaType = 'Place';
       default:
         schemaType = 'WebPage';
     }
 
     properties['url'] ??= url;
+
+    // Extract place coordinates from OG place tags
+    final placeLat = og['place:location:latitude'];
+    final placeLng = og['place:location:longitude'];
+    if (placeLat != null && placeLng != null) {
+      final lat = double.tryParse(placeLat);
+      final lng = double.tryParse(placeLng);
+      if (lat != null && lng != null) {
+        if (schemaType == 'Place') {
+          // Add coords directly to the main entity
+          properties['latitude'] = lat;
+          properties['longitude'] = lng;
+        } else {
+          // Create a separate Place entity
+          final placeProps = <String, dynamic>{
+            'latitude': lat,
+            'longitude': lng,
+          };
+          if (og['og:title'] != null) {
+            placeProps['name'] = og['og:title'];
+          }
+          results.add(SemanticEntity(
+            type: 'Place',
+            properties: placeProps,
+            confidence: 0.75,
+          ));
+        }
+      }
+    }
 
     // If article:author looks like a URL, create a Person entity
     final authorValue = og['article:author'];
@@ -621,23 +810,27 @@ class SemanticExtractorService {
         confidence: 0.7,
       );
 
-      return [
+      results.insert(
+        0,
         SemanticEntity(
           type: schemaType,
           properties: properties,
           confidence: 0.8,
         ),
-        authorEntity,
-      ];
+      );
+      results.add(authorEntity);
+      return results;
     }
 
-    return [
+    results.insert(
+      0,
       SemanticEntity(
         type: schemaType,
         properties: properties,
         confidence: 0.8,
       ),
-    ];
+    );
+    return results;
   }
 
   // ---------------------------------------------------------------------------
@@ -650,39 +843,87 @@ class SemanticExtractorService {
     final entities = <SemanticEntity>[];
 
     for (final item in microdata) {
-      final typeUrl = item['@type']?.toString() ?? '';
-      final props = item['properties'] as Map<String, dynamic>? ?? {};
+      _extractMicrodataRecursive(item, entities);
+    }
 
-      if (props.isEmpty) continue;
+    return entities;
+  }
 
-      // Extract type name from full Schema.org URL
-      String type = typeUrl.split('/').last;
-      if (type.isEmpty) type = 'Thing';
+  /// Recursively extracts entities from a microdata item and its nested
+  /// `itemscope` children.
+  void _extractMicrodataRecursive(
+    Map<String, dynamic> item,
+    List<SemanticEntity> entities, {
+    int depth = 0,
+  }) {
+    if (depth > 10) return;
 
-      final properties = <String, dynamic>{};
-      final relationships = <EntityRelationship>[];
-      final nestedEntities = <SemanticEntity>[];
+    final typeUrl = item['@type']?.toString() ?? '';
+    final props = item['properties'] as Map<String, dynamic>? ?? {};
 
-      for (final entry in props.entries) {
-        final value = entry.value;
+    if (props.isEmpty) return;
 
-        // Check for nested itemscope objects (maps with @type).
-        if (value is Map<String, dynamic> && value['@type'] != null) {
-          final nestedType =
-              (value['@type']?.toString() ?? '').split('/').last;
-          if (nestedType.isNotEmpty) {
-            final nestedProps = <String, dynamic>{};
-            final innerProps =
-                value['properties'] as Map<String, dynamic>? ?? {};
-            for (final np in innerProps.entries) {
-              final nv = np.value;
-              if (nv is List) {
-                nestedProps[np.key] = nv.length == 1 ? nv.first : nv;
-              } else {
-                nestedProps[np.key] = nv;
+    // Extract type name from full Schema.org URL
+    String type = typeUrl.split('/').last;
+    if (type.isEmpty) type = 'Thing';
+
+    final properties = <String, dynamic>{};
+    final relationships = <EntityRelationship>[];
+    final nestedEntities = <SemanticEntity>[];
+
+    for (final entry in props.entries) {
+      final value = entry.value;
+
+      // Check for nested itemscope objects (maps with @type)
+      if (value is Map<String, dynamic> && value['@type'] != null) {
+        final nested = _extractMicrodataItem(value);
+        if (nested != null && !_hasSimilarEntity(entities, nested)) {
+          final predicate = _relationshipProperties[entry.key];
+          if (predicate != null) {
+            final targetIndex =
+                entities.length + 1 + nestedEntities.length;
+            relationships.add(EntityRelationship(
+              predicate: predicate,
+              targetIndex: targetIndex,
+            ));
+          }
+          nestedEntities.add(nested);
+
+          // Recurse into the nested item for deeper nesting
+          final nestedProps =
+              value['properties'] as Map<String, dynamic>? ?? {};
+          for (final np in nestedProps.entries) {
+            if (np.value is Map<String, dynamic> &&
+                (np.value as Map)['@type'] != null) {
+              _extractMicrodataRecursive(
+                np.value as Map<String, dynamic>,
+                entities,
+                depth: depth + 1,
+              );
+            } else if (np.value is List) {
+              for (final listItem in np.value as List) {
+                if (listItem is Map<String, dynamic> &&
+                    listItem['@type'] != null) {
+                  _extractMicrodataRecursive(
+                    listItem,
+                    entities,
+                    depth: depth + 1,
+                  );
+                }
               }
             }
-            if (nestedProps.isNotEmpty) {
+          }
+          continue;
+        }
+      }
+
+      // Handle lists that may contain nested itemscope objects
+      if (value is List) {
+        var hasNested = false;
+        for (final elem in value) {
+          if (elem is Map<String, dynamic> && elem['@type'] != null) {
+            final nested = _extractMicrodataItem(elem);
+            if (nested != null && !_hasSimilarEntity(entities, nested)) {
               final predicate = _relationshipProperties[entry.key];
               if (predicate != null) {
                 final targetIndex =
@@ -692,35 +933,77 @@ class SemanticExtractorService {
                   targetIndex: targetIndex,
                 ));
               }
-              nestedEntities.add(SemanticEntity(
-                type: nestedType,
-                properties: nestedProps,
-                confidence: 0.85,
-              ));
-              continue; // Don't flatten the nested object into properties
+              nestedEntities.add(nested);
+              hasNested = true;
+
+              // Recurse deeper
+              _extractMicrodataRecursive(
+                elem,
+                entities,
+                depth: depth + 1,
+              );
             }
           }
         }
+        if (hasNested) continue;
 
-        if (value is List) {
-          properties[entry.key] = value.length == 1 ? value.first : value;
-        } else {
-          properties[entry.key] = value;
-        }
-      }
-
-      if (properties.isNotEmpty) {
-        entities.add(SemanticEntity(
-          type: type,
-          properties: properties,
-          relationships: relationships,
-          confidence: 0.85,
-        ));
-        entities.addAll(nestedEntities);
+        properties[entry.key] = value.length == 1 ? value.first : value;
+      } else {
+        properties[entry.key] = value;
       }
     }
 
-    return entities;
+    if (properties.isNotEmpty) {
+      final candidate = SemanticEntity(
+        type: type,
+        properties: properties,
+        relationships: relationships,
+        confidence: 0.85,
+      );
+      if (!_hasSimilarEntity(entities, candidate)) {
+        entities.add(candidate);
+        entities.addAll(nestedEntities);
+      }
+    }
+  }
+
+  /// Converts a single microdata item to a [SemanticEntity] without recursion.
+  SemanticEntity? _extractMicrodataItem(Map<String, dynamic> item) {
+    final typeUrl = item['@type']?.toString() ?? '';
+    final props = item['properties'] as Map<String, dynamic>? ?? {};
+
+    String type = typeUrl.split('/').last;
+    if (type.isEmpty) type = 'Thing';
+
+    final properties = <String, dynamic>{};
+    for (final entry in props.entries) {
+      final value = entry.value;
+      // Flatten nested typed objects to just their name
+      if (value is Map<String, dynamic> && value['@type'] != null) {
+        final innerProps =
+            value['properties'] as Map<String, dynamic>? ?? {};
+        final name = innerProps['name'];
+        if (name is List && name.isNotEmpty) {
+          properties[entry.key] = name.first;
+        } else if (name != null) {
+          properties[entry.key] = name;
+        }
+        continue;
+      }
+      if (value is List) {
+        properties[entry.key] = value.length == 1 ? value.first : value;
+      } else {
+        properties[entry.key] = value;
+      }
+    }
+
+    if (properties.isEmpty) return null;
+
+    return SemanticEntity(
+      type: type,
+      properties: properties,
+      confidence: 0.85,
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -741,39 +1024,94 @@ class SemanticExtractorService {
         .map((e) => '${e.type}: ${e.properties['name'] ?? 'unnamed'}')
         .join(', ');
 
-    final prompt = '''Analyze this web page and extract ALL semantic entities. 
-Return ONLY valid JSON — an array of objects.
+    final prompt =
+        '''Analyze this web page content and extract ALL semantic entities. '''
+        '''Be thorough — extract every person, place, organization, and '''
+        '''product mentioned.
 
-URL: ${extraction.url}
-Title: ${extraction.title}
+Page URL: ${extraction.url}
+Page Title: ${extraction.title}
 Author: ${extraction.author ?? 'unknown'}
 Site: ${extraction.siteName ?? 'unknown'}
 Already found: $existingTypes
 
-Page content:
+Content:
 $contentPreview
 
-Extract entities that are NOT already found above. Look for:
-- People (authors, mentioned people, profiles) with name, jobTitle, image, url
-- Organizations with name, url, logo
-- Places/Locations with name, address, latitude, longitude
-- Products with name, price, brand, image, description
-- Events with name, startDate, location
-- Any other meaningful Schema.org typed entities
+Extract entities in this exact JSON format:
+{
+  "entities": [
+    {
+      "type": "Article",
+      "properties": {
+        "name": "article title",
+        "description": "brief summary",
+        "datePublished": "ISO date if mentioned",
+        "keywords": "comma-separated topics"
+      }
+    },
+    {
+      "type": "Person",
+      "properties": {
+        "name": "full name",
+        "jobTitle": "their role/title if mentioned",
+        "worksFor": "company/org name if mentioned",
+        "description": "brief bio if available",
+        "email": "if mentioned",
+        "url": "profile URL if mentioned"
+      },
+      "relationshipToArticle": "author|subject|source|mentioned"
+    },
+    {
+      "type": "Organization",
+      "properties": {
+        "name": "org name",
+        "description": "what they do",
+        "url": "website if mentioned",
+        "address": "location if mentioned"
+      }
+    },
+    {
+      "type": "Place",
+      "properties": {
+        "name": "place name",
+        "addressLocality": "city",
+        "addressRegion": "state/region",
+        "addressCountry": "country",
+        "latitude": 0.0,
+        "longitude": 0.0,
+        "description": "context about the place"
+      }
+    },
+    {
+      "type": "Product",
+      "properties": {
+        "name": "product name",
+        "brand": "manufacturer/company",
+        "description": "what it is",
+        "price": "price if mentioned",
+        "priceCurrency": "USD/EUR/etc"
+      }
+    }
+  ]
+}
 
-For each entity return: {"type": "SchemaType", "properties": {"name": "...", ...}, "confidence": 0.0-1.0}
-
-IMPORTANT:
-- Do NOT include navigation elements, ads, or boilerplate
+Rules:
+- Extract ALL people mentioned by name, including authors, interviewees, '''
+        '''executives, sources
+- Extract ALL locations mentioned (cities, countries, landmarks, addresses)
+- Extract ALL organizations mentioned (companies, agencies, universities, '''
+        '''governments)
+- Extract ALL products/services mentioned with prices if available
+- For places, include latitude/longitude if you know them (for well-known '''
+        '''cities/landmarks)
+- Include "relationshipToArticle" for each entity: author, subject, source, '''
+        '''mentioned, publisher
+- Only include entities actually mentioned in the content, not inferred
 - Do NOT include entities already listed in "Already found"
-- Do NOT extract the main article/page itself (already handled)
-- DO extract people mentioned or who authored the content
-- DO extract organizations, brands, places referenced
+- Do NOT include navigation elements, ads, or boilerplate
 - Keep property values concise (max 200 chars each)
-- confidence should reflect how certain you are (0.5+ only)
-- Return [] if no additional entities found
-
-JSON array:''';
+- Return valid JSON only, no markdown formatting''';
 
     final response = await _llm.complete(LlmRequest(
       messages: [LlmMessage.user(prompt)],
@@ -781,8 +1119,8 @@ JSON array:''';
       maxTokens: 2000,
       systemPrompt:
           'You are a semantic web extraction engine. You analyze web pages '
-          'and extract structured Schema.org entities. Return ONLY valid JSON '
-          'arrays. No markdown, no explanations.',
+          'and extract structured Schema.org entities. Return ONLY valid JSON. '
+          'No markdown, no explanations.',
     ));
 
     // Extract content from the sealed LlmResponse
@@ -796,56 +1134,176 @@ JSON array:''';
     return _parseLlmResponse(content);
   }
 
+  /// Relationship mapping from LLM "relationshipToArticle" values to Schema.org
+  /// predicates.
+  static const _llmRelationshipMap = <String, String>{
+    'author': 'schema:author',
+    'publisher': 'schema:publisher',
+    'subject': 'schema:about',
+    'source': 'schema:mentions',
+    'mentioned': 'schema:mentions',
+  };
+
   List<SemanticEntity> _parseLlmResponse(String response) {
     final entities = <SemanticEntity>[];
 
     try {
-      // Try to find JSON array in the response
       var jsonStr = response.trim();
 
-      // Strip markdown code fences if present
-      if (jsonStr.startsWith('```')) {
-        jsonStr = jsonStr
-            .replaceFirst(RegExp(r'^```\w*\n?'), '')
-            .replaceFirst(RegExp(r'\n?```$'), '');
+      // Strip markdown code fences if present (handle ```json and ```)
+      jsonStr = jsonStr
+          .replaceFirst(RegExp(r'^```\w*\n?'), '')
+          .replaceFirst(RegExp(r'\n?```\s*$'), '');
+
+      // Try to find a JSON object with "entities" array first, then bare array
+      List<dynamic> parsed;
+      final objStart = jsonStr.indexOf('{');
+      final arrStart = jsonStr.indexOf('[');
+
+      if (objStart != -1 &&
+          (arrStart == -1 || objStart < arrStart)) {
+        // Looks like {"entities": [...]} wrapper
+        final objEnd = jsonStr.lastIndexOf('}');
+        if (objEnd > objStart) {
+          var objStr = jsonStr.substring(objStart, objEnd + 1);
+          objStr = _tryRecoverJson(objStr);
+          final obj = jsonDecode(objStr) as Map<String, dynamic>;
+          final entitiesArr = obj['entities'];
+          if (entitiesArr is List) {
+            parsed = entitiesArr;
+          } else {
+            // Fall back to trying as array
+            return _tryParseAsArray(jsonStr);
+          }
+        } else {
+          return _tryParseAsArray(jsonStr);
+        }
+      } else if (arrStart != -1) {
+        return _tryParseAsArray(jsonStr);
+      } else {
+        return [];
       }
 
-      // Find the JSON array
-      final startIdx = jsonStr.indexOf('[');
-      final endIdx = jsonStr.lastIndexOf(']');
-      if (startIdx == -1 || endIdx == -1 || endIdx <= startIdx) return [];
-
-      jsonStr = jsonStr.substring(startIdx, endIdx + 1);
-      final parsed = jsonDecode(jsonStr) as List<dynamic>;
-
-      for (final item in parsed) {
-        if (item is! Map<String, dynamic>) continue;
-
-        final type = item['type']?.toString();
-        final props = item['properties'];
-        final conf = item['confidence'];
-
-        if (type == null || type.isEmpty) continue;
-        if (props is! Map<String, dynamic>) continue;
-
-        final confidence = conf is num ? conf.toDouble().clamp(0.0, 1.0) : 0.7;
-        if (confidence < 0.5) continue; // Skip low confidence
-
-        entities.add(SemanticEntity(
-          type: type,
-          properties: Map<String, dynamic>.from(props),
-          confidence: confidence,
-        ));
-      }
+      _addEntitiesFromParsed(parsed, entities);
     } catch (e) {
       dev.log(
         'Failed to parse LLM semantic response',
         name: 'SemanticExtractor',
         error: e,
       );
+      // Try one more time with aggressive JSON recovery
+      try {
+        final recovered = _tryParseAsArray(response);
+        if (recovered.isNotEmpty) return recovered;
+      } catch (_) {
+        // Give up
+      }
     }
 
     return entities;
+  }
+
+  /// Attempts to parse [jsonStr] as a JSON array of entities.
+  List<SemanticEntity> _tryParseAsArray(String jsonStr) {
+    final entities = <SemanticEntity>[];
+    final startIdx = jsonStr.indexOf('[');
+    final endIdx = jsonStr.lastIndexOf(']');
+    if (startIdx == -1 || endIdx == -1 || endIdx <= startIdx) return [];
+
+    var arrStr = jsonStr.substring(startIdx, endIdx + 1);
+    arrStr = _tryRecoverJson(arrStr);
+    final parsed = jsonDecode(arrStr) as List<dynamic>;
+    _addEntitiesFromParsed(parsed, entities);
+    return entities;
+  }
+
+  /// Attempts basic JSON recovery: remove trailing commas before ] or }.
+  String _tryRecoverJson(String jsonStr) {
+    return jsonStr
+        .replaceAll(RegExp(r',\s*}'), '}')
+        .replaceAll(RegExp(r',\s*]'), ']');
+  }
+
+  /// Converts parsed JSON items into [SemanticEntity] objects, handling
+  /// the "relationshipToArticle" field and building relationships between
+  /// entities.
+  void _addEntitiesFromParsed(
+    List<dynamic> parsed,
+    List<SemanticEntity> entities,
+  ) {
+    // First pass: collect all entities and their relationship declarations.
+    final rawEntities = <(SemanticEntity, String?)>[];
+
+    for (final item in parsed) {
+      if (item is! Map<String, dynamic>) continue;
+
+      final type = item['type']?.toString();
+      final props = item['properties'];
+      final conf = item['confidence'];
+      final rel = item['relationshipToArticle']?.toString();
+
+      if (type == null || type.isEmpty) continue;
+      if (props is! Map<String, dynamic>) continue;
+
+      final confidence = conf is num ? conf.toDouble().clamp(0.0, 1.0) : 0.7;
+      if (confidence < 0.5) continue;
+
+      rawEntities.add((
+        SemanticEntity(
+          type: type,
+          properties: Map<String, dynamic>.from(props),
+          confidence: confidence,
+        ),
+        rel,
+      ));
+    }
+
+    // Second pass: find the primary article entity (index 0 if it exists)
+    // and wire up relationships from the article to related entities.
+    int? articleIndex;
+    for (var i = 0; i < rawEntities.length; i++) {
+      final (entity, _) = rawEntities[i];
+      if (entity.type == 'Article' ||
+          entity.type == 'NewsArticle' ||
+          entity.type == 'BlogPosting') {
+        articleIndex = entities.length + i;
+        break;
+      }
+    }
+
+    final articleRelationships = <EntityRelationship>[];
+
+    for (var i = 0; i < rawEntities.length; i++) {
+      final (entity, relationship) = rawEntities[i];
+
+      if (relationship != null && articleIndex != null) {
+        final predicate = _llmRelationshipMap[relationship];
+        if (predicate != null) {
+          articleRelationships.add(EntityRelationship(
+            predicate: predicate,
+            targetIndex: entities.length + i,
+          ));
+        }
+      }
+
+      entities.add(entity);
+    }
+
+    // Patch the article entity with collected relationships.
+    if (articleIndex != null &&
+        articleRelationships.isNotEmpty &&
+        articleIndex < entities.length) {
+      final article = entities[articleIndex];
+      entities[articleIndex] = SemanticEntity(
+        type: article.type,
+        properties: article.properties,
+        relationships: [
+          ...article.relationships,
+          ...articleRelationships,
+        ],
+        confidence: article.confidence,
+      );
+    }
   }
 
   // ---------------------------------------------------------------------------

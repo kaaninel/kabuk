@@ -965,16 +965,48 @@ class ReaderModeService {
       }
     }
 
-    // -- Append remaining images/videos not referenced in the text ------------
-    // Limit unreferenced images to avoid appending sidebar/promo images
-    // that were extracted from page-wide scrapes.
-    var unreferencedCount = 0;
-    const maxUnreferenced = 4;
+    // -- Distribute remaining images inline instead of appending at end -------
+    // Collect unreferenced images (limit to 4 to avoid sidebar/promo junk).
+    final unreferenced = <String>[];
     for (final url in images) {
-      if (!usedImages.contains(url)) {
-        if (unreferencedCount >= maxUnreferenced) break;
-        blocks.add(_ParsedBlock(type: BlockType.image, mediaUri: url));
-        unreferencedCount++;
+      if (!usedImages.contains(url) && unreferenced.length < 4) {
+        unreferenced.add(url);
+      }
+    }
+    // Insert after text/heading blocks at even intervals so images appear
+    // inline with their surrounding content rather than pinned at the bottom.
+    if (unreferenced.isNotEmpty) {
+      final textBlockIndices = <int>[];
+      for (var j = 0; j < blocks.length; j++) {
+        if (blocks[j].type == BlockType.text ||
+            blocks[j].type == BlockType.heading) {
+          textBlockIndices.add(j);
+        }
+      }
+      if (textBlockIndices.isNotEmpty) {
+        final spacing = textBlockIndices.length > 1
+            ? (textBlockIndices.length / unreferenced.length)
+                .ceil()
+                .clamp(1, textBlockIndices.length)
+            : 1;
+        var insertOffset = 0;
+        for (var imgIdx = 0; imgIdx < unreferenced.length; imgIdx++) {
+          final targetTextIdx =
+              (imgIdx * spacing).clamp(0, textBlockIndices.length - 1);
+          final insertAt =
+              (textBlockIndices[targetTextIdx] + 1 + insertOffset)
+                  .clamp(0, blocks.length);
+          blocks.insert(
+            insertAt,
+            _ParsedBlock(type: BlockType.image, mediaUri: unreferenced[imgIdx]),
+          );
+          insertOffset++;
+        }
+      } else {
+        // Fallback: no text blocks found, append at the end.
+        for (final url in unreferenced) {
+          blocks.add(_ParsedBlock(type: BlockType.image, mediaUri: url));
+        }
       }
     }
     for (final url in videos) {

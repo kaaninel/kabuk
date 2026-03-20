@@ -137,6 +137,13 @@ final _displayTinyPattern = RegExp(
   caseSensitive: false,
 );
 
+/// Matches small square images (≤200px) that are likely profile
+/// photos / avatars based on dimension hints in the URL.
+final _displaySmallSquarePattern = RegExp(
+  r'[/\-_=](([1-9]\d?|1\d{2}|200)x\2)[/\-_.]',
+  caseSensitive: false,
+);
+
 /// Filters gallery images at display-time to remove promotional, banner,
 /// tracking, and unrelated site-wide images from cached extractions.
 /// Caps at [maxGallery] to prevent polluted galleries from page-wide scrapes.
@@ -148,7 +155,34 @@ List<String> filterGalleryImages(List<String> images, {int maxGallery = 6}) {
     if (lower.contains('tracking') || lower.contains('beacon')) return false;
     if (lower.contains('1x1') || lower.contains('1.gif')) return false;
     if (lower.startsWith('data:')) return false;
+    // Expanded author/avatar detection
     if (lower.contains('avatar') || lower.contains('headshot')) return false;
+    if (lower.contains('profile-photo') ||
+        lower.contains('profile_photo') ||
+        lower.contains('profilephoto')) {
+      return false;
+    }
+    if (lower.contains('author') &&
+        (lower.contains('photo') ||
+            lower.contains('image') ||
+            lower.contains('pic') ||
+            lower.contains('img'))) {
+      return false;
+    }
+    if ((lower.contains('writer') ||
+            lower.contains('contributor') ||
+            lower.contains('byline')) &&
+        (lower.contains('photo') || lower.contains('image'))) {
+      return false;
+    }
+    if (RegExp(r'/(staff|authors?|contributors?|writers?|people|team)/[^/]+\.(jpe?g|png|webp|avif)')
+        .hasMatch(lower)) {
+      return false;
+    }
+    if (RegExp(r'/(staff|authors?|contributors?|writers?)/[^/]+/(photo|image|avatar|headshot)')
+        .hasMatch(lower)) {
+      return false;
+    }
     if (lower.contains('social') && lower.contains('icon')) return false;
     if (lower.contains('share-') || lower.contains('share_')) return false;
     if (lower.contains('/ad/') || lower.contains('/ads/')) return false;
@@ -157,6 +191,8 @@ List<String> filterGalleryImages(List<String> images, {int maxGallery = 6}) {
     }
     if (_displayPromoPattern.hasMatch(lower)) return false;
     if (_displayTinyPattern.hasMatch(lower)) return false;
+    // Heuristic: skip small square images (≤200px) indicated by URL dims
+    if (_displaySmallSquarePattern.hasMatch(lower)) return false;
     final normalized =
         Uri.tryParse(url)?.replace(query: '').toString() ?? url;
     if (seen.contains(normalized)) return false;
@@ -347,7 +383,7 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
         if (!didPop) Navigator.of(context).pop(_currentIndex);
       },
       child: Scaffold(
-      backgroundColor: KabukTheme.background,
+      backgroundColor: context.kabukBackground,
       appBar: _ArticleOmniBar(
         article: _currentArticle,
         onBack: () => Navigator.of(context).pop(_currentIndex),
@@ -573,22 +609,14 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
 
     final hasImage = FeedImage.isValidImageUrl(article.image);
     final isVideo = _hasVideo(article);
-    final hasGallery = filteredGallery.length > 1;
-
     return ListView(
       controller: widget.scrollController,
       padding: EdgeInsets.zero,
       children: [
         // ── Media ──────────────────────────────────────────────────────────
-        if (hasGallery)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-            child: _DetailGalleryCarousel(
-              images: filteredGallery,
-              articleUri: article.uri,
-            ),
-          )
-        else if (isVideo)
+        // Gallery carousel removed — images now appear inline within content
+        // blocks. The _DetailGalleryCarousel class is kept for the lightbox.
+        if (isVideo)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
             child: VideoThumbnail(
@@ -643,11 +671,11 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
             child: Text(
               _cleanTitle(article.name!),
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w700,
                 height: 1.25,
-                color: KabukTheme.textPrimary,
+                color: context.kabukTextPrimary,
               ),
             ),
           ),
@@ -660,27 +688,27 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
               if (article.datePublished != null) ...[
                 Text(
                   _formatDate(article.datePublished!),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
-                    color: KabukTheme.textTertiary,
+                    color: context.kabukTextTertiary,
                   ),
                 ),
               ],
               if (article.url != null && !_isInternalUrl(article.url!)) ...[
                 if (article.datePublished != null)
-                  const Padding(
+                  Padding(
                     padding: EdgeInsets.symmetric(horizontal: 6),
                     child: Text('·',
                         style: TextStyle(
-                            fontSize: 12, color: KabukTheme.textTertiary)),
+                            fontSize: 12, color: context.kabukTextTertiary)),
                   ),
                 GestureDetector(
                   onTap: widget.onViewInBrowser,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.open_in_new_rounded,
-                          size: 11, color: KabukTheme.textTertiary),
+                      Icon(Icons.open_in_new_rounded,
+                          size: 11, color: context.kabukTextTertiary),
                       const SizedBox(width: 3),
                       Text(
                         _truncateUrl(article.url!),
@@ -707,10 +735,10 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
                 ? MarkdownBody(
                     data: _cleanDescription(_stripStatsLine(article.description!)),
                     styleSheet: MarkdownStyleSheet(
-                      p: const TextStyle(
+                      p: TextStyle(
                         fontSize: 15,
                         height: 1.65,
-                        color: KabukTheme.textPrimary,
+                        color: context.kabukTextPrimary,
                       ),
                       code: const TextStyle(
                         fontSize: 13,
@@ -722,34 +750,34 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
                         color: const Color(0xFF1A1A1A),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      blockquote: const TextStyle(
+                      blockquote: TextStyle(
                         fontSize: 14,
                         height: 1.6,
-                        color: KabukTheme.textSecondary,
+                        color: context.kabukTextSecondary,
                         fontStyle: FontStyle.italic,
                       ),
                       blockquoteDecoration: BoxDecoration(
                         border: Border(
                           left: BorderSide(
-                            color: KabukTheme.textTertiary.withAlpha(120),
+                            color: context.kabukTextTertiary.withAlpha(120),
                             width: 3,
                           ),
                         ),
                       ),
-                      h1: const TextStyle(
+                      h1: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w700,
-                        color: KabukTheme.textPrimary,
+                        color: context.kabukTextPrimary,
                       ),
-                      h2: const TextStyle(
+                      h2: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
-                        color: KabukTheme.textPrimary,
+                        color: context.kabukTextPrimary,
                       ),
-                      h3: const TextStyle(
+                      h3: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: KabukTheme.textPrimary,
+                        color: context.kabukTextPrimary,
                       ),
                       a: const TextStyle(color: KabukTheme.blueAccent),
                     ),
@@ -814,7 +842,7 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
 
         // ── Loading indicator for lazy content fetch ──────────────────────
         if (_isFetchingContent)
-          const Padding(
+          Padding(
             padding: EdgeInsets.symmetric(vertical: 32),
             child: Center(
               child: Column(
@@ -831,7 +859,7 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
                   Text(
                     'Loading full article…',
                     style: TextStyle(
-                      color: KabukTheme.textTertiary,
+                      color: context.kabukTextTertiary,
                       fontSize: 13,
                     ),
                   ),
@@ -848,19 +876,19 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
         Container(
           padding: const EdgeInsets.symmetric(vertical: 16),
           alignment: Alignment.center,
-          child: const Row(
+          child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 Icons.swipe_rounded,
-                color: KabukTheme.textTertiary,
+                color: context.kabukTextTertiary,
                 size: 16,
               ),
               SizedBox(width: 6),
               Text(
                 'Swipe left/right for more articles',
                 style: TextStyle(
-                  color: KabukTheme.textTertiary,
+                  color: context.kabukTextTertiary,
                   fontSize: 11,
                 ),
               ),
@@ -931,7 +959,23 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
         .replaceAll(RegExp(r'https?://\S+'), '')
         .replaceAll(RegExp(r'\s{2,}'), ' ')
         .trim();
-    return cleaned.isEmpty ? 'Nostr post' : cleaned;
+    if (cleaned.isNotEmpty) return cleaned;
+    // Web-sourced articles get a domain-based fallback.
+    final a = _enrichedArticle ?? widget.article;
+    final source = a.feedSource ?? '';
+    if (source.startsWith('web:') ||
+        a.tags.contains('web') ||
+        a.tags.contains('reader-mode')) {
+      final aUrl = a.url;
+      if (aUrl != null) {
+        final uri = Uri.tryParse(aUrl);
+        if (uri != null && uri.host.isNotEmpty) {
+          return uri.host.replaceFirst('www.', '');
+        }
+      }
+      return 'Web page';
+    }
+    return 'Nostr post';
   }
 
   /// Strips raw URLs and normalises whitespace in description text.
@@ -1104,7 +1148,7 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
                 _ => 16.0,
               },
               fontWeight: FontWeight.w700,
-              color: KabukTheme.textPrimary,
+              color: context.kabukTextPrimary,
             ),
           ),
         ),
@@ -1114,10 +1158,10 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
               ? MarkdownBody(
                   data: block.content ?? '',
                   styleSheet: MarkdownStyleSheet(
-                    p: const TextStyle(
+                    p: TextStyle(
                       fontSize: 15,
                       height: 1.65,
-                      color: KabukTheme.textPrimary,
+                      color: context.kabukTextPrimary,
                     ),
                     a: const TextStyle(color: KabukTheme.blueAccent),
                   ),
@@ -1129,10 +1173,10 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
                 )
               : Text(
                   block.content ?? '',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     height: 1.65,
-                    color: KabukTheme.textPrimary,
+                    color: context.kabukTextPrimary,
                   ),
                 ),
         ),
@@ -1164,9 +1208,9 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
                     block.caption!,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: KabukTheme.textTertiary,
+                      color: context.kabukTextTertiary,
                       fontStyle: FontStyle.italic,
                     ),
                     textAlign: TextAlign.center,
@@ -1192,17 +1236,17 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
             decoration: BoxDecoration(
               border: Border(
                 left: BorderSide(
-                  color: KabukTheme.textTertiary.withAlpha(120),
+                  color: context.kabukTextTertiary.withAlpha(120),
                   width: 3,
                 ),
               ),
             ),
             child: Text(
               block.content ?? '',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 14,
                 height: 1.6,
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
                 fontStyle: FontStyle.italic,
               ),
             ),
@@ -1226,9 +1270,9 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
             ),
           ),
         ),
-      BlockType.divider => const Padding(
+      BlockType.divider => Padding(
           padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Divider(color: KabukTheme.textTertiary, height: 1),
+          child: Divider(color: context.kabukTextTertiary, height: 1),
         ),
       _ => const SizedBox.shrink(),
     };
@@ -1405,7 +1449,7 @@ class _ArticleOmniBar extends ConsumerWidget implements PreferredSizeWidget {
       segments.add(
         _BreadcrumbSegment(
           label: _isReddit ? 'u/$author' : author,
-          color: KabukTheme.textSecondary,
+          color: context.kabukTextSecondary,
           onTap: () {
             if (_isReddit) {
               Navigator.of(context).push(
@@ -1438,9 +1482,9 @@ class _ArticleOmniBar extends ConsumerWidget implements PreferredSizeWidget {
         Flexible(
           child: Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
-              color: KabukTheme.textTertiary,
+              color: context.kabukTextTertiary,
               fontWeight: FontWeight.w400,
             ),
             overflow: TextOverflow.ellipsis,
@@ -1450,7 +1494,7 @@ class _ArticleOmniBar extends ConsumerWidget implements PreferredSizeWidget {
     }
 
     return AppBar(
-      backgroundColor: KabukTheme.background,
+      backgroundColor: context.kabukBackground,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
       leadingWidth: 36,
@@ -1466,7 +1510,7 @@ class _ArticleOmniBar extends ConsumerWidget implements PreferredSizeWidget {
         height: 34,
         padding: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
-          color: KabukTheme.surfaceVariant,
+          color: context.kabukSurfaceVariant,
           borderRadius: BorderRadius.circular(17),
         ),
         child: Row(
@@ -1528,12 +1572,12 @@ class _BreadcrumbChevron extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
+    return Padding(
       padding: EdgeInsets.symmetric(horizontal: 3),
       child: Icon(
         Icons.chevron_right_rounded,
         size: 14,
-        color: KabukTheme.textTertiary,
+        color: context.kabukTextTertiary,
       ),
     );
   }
@@ -1605,10 +1649,10 @@ class _RedditLinkText extends StatelessWidget {
     return Text.rich(
       TextSpan(
         children: spans,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 15,
           height: 1.65,
-          color: KabukTheme.textPrimary,
+          color: context.kabukTextPrimary,
         ),
       ),
     );
@@ -1805,14 +1849,14 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
                   Icon(
                     Icons.add_comment_rounded,
                     size: 16,
-                    color: KabukTheme.textTertiary.withAlpha(180),
+                    color: context.kabukTextTertiary.withAlpha(180),
                   ),
                   const SizedBox(width: 8),
                   Text(
                     'Add a comment',
                     style: TextStyle(
                       fontSize: 13,
-                      color: KabukTheme.textTertiary.withAlpha(180),
+                      color: context.kabukTextTertiary.withAlpha(180),
                     ),
                   ),
                 ],
@@ -1831,10 +1875,10 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
               Text(
                 '${unified.isNotEmpty ? unified.length : ''} '
                     'Comment${unified.length != 1 ? 's' : ''}',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                 ),
               ),
               const SizedBox(width: 6),
@@ -1869,10 +1913,10 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
                       ref.invalidate(fourchanCommentsProvider(url));
                     }
                   },
-                  child: const Icon(
+                  child: Icon(
                     Icons.refresh_rounded,
                     size: 18,
-                    color: KabukTheme.textTertiary,
+                    color: context.kabukTextTertiary,
                     semanticLabel: '',
                   ),
                 ),
@@ -1893,17 +1937,17 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
             child: Column(
               children: [
-                const Icon(
+                Icon(
                   Icons.cloud_off_rounded,
                   size: 32,
-                  color: KabukTheme.textTertiary,
+                  color: context.kabukTextTertiary,
                 ),
                 const SizedBox(height: 8),
-                const Text(
+                Text(
                   "Couldn't load comments",
                   style: TextStyle(
                     fontSize: 13,
-                    color: KabukTheme.textTertiary,
+                    color: context.kabukTextTertiary,
                     fontStyle: FontStyle.italic,
                   ),
                 ),
@@ -1923,13 +1967,13 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
             ),
           )
         else if (unified.isEmpty && !isLoading)
-          const Padding(
+          Padding(
             padding: EdgeInsets.fromLTRB(16, 4, 16, 0),
             child: Text(
               'No comments yet — be the first!',
               style: TextStyle(
                 fontSize: 13,
-                color: KabukTheme.textTertiary,
+                color: context.kabukTextTertiary,
                 fontStyle: FontStyle.italic,
               ),
             ),
@@ -1947,9 +1991,9 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
                       horizontal: 16, vertical: 8),
                   child: Text(
                     'Showing 100 of ${unified.length} comments',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: KabukTheme.textTertiary,
+                      color: context.kabukTextTertiary,
                       fontStyle: FontStyle.italic,
                     ),
                   ),
@@ -2012,7 +2056,7 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
         const SizedBox(width: 12),
         IconButton(
           icon: const Icon(Icons.share_outlined, size: 18),
-          color: KabukTheme.textTertiary,
+          color: context.kabukTextTertiary,
           onPressed: () {
             Clipboard.setData(ClipboardData(text: url));
             HapticFeedback.lightImpact();
@@ -2039,7 +2083,7 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
     required Color activeColor,
     required VoidCallback onTap,
   }) {
-    final color = active ? activeColor : KabukTheme.textTertiary;
+    final color = active ? activeColor : context.kabukTextTertiary;
     return Semantics(
       label: count > 0 ? '$label $count' : label,
       button: true,
@@ -2103,7 +2147,7 @@ class _BookmarkButton extends ConsumerWidget {
         isBookmarked ? Icons.bookmark_rounded : Icons.bookmark_outlined,
         size: 18,
       ),
-      color: isBookmarked ? KabukTheme.warmAccent : KabukTheme.textTertiary,
+      color: isBookmarked ? KabukTheme.warmAccent : context.kabukTextTertiary,
       onPressed: () => _toggleBookmark(context, ref),
       visualDensity: VisualDensity.compact,
       padding: EdgeInsets.zero,
@@ -2216,7 +2260,7 @@ class _UnifiedCommentTileState extends State<_UnifiedCommentTile> {
           padding: const EdgeInsets.fromLTRB(0, 10, 16, 10),
           decoration: BoxDecoration(
             color: c.depth > 0
-                ? KabukTheme.surfaceVariant.withAlpha(15)
+                ? context.kabukSurfaceVariant.withAlpha(15)
                 : null,
             border: c.depth > 0
                 ? Border(
@@ -2258,8 +2302,8 @@ class _UnifiedCommentTileState extends State<_UnifiedCommentTile> {
                           right: -4,
                           child: Container(
                             padding: const EdgeInsets.all(2),
-                            decoration: const BoxDecoration(
-                              color: KabukTheme.surface,
+                            decoration: BoxDecoration(
+                              color: context.kabukSurface,
                               shape: BoxShape.circle,
                             ),
                             child: _SourceBadge(source: c.source),
@@ -2297,9 +2341,9 @@ class _UnifiedCommentTileState extends State<_UnifiedCommentTile> {
                             else
                               Text(
                                 _timeAgo(c.timestamp),
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 11,
-                                  color: KabukTheme.textTertiary,
+                                  color: context.kabukTextTertiary,
                                 ),
                               ),
                             if (c.score != null) ...[
@@ -2312,9 +2356,9 @@ class _UnifiedCommentTileState extends State<_UnifiedCommentTile> {
                               const SizedBox(width: 2),
                               Text(
                                 _fmtScore(c.score!),
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 11,
-                                  color: KabukTheme.textSecondary,
+                                  color: context.kabukTextSecondary,
                                 ),
                               ),
                             ],
@@ -2326,7 +2370,7 @@ class _UnifiedCommentTileState extends State<_UnifiedCommentTile> {
                           style: TextStyle(
                             fontSize: c.depth > 0 ? 12.5 : 13,
                             height: 1.5,
-                            color: KabukTheme.textPrimary,
+                            color: context.kabukTextPrimary,
                           ),
                           maxLines: c.depth > 1 ? 6 : 10,
                           overflow: TextOverflow.ellipsis,
@@ -2401,8 +2445,8 @@ class _UnifiedCommentTileState extends State<_UnifiedCommentTile> {
     _CommentSource.fourchan => const Color(0xFF00B300),
   };
 
-  static Color _authorColor(_CommentSource source) => switch (source) {
-    _CommentSource.nostr => KabukTheme.textSecondary,
+  Color _authorColor(_CommentSource source) => switch (source) {
+    _CommentSource.nostr => context.kabukTextSecondary,
     _CommentSource.reddit => KabukTheme.blueAccent,
     _CommentSource.fourchan => const Color(0xFF00B300),
   };
@@ -2617,19 +2661,19 @@ class _DetailGalleryCarouselState extends State<_DetailGalleryCarousel> {
                       width: double.infinity,
                       fadeInDuration: const Duration(milliseconds: 300),
                       placeholder: (_, _) => Container(
-                        color: KabukTheme.surfaceVariant,
-                        child: const Center(
+                        color: context.kabukSurfaceVariant,
+                        child: Center(
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: KabukTheme.textTertiary,
+                            color: context.kabukTextTertiary,
                           ),
                         ),
                       ),
                       errorWidget: (_, _, _) => Container(
-                        color: KabukTheme.cardColor,
-                        child: const Icon(
+                        color: context.kabukCardColor,
+                        child: Icon(
                           Icons.broken_image_outlined,
-                          color: KabukTheme.textTertiary,
+                          color: context.kabukTextTertiary,
                           size: 32,
                         ),
                       ),
