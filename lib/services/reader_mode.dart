@@ -247,16 +247,30 @@ class ReaderModeService {
       // Return multi-article result with both new and cached article URIs.
       final allUris = [...createdUris, ...existingMatchUris];
 
-      // Create a WebPage as container for the multi-article channel
+      // Create or reuse a WebPage as container for the multi-article channel
       try {
-        final webPageUri = await _store.createWebPage(
-          name: extraction.siteName ?? domain,
-          url: extraction.url,
-          description: extraction.description,
-          favicon: extraction.favicon,
-        );
-        for (final uri in allUris) {
-          await _store.addWebPageMember(webPageUri, uri);
+        final existing = await _store.findWebPageByUrl(extraction.url);
+        if (existing != null) {
+          await _store.updateWebPage(
+            existing.uri,
+            name: extraction.siteName ?? domain,
+            description: extraction.description,
+          );
+          for (final uri in allUris) {
+            if (!existing.memberEntities.contains(uri)) {
+              await _store.addWebPageMember(existing.uri, uri);
+            }
+          }
+        } else {
+          final webPageUri = await _store.createWebPage(
+            name: extraction.siteName ?? domain,
+            url: extraction.url,
+            description: extraction.description,
+            favicon: extraction.favicon,
+          );
+          for (final uri in allUris) {
+            await _store.addWebPageMember(webPageUri, uri);
+          }
         }
       } catch (e, st) {
         dev.log(
@@ -388,20 +402,35 @@ class ReaderModeService {
       }
     }
 
-    // Create a WebPage entity as container, linking to all member entities
+    // Create or reuse a WebPage entity as container, linking to all members
     try {
-      final webPageUri = await _store.createWebPage(
-        name: result.pageTitle ?? domain,
-        url: result.sourceUrl,
-        description: extraction.description,
-        image: extraction.images.firstOrNull,
-        siteName: result.siteName,
-        favicon: result.favicon,
-      );
-      for (final uri in allUris) {
-        await _store.addWebPageMember(webPageUri, uri);
+      final existing = await _store.findWebPageByUrl(result.sourceUrl);
+      if (existing != null) {
+        await _store.updateWebPage(
+          existing.uri,
+          name: result.pageTitle ?? domain,
+          description: extraction.description,
+        );
+        for (final uri in allUris) {
+          if (!existing.memberEntities.contains(uri)) {
+            await _store.addWebPageMember(existing.uri, uri);
+          }
+        }
+        allUris.insert(0, existing.uri);
+      } else {
+        final webPageUri = await _store.createWebPage(
+          name: result.pageTitle ?? domain,
+          url: result.sourceUrl,
+          description: extraction.description,
+          image: extraction.images.firstOrNull,
+          siteName: result.siteName,
+          favicon: result.favicon,
+        );
+        for (final uri in allUris) {
+          await _store.addWebPageMember(webPageUri, uri);
+        }
+        allUris.insert(0, webPageUri);
       }
-      allUris.insert(0, webPageUri);
     } catch (e, st) {
       dev.log(
         'Failed to create WebPage entity',
@@ -503,6 +532,7 @@ class ReaderModeService {
     final name = (p['name'] ?? p['headline'] ?? '').toString();
     if (name.isEmpty && entity.type != 'ImageObject') return null;
 
+    final String? uri;
     switch (entity.type) {
       case 'Article' ||
           'NewsArticle' ||
@@ -515,7 +545,7 @@ class ReaderModeService {
             : _strList(p['images'])
                 .where((url) => !personImageUrls.contains(url))
                 .toList();
-        return _store.createArticle(
+        uri = await _store.createArticle(
           title: name,
           description: _str(p['description']),
           url: _str(p['url']) ?? sourceUrl,
@@ -528,17 +558,18 @@ class ReaderModeService {
         );
 
       case 'Person':
-        return _store.createOrMergePerson(
+        uri = await _store.createOrMergePerson(
           name: name,
           description: _str(p['description']),
           email: _str(p['email']),
           telephone: _str(p['telephone']),
           givenName: _str(p['givenName']),
           familyName: _str(p['familyName']),
+          confidence: entity.confidence,
         );
 
       case 'Product':
-        return _store.createOrMergeProduct(
+        uri = await _store.createOrMergeProduct(
           name: name,
           description: _str(p['description']),
           url: _str(p['url']) ?? sourceUrl,
@@ -552,11 +583,12 @@ class ReaderModeService {
           reviewCount: _tryInt(p['reviewCount']),
           availability: _str(p['availability']),
           extractedFrom: sourceUrl,
+          confidence: entity.confidence,
           images: _strList(p['images']),
         );
 
       case 'Place' || 'LocalBusiness' || 'Restaurant' || 'Hotel':
-        return _store.createOrMergePlace(
+        uri = await _store.createOrMergePlace(
           name: name,
           description: _str(p['description']),
           url: _str(p['url']),
@@ -570,10 +602,11 @@ class ReaderModeService {
           longitude: _tryDouble(p['longitude']),
           telephone: _str(p['telephone']),
           extractedFrom: sourceUrl,
+          confidence: entity.confidence,
         );
 
       case 'Organization' || 'Corporation' || 'EducationalOrganization':
-        return _store.createOrMergeOrganization(
+        uri = await _store.createOrMergeOrganization(
           name: name,
           description: _str(p['description']),
           url: _str(p['url']),
@@ -582,27 +615,29 @@ class ReaderModeService {
           email: _str(p['email']),
           telephone: _str(p['telephone']),
           extractedFrom: sourceUrl,
+          confidence: entity.confidence,
           sameAs: _strList(p['sameAs']),
         );
 
       case 'ImageObject':
         // Images are stored as gallery on the article, not as separate entities
-        return null;
+        uri = null;
 
       case 'WebPage' || 'CollectionPage' || 'WebSite':
-        return _store.createWebPage(
+        uri = await _store.createWebPage(
           name: name,
           url: _str(p['url']) ?? sourceUrl,
           description: _str(p['description']),
           image: _str(p['image']),
           siteName: _str(p['publisher']),
           inLanguage: _str(p['inLanguage']),
+          confidence: entity.confidence,
         );
 
       default:
         // For unknown types, create as Article (best generic representation)
         if (name.isNotEmpty) {
-          return _store.createArticle(
+          uri = await _store.createArticle(
             title: name,
             description: _str(p['description']),
             url: _str(p['url']) ?? sourceUrl,
@@ -610,9 +645,21 @@ class ReaderModeService {
             image: _str(p['image']),
             tags: ['web', domain, entity.type.toLowerCase()],
           );
+        } else {
+          uri = null;
         }
-        return null;
     }
+
+    // Store provenance metadata on the entity.
+    if (uri != null) {
+      final entityUri = uri;
+      await _store.mutate((ctx) async {
+        await ctx.set(entityUri, NS.kabukSemanticType, entity.type);
+        await ctx.set(entityUri, NS.kabukExtractedFrom, sourceUrl);
+      });
+    }
+
+    return uri;
   }
 
   static String? _str(dynamic value) {

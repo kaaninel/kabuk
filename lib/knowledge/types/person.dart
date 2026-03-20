@@ -81,6 +81,7 @@ class PersonData {
     this.email,
     this.telephone,
     this.description,
+    this.confidence,
     this.nostrKeys = const [],
   });
 
@@ -111,6 +112,11 @@ class PersonData {
       }
     }
 
+    final confidenceStr = triples
+        .where((t) => t.predicate == NS.kabukConfidence)
+        .firstOrNull
+        ?.objectValue;
+
     return PersonData(
       uri: uri,
       name: triples
@@ -137,6 +143,8 @@ class PersonData {
           .where((t) => t.predicate == NS.schemaDescription)
           .firstOrNull
           ?.objectValue,
+      confidence:
+          confidenceStr != null ? double.tryParse(confidenceStr) : null,
       nostrKeys: keys,
     );
   }
@@ -161,6 +169,9 @@ class PersonData {
 
   /// A free-text description (`schema:description`).
   final String? description;
+
+  /// Extraction confidence score (0.0–1.0) from semantic extraction.
+  final double? confidence;
 
   /// All Nostr key entries (labeled identities) for this person.
   ///
@@ -206,6 +217,7 @@ extension KnowledgeStorePersonExtension on KnowledgeStore {
     String? description,
     String? nostrPubkey,
     String? nostrLabel,
+    double? confidence,
   }) {
     return mutate((ctx) async {
       final uri = ctx.create('Person');
@@ -235,6 +247,9 @@ extension KnowledgeStorePersonExtension on KnowledgeStore {
           label: nostrLabel ?? '',
         );
         await ctx.add(uri, NS.kabukNostrKeyEntry, entry.toRaw());
+      }
+      if (confidence != null) {
+        await ctx.set(uri, NS.kabukConfidence, confidence.toString());
       }
       return uri;
     });
@@ -439,6 +454,7 @@ extension KnowledgeStorePersonExtension on KnowledgeStore {
     String? description,
     String? nostrPubkey,
     String? nostrLabel,
+    double? confidence,
   }) async {
     // Try to find an existing match.
     String? existingUri;
@@ -456,6 +472,7 @@ extension KnowledgeStorePersonExtension on KnowledgeStore {
         description: description,
         nostrPubkey: nostrPubkey,
         nostrLabel: nostrLabel,
+        confidence: confidence,
       );
     }
 
@@ -471,6 +488,7 @@ extension KnowledgeStorePersonExtension on KnowledgeStore {
         description: description,
         nostrPubkey: nostrPubkey,
         nostrLabel: nostrLabel,
+        confidence: confidence,
       );
     }
 
@@ -492,6 +510,15 @@ extension KnowledgeStorePersonExtension on KnowledgeStore {
           (existing.description == null ||
               description.length > existing.description!.length)) {
         await ctx.set(existingUri!, NS.schemaDescription, description);
+      }
+      // Keep the higher confidence value.
+      if (confidence != null &&
+          (existing.confidence == null || confidence > existing.confidence!)) {
+        await ctx.set(
+          existingUri!,
+          NS.kabukConfidence,
+          confidence.toString(),
+        );
       }
     });
 
