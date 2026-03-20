@@ -117,6 +117,61 @@ Future<int?> pushArticleDetail(
 // ArticleDetailPage
 // =============================================================================
 
+// =============================================================================
+// Gallery image filtering
+// =============================================================================
+
+/// Matches promotional, banner, sidebar, and non-article image paths.
+final _displayPromoPattern = RegExp(
+  r'[/\-_](promo|banner|promoted|shows?|podcasts?|highlight|'
+  r'featured|sidebar|widget|related|recommend|trending|popular|'
+  r'footer|header-bg|masthead|hero-banner|placeholder|thumbnail-default|'
+  r'newsletter|sponsor|partner|campaign)[/\-_.]',
+  caseSensitive: false,
+);
+
+/// Matches tiny images likely to be icons (e.g. 16x16, 24x24, 32x32 in URL).
+final _displayTinyPattern = RegExp(
+  r'[/\-_](1[0-6]|2[0-4]|32)x\1[/\-_.]',
+  caseSensitive: false,
+);
+
+/// Filters gallery images at display-time to remove promotional, banner,
+/// tracking, and unrelated site-wide images from cached extractions.
+/// Caps at [maxGallery] to prevent polluted galleries from page-wide scrapes.
+List<String> filterGalleryImages(List<String> images, {int maxGallery = 6}) {
+  final seen = <String>{};
+  final filtered = images.where((url) {
+    final lower = url.toLowerCase();
+    if (lower.contains('pixel') || lower.contains('spacer')) return false;
+    if (lower.contains('tracking') || lower.contains('beacon')) return false;
+    if (lower.contains('1x1') || lower.contains('1.gif')) return false;
+    if (lower.startsWith('data:')) return false;
+    if (lower.contains('avatar') || lower.contains('headshot')) return false;
+    if (lower.contains('social') && lower.contains('icon')) return false;
+    if (lower.contains('share-') || lower.contains('share_')) return false;
+    if (lower.contains('/ad/') || lower.contains('/ads/')) return false;
+    if (lower.contains('doubleclick') || lower.contains('googlesyndication')) {
+      return false;
+    }
+    if (_displayPromoPattern.hasMatch(lower)) return false;
+    if (_displayTinyPattern.hasMatch(lower)) return false;
+    final normalized =
+        Uri.tryParse(url)?.replace(query: '').toString() ?? url;
+    if (seen.contains(normalized)) return false;
+    seen.add(normalized);
+    return true;
+  }).toList();
+  // Cap to prevent page-wide image scrapes from polluting the gallery.
+  return filtered.length > maxGallery
+      ? filtered.sublist(0, maxGallery)
+      : filtered;
+}
+
+// =============================================================================
+// Data classes
+// =============================================================================
+
 /// Maps a gallery image back to its source article.
 class _ChannelImage {
   const _ChannelImage({
@@ -192,9 +247,10 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
           tag: 'article_img_${a.uri}',
         ));
       }
-      // Include gallery images too.
-      for (var g = 0; g < a.galleryImages.length; g++) {
-        final gUrl = a.galleryImages[g];
+      // Include gallery images too (filtered for promos).
+      final filteredGallery = filterGalleryImages(a.galleryImages);
+      for (var g = 0; g < filteredGallery.length; g++) {
+        final gUrl = filteredGallery[g];
         if (gUrl != a.image && FeedImage.isValidImageUrl(gUrl)) {
           images.add(_ChannelImage(
             url: gUrl,
@@ -496,9 +552,27 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
   @override
   Widget build(BuildContext context) {
     final article = _enrichedArticle ?? widget.article;
+    var filteredGallery = filterGalleryImages(article.galleryImages);
+
+    // When content blocks are loaded, refine gallery to only images referenced
+    // in the article body (eliminates sidebar/related-article image pollution).
+    if (_contentBlocks != null && _contentBlocks!.isNotEmpty) {
+      final contentImageUrls = <String>{
+        if (article.image != null) article.image!,
+        for (final b in _contentBlocks!)
+          if (b.type == BlockType.image && b.mediaUri != null) b.mediaUri!,
+      };
+      if (contentImageUrls.length > 1) {
+        final refined = filteredGallery
+            .where(contentImageUrls.contains)
+            .toList();
+        if (refined.length > 1) filteredGallery = refined;
+      }
+    }
+
     final hasImage = FeedImage.isValidImageUrl(article.image);
     final isVideo = _hasVideo(article);
-    final hasGallery = article.galleryImages.length > 1;
+    final hasGallery = filteredGallery.length > 1;
 
     return ListView(
       controller: widget.scrollController,
@@ -509,7 +583,7 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
             child: _DetailGalleryCarousel(
-              images: article.galleryImages,
+              images: filteredGallery,
               articleUri: article.uri,
             ),
           )
@@ -955,6 +1029,8 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
   static final _noisePatterns = [
     // BBC "Media caption," placeholder
     RegExp(r'^Media\s+caption\s*[,.]?\s*$', caseSensitive: false),
+    // "Image source, Getty Images Image caption," metadata
+    RegExp(r'^Image\s+(source|caption)\b', caseSensitive: false),
     // "By Author Name ..." byline (any length)
     RegExp(r"^By\s+[A-Z][a-zA-Z\-']+\s+[A-Z][\w\s\-']*$"),
     // "Published X ago" metadata (with or without space)
@@ -1322,7 +1398,8 @@ class _ArticleOmniBar extends ConsumerWidget implements PreferredSizeWidget {
     }
 
     // 3. Author (e.g. u/kaan, @abcdef01…)
-    if (author.isNotEmpty) {
+    // Skip author if it matches the source name (avoids "bbc.com > bbc.com")
+    if (author.isNotEmpty && author.toLowerCase() != _sourceName.toLowerCase()) {
       segments.add(chevron);
       segments.add(
         _BreadcrumbSegment(

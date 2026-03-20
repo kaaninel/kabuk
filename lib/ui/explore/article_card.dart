@@ -80,7 +80,8 @@ class ArticleCard extends ConsumerWidget {
     final hasImage = FeedImage.isValidImageUrl(article.image);
     final isVideo = _isVideoContent(article);
     final isGif = _isGif(article);
-    final hasGallery = article.galleryImages.length > 1;
+    final filteredGallery = filterGalleryImages(article.galleryImages);
+    final hasGallery = filteredGallery.length > 1;
     final hasMedia = hasImage || isVideo || hasGallery;
 
     return GestureDetector(
@@ -140,7 +141,7 @@ class ArticleCard extends ConsumerWidget {
               if (hasGallery)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                  child: _GalleryCarousel(images: article.galleryImages),
+                  child: _GalleryCarousel(images: filteredGallery),
                 )
               else if (isVideo)
                 Padding(

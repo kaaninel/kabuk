@@ -485,9 +485,15 @@ class ReaderModeService {
     }
 
     // -- Append remaining images/videos not referenced in the text ------------
+    // Limit unreferenced images to avoid appending sidebar/promo images
+    // that were extracted from page-wide scrapes.
+    var unreferencedCount = 0;
+    const maxUnreferenced = 4;
     for (final url in images) {
       if (!usedImages.contains(url)) {
+        if (unreferencedCount >= maxUnreferenced) break;
         blocks.add(_ParsedBlock(type: BlockType.image, mediaUri: url));
+        unreferencedCount++;
       }
     }
     for (final url in videos) {
