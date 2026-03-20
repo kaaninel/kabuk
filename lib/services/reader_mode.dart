@@ -337,7 +337,7 @@ class ReaderModeService {
       if (_tinyImagePattern.hasMatch(lower)) return false;
       // Dedup by normalized URL (strip query params for comparison)
       final normalized =
-          Uri.tryParse(url)?.replace(query: '')?.toString() ?? url;
+          Uri.tryParse(url)?.replace(query: '').toString() ?? url;
       if (seen.contains(normalized)) return false;
       seen.add(normalized);
       return true;

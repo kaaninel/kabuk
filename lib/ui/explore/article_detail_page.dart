@@ -949,8 +949,8 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
       r'^(Image|Photo|Illustration|Credit|Source)\s*[:by]',
       caseSensitive: false);
   static final _authorBioPattern = RegExp(
-      r"(?:\b(?:is|was)\s+(?:a|an|the)\s+\w+\s+(?:editor|reporter|writer|journalist|correspondent))"
-      r"|(?:^By\s+[A-Z][\w\s]+\b(?:BBC|CNN|AP|Reuters|Sport|News|Channel|Press|Editor|Reporter|Journalist|Correspondent)\b)",
+      r'(?:\b(?:is|was)\s+(?:a|an|the)\s+\w+\s+(?:editor|reporter|writer|journalist|correspondent))'
+      r'|(?:^By\s+[A-Z][\w\s]+\b(?:BBC|CNN|AP|Reuters|Sport|News|Channel|Press|Editor|Reporter|Journalist|Correspondent)\b)',
       caseSensitive: false);
   static final _noisePatterns = [
     // BBC "Media caption," placeholder
