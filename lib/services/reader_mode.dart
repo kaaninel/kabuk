@@ -12,6 +12,7 @@ library;
 
 import 'dart:developer' as dev;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:kabuk/agents/llm.dart';
@@ -81,9 +82,20 @@ class ReaderModeService {
     final extraction =
         preExtracted ??
         await WebExtractor.fromUrl(url).timeout(
-          const Duration(seconds: 15),
-          onTimeout: () => WebExtraction(url: url, title: '', textContent: ''),
+          const Duration(seconds: 30),
+          onTimeout: () {
+            debugPrint('[ReaderMode] ⏱ Timeout (30s) fetching $url');
+            return WebExtraction(
+              url: url,
+              title: _titleFromUrlPath(url),
+              textContent: '',
+            );
+          },
         );
+    debugPrint('[ReaderMode] processUrl extraction done: '
+        'title="${extraction.title}" '
+        'textLen=${extraction.textContent.length} '
+        'articleLinks=${extraction.articleLinks.length}');
     return _pipeline(extraction, feedSource: feedSource);
   }
 
@@ -113,8 +125,15 @@ class ReaderModeService {
   /// Also extracts and stores gallery images found on the article page.
   Future<void> fetchContentForArticle(String articleUri, String url) async {
     final extraction = await WebExtractor.fromUrl(url).timeout(
-      const Duration(seconds: 15),
-      onTimeout: () => WebExtraction(url: url, title: '', textContent: ''),
+      const Duration(seconds: 30),
+      onTimeout: () {
+        debugPrint('[ReaderMode] ⏱ Timeout (30s) fetching article $url');
+        return WebExtraction(
+          url: url,
+          title: _titleFromUrlPath(url),
+          textContent: '',
+        );
+      },
     );
 
     if (extraction.textContent.isEmpty) return;
@@ -147,6 +166,44 @@ class ReaderModeService {
     WebExtraction extraction, {
     String? feedSource,
   }) async {
+    // Generate a title from the URL path when the extractor returns empty.
+    final effectiveTitle = extraction.title.isNotEmpty
+        ? extraction.title
+        : _titleFromUrlPath(extraction.url);
+    if (effectiveTitle != extraction.title) {
+      extraction = WebExtraction(
+        url: extraction.url,
+        title: effectiveTitle,
+        textContent: extraction.textContent,
+        images: extraction.images,
+        videos: extraction.videos,
+        articleLinks: extraction.articleLinks,
+        navigationLinks: extraction.navigationLinks,
+        author: extraction.author,
+        datePublished: extraction.datePublished,
+        siteName: extraction.siteName,
+        favicon: extraction.favicon,
+        description: extraction.description,
+        nextPageUrl: extraction.nextPageUrl,
+        jsonLd: extraction.jsonLd,
+        openGraph: extraction.openGraph,
+        microdata: extraction.microdata,
+        schemaTypes: extraction.schemaTypes,
+      );
+    }
+
+    dev.log(
+      '[ReaderMode] Processing: ${extraction.url}, '
+      'title="${extraction.title}", '
+      'textLen=${extraction.textContent.length}',
+      name: 'ReaderModeService',
+    );
+    debugPrint('[ReaderMode] _pipeline start: url=${extraction.url}, '
+        'title="${extraction.title}", '
+        'textLen=${extraction.textContent.length}, '
+        'articleLinks=${extraction.articleLinks.length}, '
+        'images=${extraction.images.length}');
+
     // Detect empty or error pages (e.g. 404) early.
     final title = extraction.title.trim();
     final isErrorPage =
@@ -155,6 +212,7 @@ class ReaderModeService {
         title.contains('Page Not Found') ||
         title.contains('Error');
     if (isErrorPage && extraction.articleLinks.isEmpty) {
+      debugPrint('[ReaderMode] Detected error page: title="$title"');
       // Still create a minimal article so the UI can show something.
       final domain = _extractDomain(extraction.url);
       final articleUri = await _store.createArticle(
@@ -172,8 +230,23 @@ class ReaderModeService {
 
     final articleLinks = extraction.articleLinks;
 
+    // Determine if this is an index/listing page or a single article.
+    // An index page has many links but little body text. A single article
+    // page has substantial text even if it links to related articles.
+    final isLikelyIndex = articleLinks.isNotEmpty &&
+        (extraction.textContent.length < 500 ||
+            (articleLinks.length >= 8 &&
+                extraction.textContent.length <
+                    articleLinks.length * 200));
+
+    debugPrint('[ReaderMode] articleLinks=${articleLinks.length}, '
+        'textLen=${extraction.textContent.length}, '
+        'isLikelyIndex=$isLikelyIndex');
+
     // --- Multi-article path: index/listing page ---
-    if (articleLinks.isNotEmpty) {
+    if (isLikelyIndex) {
+      debugPrint('[ReaderMode] Entering MULTI-ARTICLE path '
+          '(${articleLinks.length} links)');
       final domain = _extractDomain(extraction.url);
       final siteName = extraction.siteName ?? domain;
       final createdUris = <String>[];
@@ -268,6 +341,13 @@ class ReaderModeService {
             description: extraction.description,
             favicon: extraction.favicon,
           );
+          await _store.mutate((ctx) async {
+            await ctx.set(
+              webPageUri,
+              NS.kabukFeedSource,
+              feedSource ?? 'web:$domain',
+            );
+          });
           for (final uri in allUris) {
             await _store.addWebPageMember(webPageUri, uri);
           }
@@ -294,11 +374,15 @@ class ReaderModeService {
 
     // --- Single-article path: semantic extraction ---
 
+    debugPrint('[ReaderMode] Single-article path: running semantic extraction '
+        'on ${extraction.textContent.length} chars');
+
     // Step 1 — Run semantic extraction
     SemanticExtractionResult? semanticResult;
     try {
       semanticResult = await _semanticExtractor.extract(extraction);
     } catch (e, st) {
+      debugPrint('[ReaderMode] Semantic extraction failed: $e');
       dev.log(
         'Semantic extraction failed, falling back',
         name: 'ReaderModeService',
@@ -307,7 +391,12 @@ class ReaderModeService {
       );
     }
 
+    debugPrint('[ReaderMode] Semantic entities: '
+        '${semanticResult?.entities.length ?? 0}');
+
     if (semanticResult != null && semanticResult.entities.isNotEmpty) {
+      debugPrint('[ReaderMode] Storing semantic result '
+          '(${semanticResult.entities.length} entities)');
       return _storeSemanticResult(
         semanticResult,
         feedSource: feedSource,
@@ -316,6 +405,7 @@ class ReaderModeService {
     }
 
     // Fallback: original article-only path
+    debugPrint('[ReaderMode] Fallback: storing as plain article');
     final articleUri = await _storeArticle(extraction, feedSource: feedSource);
     await _createContentBlocks(
       articleUri,
@@ -323,6 +413,39 @@ class ReaderModeService {
       extraction.images,
       extraction.videos,
     );
+
+    // Always create WebPage container for web content
+    final domain = _extractDomain(extraction.url);
+    if (domain.isNotEmpty) {
+      try {
+        final existingWp = await _store.findWebPageByUrl(extraction.url);
+        if (existingWp == null) {
+          final wpUri = await _store.createWebPage(
+            url: extraction.url,
+            name: extraction.title.isNotEmpty ? extraction.title : domain,
+            description: extraction.description,
+          );
+          await _store.mutate((ctx) async {
+            await ctx.set(
+              wpUri,
+              NS.kabukFeedSource,
+              feedSource ?? 'web:$domain',
+            );
+          });
+          await _store.addWebPageMember(wpUri, articleUri);
+        } else {
+          await _store.addWebPageMember(existingWp.uri, articleUri);
+        }
+      } catch (e, st) {
+        dev.log(
+          'Failed to create WebPage for fallback article',
+          name: 'ReaderModeService',
+          error: e,
+          stackTrace: st,
+        );
+      }
+    }
+
     return ReaderModeResult(
       articleUris: [articleUri],
       isMultiArticle: false,
@@ -371,11 +494,14 @@ class ReaderModeService {
           domain,
           personImageUrls: personImageUrls,
         );
+        debugPrint('[ReaderMode] Stored entity[$i] ${entity.type} '
+            '"${entity.properties['name']}" → $uri');
         if (uri != null) {
           entityUriMap[i] = uri;
           allUris.add(uri);
         }
       } catch (e, st) {
+        debugPrint('[ReaderMode] Failed to store ${entity.type}: $e');
         dev.log(
           'Failed to store ${entity.type} entity',
           name: 'ReaderModeService',
@@ -389,20 +515,30 @@ class ReaderModeService {
     await _storeEntityRelationships(result.entities, entityUriMap);
 
     // Create content blocks for the primary entity (usually an Article)
-    if (result.primaryEntityIndex != null &&
-        result.markdownContent.isNotEmpty) {
+    if (result.primaryEntityIndex != null) {
       final primaryUri = entityUriMap[result.primaryEntityIndex!];
       if (primaryUri != null) {
-        await _createContentBlocks(
-          primaryUri,
-          result.markdownContent,
-          extraction.images,
-          extraction.videos,
-        );
+        if (result.markdownContent.isNotEmpty) {
+          await _createContentBlocks(
+            primaryUri,
+            result.markdownContent,
+            extraction.images,
+            extraction.videos,
+          );
+        } else if (extraction.description?.isNotEmpty == true) {
+          await _createContentBlocks(
+            primaryUri,
+            extraction.description!,
+            [],
+            [],
+          );
+        }
       }
     }
 
     // Create or reuse a WebPage entity as container, linking to all members
+    debugPrint('[ReaderMode] Linking ${allUris.length} entities to WebPage '
+        'for ${result.sourceUrl}');
     try {
       final existing = await _store.findWebPageByUrl(result.sourceUrl);
       if (existing != null) {
@@ -426,6 +562,13 @@ class ReaderModeService {
           siteName: result.siteName,
           favicon: result.favicon,
         );
+        await _store.mutate((ctx) async {
+          await ctx.set(
+            webPageUri,
+            NS.kabukFeedSource,
+            feedSource ?? 'web:$domain',
+          );
+        });
         for (final uri in allUris) {
           await _store.addWebPageMember(webPageUri, uri);
         }
@@ -442,7 +585,7 @@ class ReaderModeService {
 
     // Ensure we have at least one article URI for backward compat
     final articleUris = allUris
-        .where((u) => u.contains('Article/') || u.contains('WebPage/'))
+        .where((u) => u.contains('Article/'))
         .toList();
     if (articleUris.isEmpty && allUris.isNotEmpty) {
       articleUris.add(allUris.first);
@@ -633,6 +776,9 @@ class ReaderModeService {
           inLanguage: _str(p['inLanguage']),
           confidence: entity.confidence,
         );
+        await _store.mutate((ctx) async {
+          await ctx.set(uri!, NS.kabukFeedSource, feedSource ?? 'web:$domain');
+        });
 
       default:
         // For unknown types, create as Article (best generic representation)
@@ -701,9 +847,16 @@ class ReaderModeService {
     String? feedSource,
   }) {
     final domain = _extractDomain(extraction.url);
+    final effectiveFeedSource = feedSource ?? 'web:$domain';
     final summary = extraction.textContent.length > 500
         ? extraction.textContent.substring(0, 500)
         : extraction.textContent;
+
+    dev.log(
+      '[ReaderMode] Storing article: title="${extraction.title}", '
+      'feedSource=$effectiveFeedSource',
+      name: 'ReaderModeService',
+    );
 
     return _store.createArticle(
       title: extraction.title,
@@ -711,7 +864,7 @@ class ReaderModeService {
       url: extraction.url,
       author: extraction.author,
       image: extraction.images.firstOrNull,
-      feedSource: feedSource ?? 'web:$domain',
+      feedSource: effectiveFeedSource,
       datePublished: extraction.datePublished,
       tags: ['web', if (domain.isNotEmpty) domain],
       galleryImages: extraction.images,
@@ -732,7 +885,19 @@ class ReaderModeService {
     List<String> images,
     List<String> videos,
   ) async {
-    final blocks = _parseMarkdownBlocks(markdown, images, videos);
+    // Filter out logo/icon images before distributing inline.
+    final contentImages = images
+        .where((url) => !WebExtractor.isLikelyLogoUrl(url))
+        .toList();
+
+    debugPrint(
+      '[ReaderMode] _createContentBlocks: '
+      '${contentImages.length} images (${images.length} raw), '
+      '${videos.length} videos, '
+      'markdown=${markdown.length} chars',
+    );
+
+    final blocks = _parseMarkdownBlocks(markdown, contentImages, videos);
     final uris = <String>[];
 
     for (var i = 0; i < blocks.length; i++) {
@@ -973,6 +1138,16 @@ class ReaderModeService {
         unreferenced.add(url);
       }
     }
+
+    final textBlockCount =
+        blocks.where((b) => b.type == BlockType.text).length;
+    debugPrint(
+      '[ReaderMode] _parseMarkdownBlocks: '
+      '${blocks.length} blocks ($textBlockCount text), '
+      '${usedImages.length} inline images, '
+      '${unreferenced.length} unreferenced images to distribute',
+    );
+
     // Insert after text/heading blocks at even intervals so images appear
     // inline with their surrounding content rather than pinned at the bottom.
     if (unreferenced.isNotEmpty) {
@@ -1215,6 +1390,31 @@ class ReaderModeService {
     } on Object {
       return '';
     }
+  }
+
+  /// Generates a human-readable title from the URL path when the extractor
+  /// returns an empty title.
+  ///
+  /// Picks the last meaningful path segment, replaces dashes/underscores with
+  /// spaces, strips file extensions, and capitalises each word.
+  static String _titleFromUrlPath(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return '';
+    final segments = uri.pathSegments
+        .where((s) => s.isNotEmpty && !RegExp(r'^\d+$').hasMatch(s))
+        .toList();
+    if (segments.isEmpty) return uri.host.replaceFirst('www.', '');
+    final last = segments.last
+        .replaceAll('-', ' ')
+        .replaceAll('_', ' ')
+        .replaceAll(RegExp(r'\.\w+$'), ''); // remove file extensions
+    // Capitalize first letter of each word
+    return last
+        .split(' ')
+        .map(
+          (w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}',
+        )
+        .join(' ');
   }
 
   /// Enriches [ExtractedLink] entries that lack images by fetching each

@@ -581,10 +581,7 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
       final entities = <(String, String)>[];
       String? authorUri;
 
-      dev.log(
-        '[ArticleDetail] Loading entities for article: $articleUri',
-        name: 'ArticleDetail',
-      );
+      debugPrint('[ArticleDetail] Loading entities for article: $articleUri');
 
       // 1. Check for direct schema:author on the article.
       final authorTriples = await store
@@ -593,10 +590,8 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
           .predicate(NS.schemaAuthor)
           .execute();
 
-      dev.log(
-        '[ArticleDetail] Author triples found: ${authorTriples.length}',
-        name: 'ArticleDetail',
-      );
+      debugPrint('[ArticleDetail] Author triples found: '
+          '${authorTriples.length}');
 
       if (authorTriples.isNotEmpty) {
         final uri = authorTriples.first.objectValue;
@@ -621,10 +616,8 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
 
       final webPageUri = webPageTriples.firstOrNull?.subject;
 
-      dev.log(
-        '[ArticleDetail] WebPage found: $webPageUri',
-        name: 'ArticleDetail',
-      );
+      debugPrint('[ArticleDetail] WebPage found: $webPageUri '
+          '(searched for object=$articleUri)');
 
       if (webPageUri != null) {
         // Get ALL member entities of that WebPage.
@@ -633,6 +626,9 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
             .subject(webPageUri)
             .predicate(NS.kabukMemberEntity)
             .execute();
+
+        debugPrint('[ArticleDetail] WebPage members: '
+            '${memberTriples.length}');
 
         for (final triple in memberTriples) {
           final memberUri = triple.objectValue;
@@ -645,6 +641,9 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
               .subject(memberUri)
               .predicate(NS.rdfType)
               .execute();
+
+          debugPrint('[ArticleDetail] Member $memberUri types: '
+              '${typeTriples.map((t) => t.objectValue).join(', ')}');
 
           for (final tt in typeTriples) {
             final fullType = tt.objectValue;
@@ -663,16 +662,15 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
 
       if (!mounted) return;
 
-      dev.log(
-        '[ArticleDetail] Related entities: ${entities.length}',
-        name: 'ArticleDetail',
-      );
+      debugPrint('[ArticleDetail] Related entities: ${entities.length} '
+          '(${entities.map((e) => '${e.$2}:${e.$1}').join(', ')})');
 
       setState(() {
         _relatedEntities = entities;
         _authorEntityUri = authorUri;
       });
     } on Object catch (e, st) {
+      debugPrint('[ArticleDetail] Failed to load entities: $e');
       dev.log(
         'Failed to load related entities for ${widget.article.uri}',
         name: 'ArticleDetail',

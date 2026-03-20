@@ -9,6 +9,7 @@ library;
 import 'dart:convert';
 import 'dart:developer' as dev;
 
+import 'package:flutter/foundation.dart';
 import 'package:kabuk/agents/llm.dart';
 import 'package:kabuk/services/web_extractor.dart';
 
@@ -125,10 +126,14 @@ class SemanticExtractorService {
     // Step 1: Extract entities from JSON-LD (most structured source)
     final jsonLdEntities = _extractFromJsonLd(extraction.jsonLd);
     entities.addAll(jsonLdEntities);
+    debugPrint('[SemanticExtractor] JSON-LD entities: ${jsonLdEntities.length} '
+        '(${jsonLdEntities.map((e) => e.type).join(', ')})');
 
     // Step 2: Extract/enrich from OpenGraph
     final ogEntities =
         _extractFromOpenGraph(extraction.openGraph, extraction.url);
+    debugPrint('[SemanticExtractor] OG entities: ${ogEntities.length} '
+        '(${ogEntities.map((e) => e.type).join(', ')})');
     if (ogEntities.isNotEmpty) {
       final mainOg = ogEntities.first;
       // Add the main OG entity first.
@@ -176,8 +181,18 @@ class SemanticExtractorService {
       }
     }
 
+    // Add remaining OG entities (e.g. Organization from og:site_name) that
+    // were not already handled as the main entity or author.
+    for (var i = 2; i < ogEntities.length; i++) {
+      if (!_hasSimilarEntity(entities, ogEntities[i])) {
+        entities.add(ogEntities[i]);
+      }
+    }
+
     // Step 3: Extract from microdata
     final microdataEntities = _extractFromMicrodata(extraction.microdata);
+    debugPrint('[SemanticExtractor] Microdata entities: '
+        '${microdataEntities.length}');
     for (final entity in microdataEntities) {
       if (!_hasSimilarEntity(entities, entity)) {
         entities.add(entity);
@@ -189,12 +204,15 @@ class SemanticExtractorService {
     if (extraction.textContent.length > 100) {
       try {
         final llmEntities = await _extractWithLlm(extraction, entities);
+        debugPrint('[SemanticExtractor] LLM entities: ${llmEntities.length} '
+            '(${llmEntities.map((e) => e.type).join(', ')})');
         for (final entity in llmEntities) {
           if (!_hasSimilarEntity(entities, entity)) {
             entities.add(entity);
           }
         }
       } catch (e, st) {
+        debugPrint('[SemanticExtractor] LLM extraction failed: $e');
         dev.log(
           'LLM semantic extraction failed',
           name: 'SemanticExtractor',
@@ -205,8 +223,19 @@ class SemanticExtractorService {
       }
     }
 
-    // Step 5: Ensure we always have at least one entity (fallback)
-    if (entities.isEmpty) {
+    // Step 4b: Ensure Person/Organization entities exist from metadata.
+    // When LLM is unavailable or the structured data only recorded author/
+    // publisher as properties (not as standalone entities), create them now.
+    _ensureMetadataEntities(entities, extraction);
+
+    debugPrint('[SemanticExtractor] Total entities after all steps: '
+        '${entities.length} '
+        '(${entities.map((e) => '${e.type}:${e.properties['name']}').join(', ')})');
+
+    // Step 5: Create a fallback entity only when the extraction had
+    // meaningful content – otherwise leave entities empty so the caller
+    // falls through to the simpler article-only path.
+    if (entities.isEmpty && extraction.textContent.length > 200) {
       entities.add(_createFallbackEntity(extraction));
     }
 
@@ -789,26 +818,37 @@ class SemanticExtractorService {
       }
     }
 
-    // If article:author looks like a URL, create a Person entity
+    // Create a Person entity from article:author (URL or plain-text name).
     final authorValue = og['article:author'];
-    if (authorValue != null &&
-        (authorValue.startsWith('http://') ||
-            authorValue.startsWith('https://'))) {
-      final authorUri = Uri.tryParse(authorValue);
-      final pathName = authorUri?.pathSegments
-          .where((s) => s.isNotEmpty)
-          .lastOrNull
-          ?.replaceAll('-', ' ')
-          .replaceAll('_', ' ');
+    if (authorValue != null && authorValue.trim().isNotEmpty) {
+      SemanticEntity? authorEntity;
 
-      final authorEntity = SemanticEntity(
-        type: 'Person',
-        properties: {
-          'name': pathName ?? authorValue,
-          'url': authorValue,
-        },
-        confidence: 0.7,
-      );
+      if (authorValue.startsWith('http://') ||
+          authorValue.startsWith('https://')) {
+        // Author is a URL — extract name from the path.
+        final authorUri = Uri.tryParse(authorValue);
+        final pathName = authorUri?.pathSegments
+            .where((s) => s.isNotEmpty)
+            .lastOrNull
+            ?.replaceAll('-', ' ')
+            .replaceAll('_', ' ');
+
+        authorEntity = SemanticEntity(
+          type: 'Person',
+          properties: {
+            'name': pathName ?? authorValue,
+            'url': authorValue,
+          },
+          confidence: 0.7,
+        );
+      } else {
+        // Author is a plain-text name.
+        authorEntity = SemanticEntity(
+          type: 'Person',
+          properties: {'name': authorValue.trim()},
+          confidence: 0.7,
+        );
+      }
 
       results.insert(
         0,
@@ -819,17 +859,34 @@ class SemanticExtractorService {
         ),
       );
       results.add(authorEntity);
-      return results;
+    } else {
+      results.insert(
+        0,
+        SemanticEntity(
+          type: schemaType,
+          properties: properties,
+          confidence: 0.8,
+        ),
+      );
     }
 
-    results.insert(
-      0,
-      SemanticEntity(
-        type: schemaType,
-        properties: properties,
-        confidence: 0.8,
-      ),
-    );
+    // Create an Organization entity from og:site_name if present.
+    final siteName = og['og:site_name'];
+    if (siteName != null && siteName.trim().isNotEmpty) {
+      final orgProps = <String, dynamic>{'name': siteName.trim()};
+      if (og['og:url'] != null) {
+        final siteUri = Uri.tryParse(og['og:url']!);
+        if (siteUri != null) {
+          orgProps['url'] = '${siteUri.scheme}://${siteUri.host}';
+        }
+      }
+      results.add(SemanticEntity(
+        type: 'Organization',
+        properties: orgProps,
+        confidence: 0.65,
+      ));
+    }
+
     return results;
   }
 
@@ -1369,6 +1426,45 @@ Rules:
         confidence: 0.7,
       ));
       imageCount++;
+    }
+  }
+
+  /// Creates Person and Organization entities from [WebExtraction] metadata
+  /// (author, siteName) when no such entities were found by structured-data
+  /// extractors. This guarantees basic entity coverage even without an LLM.
+  void _ensureMetadataEntities(
+    List<SemanticEntity> entities,
+    WebExtraction extraction,
+  ) {
+    // Create a Person entity for the article author if one doesn't exist yet.
+    final author = extraction.author;
+    if (author != null && author.trim().isNotEmpty) {
+      final authorCandidate = SemanticEntity(
+        type: 'Person',
+        properties: {'name': author.trim()},
+        confidence: 0.6,
+      );
+      if (!_hasSimilarEntity(entities, authorCandidate)) {
+        entities.add(authorCandidate);
+      }
+    }
+
+    // Create an Organization entity for the site/publisher if missing.
+    final site = extraction.siteName;
+    if (site != null && site.trim().isNotEmpty) {
+      final orgProps = <String, dynamic>{'name': site.trim()};
+      final parsedUrl = Uri.tryParse(extraction.url);
+      if (parsedUrl != null) {
+        orgProps['url'] = '${parsedUrl.scheme}://${parsedUrl.host}';
+      }
+      final orgCandidate = SemanticEntity(
+        type: 'Organization',
+        properties: orgProps,
+        confidence: 0.55,
+      );
+      if (!_hasSimilarEntity(entities, orgCandidate)) {
+        entities.add(orgCandidate);
+      }
     }
   }
 
