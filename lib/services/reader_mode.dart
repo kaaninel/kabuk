@@ -15,10 +15,18 @@ import 'dart:developer' as dev;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:kabuk/agents/llm.dart';
+import 'package:kabuk/config/namespaces.dart';
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/store.dart';
+import 'package:kabuk/knowledge/triple.dart';
 import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/knowledge/types/content_block.dart';
+import 'package:kabuk/knowledge/types/organization.dart';
+import 'package:kabuk/knowledge/types/person.dart';
+import 'package:kabuk/knowledge/types/place.dart';
+import 'package:kabuk/knowledge/types/product.dart';
+import 'package:kabuk/knowledge/types/webpage.dart';
+import 'package:kabuk/services/semantic_extractor.dart';
 import 'package:kabuk/services/web_extractor.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -36,16 +44,21 @@ import 'package:webview_flutter/webview_flutter.dart';
 /// final articleUri = await service.processUrl('https://example.com/article');
 /// ```
 class ReaderModeService {
-  /// Creates a [ReaderModeService] backed by the given [store] and [llm].
+  /// Creates a [ReaderModeService] backed by the given [store], [llm], and
+  /// optional [semanticExtractor].
   ReaderModeService({
     required KnowledgeStore store,
     required LlmService llm,
+    SemanticExtractorService? semanticExtractor,
   })  : _store = store,
-        _llm = llm;
+        _llm = llm,
+        _semanticExtractor =
+            semanticExtractor ?? SemanticExtractorService(llm: llm);
 
   final KnowledgeStore _store;
   // ignore: unused_field
   final LlmService _llm; // Kept for API compat; future knowledge distillation.
+  final SemanticExtractorService _semanticExtractor;
 
   // -------------------------------------------------------------------------
   // Public API
@@ -134,6 +147,29 @@ class ReaderModeService {
     WebExtraction extraction, {
     String? feedSource,
   }) async {
+    // Detect empty or error pages (e.g. 404) early.
+    final title = extraction.title.trim();
+    final isErrorPage =
+        title.contains('404') ||
+        title.contains('Not Found') ||
+        title.contains('Page Not Found') ||
+        title.contains('Error');
+    if (isErrorPage && extraction.articleLinks.isEmpty) {
+      // Still create a minimal article so the UI can show something.
+      final domain = _extractDomain(extraction.url);
+      final articleUri = await _store.createArticle(
+        title: title.isNotEmpty ? title : 'Page not found',
+        description: 'This page could not be loaded.',
+        url: extraction.url,
+        feedSource: feedSource ?? 'web:$domain',
+        tags: ['web', if (domain.isNotEmpty) domain],
+      );
+      return ReaderModeResult(
+        articleUris: [articleUri],
+        isMultiArticle: false,
+      );
+    }
+
     final articleLinks = extraction.articleLinks;
 
     // --- Multi-article path: index/listing page ---
@@ -210,6 +246,27 @@ class ReaderModeService {
 
       // Return multi-article result with both new and cached article URIs.
       final allUris = [...createdUris, ...existingMatchUris];
+
+      // Create a WebPage as container for the multi-article channel
+      try {
+        final webPageUri = await _store.createWebPage(
+          name: extraction.siteName ?? domain,
+          url: extraction.url,
+          description: extraction.description,
+          favicon: extraction.favicon,
+        );
+        for (final uri in allUris) {
+          await _store.addWebPageMember(webPageUri, uri);
+        }
+      } catch (e, st) {
+        dev.log(
+          'Failed to create WebPage for multi-article',
+          name: 'ReaderModeService',
+          error: e,
+          stackTrace: st,
+        );
+      }
+
       if (allUris.isNotEmpty) {
         return ReaderModeResult(
           articleUris: allUris,
@@ -221,25 +278,370 @@ class ReaderModeService {
       // Fall through to single-article path if no links were stored.
     }
 
-    // --- Single-article path: regular content page ---
+    // --- Single-article path: semantic extraction ---
 
-    // Step 1 — Store basic article immediately.
+    // Step 1 — Run semantic extraction
+    SemanticExtractionResult? semanticResult;
+    try {
+      semanticResult = await _semanticExtractor.extract(extraction);
+    } catch (e, st) {
+      dev.log(
+        'Semantic extraction failed, falling back',
+        name: 'ReaderModeService',
+        error: e,
+        stackTrace: st,
+      );
+    }
+
+    if (semanticResult != null && semanticResult.entities.isNotEmpty) {
+      return _storeSemanticResult(
+        semanticResult,
+        feedSource: feedSource,
+        extraction: extraction,
+      );
+    }
+
+    // Fallback: original article-only path
     final articleUri = await _storeArticle(extraction, feedSource: feedSource);
-
-    // Step 2 — Create content blocks from the raw extracted markdown.
     await _createContentBlocks(
       articleUri,
       extraction.textContent,
       extraction.images,
       extraction.videos,
     );
-
     return ReaderModeResult(
       articleUris: [articleUri],
       isMultiArticle: false,
       nextPageUrl: extraction.nextPageUrl,
       navigationLinks: extraction.navigationLinks,
     );
+  }
+
+  // -------------------------------------------------------------------------
+  // Semantic Entity Storage
+  // -------------------------------------------------------------------------
+
+  /// Stores all semantic entities from a [SemanticExtractionResult] in the
+  /// knowledge store. Creates proper entity types and links them together.
+  Future<ReaderModeResult> _storeSemanticResult(
+    SemanticExtractionResult result, {
+    String? feedSource,
+    required WebExtraction extraction,
+  }) async {
+    final allUris = <String>[];
+    final entityUriMap = <int, String>{}; // index → URI for relationship linking
+    final domain = _extractDomain(result.sourceUrl);
+
+    // Collect image URLs from Person entities so they can be excluded from
+    // article galleries (prevents author headshots in image galleries).
+    final personImageUrls = <String>{};
+    for (final entity in result.entities) {
+      if (entity.type == 'Person') {
+        final p = entity.properties;
+        final image = _str(p['image']) ?? _str(p['schema:image']);
+        if (image != null) personImageUrls.add(image);
+        final thumbnail =
+            _str(p['thumbnailUrl']) ?? _str(p['schema:thumbnailUrl']);
+        if (thumbnail != null) personImageUrls.add(thumbnail);
+      }
+    }
+
+    // First pass: create all entities
+    for (var i = 0; i < result.entities.length; i++) {
+      final entity = result.entities[i];
+      try {
+        final uri = await _storeEntity(
+          entity,
+          result.sourceUrl,
+          feedSource,
+          domain,
+          personImageUrls: personImageUrls,
+        );
+        if (uri != null) {
+          entityUriMap[i] = uri;
+          allUris.add(uri);
+        }
+      } catch (e, st) {
+        dev.log(
+          'Failed to store ${entity.type} entity',
+          name: 'ReaderModeService',
+          error: e,
+          stackTrace: st,
+        );
+      }
+    }
+
+    // Second pass: store entity relationships as RDF triples
+    await _storeEntityRelationships(result.entities, entityUriMap);
+
+    // Create content blocks for the primary entity (usually an Article)
+    if (result.primaryEntityIndex != null &&
+        result.markdownContent.isNotEmpty) {
+      final primaryUri = entityUriMap[result.primaryEntityIndex!];
+      if (primaryUri != null) {
+        await _createContentBlocks(
+          primaryUri,
+          result.markdownContent,
+          extraction.images,
+          extraction.videos,
+        );
+      }
+    }
+
+    // Create a WebPage entity as container, linking to all member entities
+    try {
+      final webPageUri = await _store.createWebPage(
+        name: result.pageTitle ?? domain,
+        url: result.sourceUrl,
+        description: extraction.description,
+        image: extraction.images.firstOrNull,
+        siteName: result.siteName,
+        favicon: result.favicon,
+      );
+      for (final uri in allUris) {
+        await _store.addWebPageMember(webPageUri, uri);
+      }
+      allUris.insert(0, webPageUri);
+    } catch (e, st) {
+      dev.log(
+        'Failed to create WebPage entity',
+        name: 'ReaderModeService',
+        error: e,
+        stackTrace: st,
+      );
+    }
+
+    // Ensure we have at least one article URI for backward compat
+    final articleUris = allUris
+        .where((u) => u.contains('Article/') || u.contains('WebPage/'))
+        .toList();
+    if (articleUris.isEmpty && allUris.isNotEmpty) {
+      articleUris.add(allUris.first);
+    }
+
+    return ReaderModeResult(
+      articleUris: articleUris.isEmpty ? allUris.take(1).toList() : articleUris,
+      isMultiArticle: allUris.length > 1,
+      nextPageUrl: extraction.nextPageUrl,
+      navigationLinks: extraction.navigationLinks,
+      allEntityUris: allUris,
+    );
+  }
+
+  /// Maps `schema:*` predicate strings from [EntityRelationship] to full
+  /// namespace URIs defined in [NS].
+  static const _predicateToNs = <String, String>{
+    'schema:author': NS.schemaAuthor,
+    'schema:publisher': NS.schemaPublisher,
+    'schema:brand': NS.schemaBrand,
+    'schema:offers': NS.schemaOffers,
+    'schema:location': NS.schemaLocation,
+    'schema:worksFor': NS.schemaWorksFor,
+    'schema:memberOf': NS.schemaMemberOf,
+    'schema:organizer': NS.schemaOrganizer,
+  };
+
+  /// Stores cross-entity relationships as RDF triples.
+  ///
+  /// Iterates over every entity's [SemanticEntity.relationships] and writes a
+  /// `(sourceUri, predicate, targetUri)` triple for each one where both source
+  /// and target have been successfully stored.
+  Future<void> _storeEntityRelationships(
+    List<SemanticEntity> entities,
+    Map<int, String> entityUriMap,
+  ) async {
+    for (var i = 0; i < entities.length; i++) {
+      final entity = entities[i];
+      final sourceUri = entityUriMap[i];
+      if (sourceUri == null) continue;
+
+      for (final rel in entity.relationships) {
+        final targetUri = entityUriMap[rel.targetIndex];
+        if (targetUri == null) continue;
+
+        final predicateUri = _predicateToNs[rel.predicate];
+        if (predicateUri == null) {
+          dev.log(
+            'Unknown relationship predicate: ${rel.predicate}',
+            name: 'ReaderModeService',
+          );
+          continue;
+        }
+
+        try {
+          await _store.mutate((ctx) async {
+            await ctx.set(
+              sourceUri,
+              predicateUri,
+              targetUri,
+              objectType: ObjectType.uri,
+            );
+          });
+        } catch (e, st) {
+          dev.log(
+            'Failed to store relationship '
+            '${rel.predicate} from $sourceUri to $targetUri',
+            name: 'ReaderModeService',
+            error: e,
+            stackTrace: st,
+          );
+        }
+      }
+    }
+  }
+
+  /// Stores a single [SemanticEntity] in the knowledge store.
+  /// Returns the created entity URI, or null if the entity type is unsupported.
+  Future<String?> _storeEntity(
+    SemanticEntity entity,
+    String sourceUrl,
+    String? feedSource,
+    String domain, {
+    Set<String> personImageUrls = const {},
+  }) async {
+    final p = entity.properties;
+    final name = (p['name'] ?? p['headline'] ?? '').toString();
+    if (name.isEmpty && entity.type != 'ImageObject') return null;
+
+    switch (entity.type) {
+      case 'Article' ||
+          'NewsArticle' ||
+          'BlogPosting' ||
+          'Report' ||
+          'TechArticle':
+        // Exclude person/author images from the article gallery.
+        final gallery = personImageUrls.isEmpty
+            ? _strList(p['images'])
+            : _strList(p['images'])
+                .where((url) => !personImageUrls.contains(url))
+                .toList();
+        return _store.createArticle(
+          title: name,
+          description: _str(p['description']),
+          url: _str(p['url']) ?? sourceUrl,
+          author: _str(p['author']),
+          image: _str(p['image']),
+          feedSource: feedSource ?? 'web:$domain',
+          datePublished: _tryParseDate(_str(p['datePublished'])),
+          tags: ['web', if (domain.isNotEmpty) domain],
+          galleryImages: gallery,
+        );
+
+      case 'Person':
+        return _store.createOrMergePerson(
+          name: name,
+          description: _str(p['description']),
+          email: _str(p['email']),
+          telephone: _str(p['telephone']),
+          givenName: _str(p['givenName']),
+          familyName: _str(p['familyName']),
+        );
+
+      case 'Product':
+        return _store.createOrMergeProduct(
+          name: name,
+          description: _str(p['description']),
+          url: _str(p['url']) ?? sourceUrl,
+          image: _str(p['image']),
+          price: _str(p['price']),
+          priceCurrency: _str(p['priceCurrency']),
+          brand: _str(p['brand']),
+          sku: _str(p['sku']),
+          category: _str(p['category']),
+          ratingValue: _tryDouble(p['ratingValue']),
+          reviewCount: _tryInt(p['reviewCount']),
+          availability: _str(p['availability']),
+          extractedFrom: sourceUrl,
+          images: _strList(p['images']),
+        );
+
+      case 'Place' || 'LocalBusiness' || 'Restaurant' || 'Hotel':
+        return _store.createOrMergePlace(
+          name: name,
+          description: _str(p['description']),
+          url: _str(p['url']),
+          image: _str(p['image']),
+          streetAddress: _str(p['streetAddress']),
+          postalCode: _str(p['postalCode']),
+          addressLocality: _str(p['addressLocality']),
+          addressRegion: _str(p['addressRegion']),
+          addressCountry: _str(p['addressCountry']),
+          latitude: _tryDouble(p['latitude']),
+          longitude: _tryDouble(p['longitude']),
+          telephone: _str(p['telephone']),
+          extractedFrom: sourceUrl,
+        );
+
+      case 'Organization' || 'Corporation' || 'EducationalOrganization':
+        return _store.createOrMergeOrganization(
+          name: name,
+          description: _str(p['description']),
+          url: _str(p['url']),
+          logo: _str(p['logo']) ?? _str(p['publisherLogo']),
+          image: _str(p['image']),
+          email: _str(p['email']),
+          telephone: _str(p['telephone']),
+          extractedFrom: sourceUrl,
+          sameAs: _strList(p['sameAs']),
+        );
+
+      case 'ImageObject':
+        // Images are stored as gallery on the article, not as separate entities
+        return null;
+
+      case 'WebPage' || 'CollectionPage' || 'WebSite':
+        return _store.createWebPage(
+          name: name,
+          url: _str(p['url']) ?? sourceUrl,
+          description: _str(p['description']),
+          image: _str(p['image']),
+          siteName: _str(p['publisher']),
+          inLanguage: _str(p['inLanguage']),
+        );
+
+      default:
+        // For unknown types, create as Article (best generic representation)
+        if (name.isNotEmpty) {
+          return _store.createArticle(
+            title: name,
+            description: _str(p['description']),
+            url: _str(p['url']) ?? sourceUrl,
+            feedSource: feedSource ?? 'web:$domain',
+            image: _str(p['image']),
+            tags: ['web', domain, entity.type.toLowerCase()],
+          );
+        }
+        return null;
+    }
+  }
+
+  static String? _str(dynamic value) {
+    if (value == null) return null;
+    final s = value.toString().trim();
+    return s.isEmpty ? null : s;
+  }
+
+  static List<String> _strList(dynamic value) {
+    if (value is List) return value.whereType<String>().toList();
+    return const [];
+  }
+
+  static double? _tryDouble(dynamic value) {
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
+
+  static int? _tryInt(dynamic value) {
+    if (value is int) return value;
+    if (value is String) return int.tryParse(value);
+    return null;
+  }
+
+  static DateTime? _tryParseDate(String? value) {
+    if (value == null || value.isEmpty) return null;
+    return DateTime.tryParse(value);
   }
 
   // -------------------------------------------------------------------------
@@ -320,9 +722,34 @@ class ReaderModeService {
       if (lower.contains('tracking') || lower.contains('beacon')) return false;
       if (lower.contains('1x1') || lower.contains('1.gif')) return false;
       if (lower.startsWith('data:')) return false;
-      // Filter out avatar/author images
+      // Filter out avatar/author images (expanded patterns)
       if (lower.contains('avatar') || lower.contains('headshot')) return false;
-      if (lower.contains('author') && lower.contains('photo')) return false;
+      if (lower.contains('profile-photo') ||
+          lower.contains('profile_photo') ||
+          lower.contains('profilephoto')) {
+        return false;
+      }
+      if (lower.contains('author') &&
+          (lower.contains('photo') ||
+              lower.contains('image') ||
+              lower.contains('pic') ||
+              lower.contains('img'))) {
+        return false;
+      }
+      if ((lower.contains('writer') || lower.contains('contributor') || lower.contains('byline')) &&
+          (lower.contains('photo') || lower.contains('image'))) {
+        return false;
+      }
+      if (RegExp(r'/(staff|authors?|contributors?|writers?|people|team)/[^/]+\.(jpe?g|png|webp|avif)')
+          .hasMatch(lower)) {
+        return false;
+      }
+      if (RegExp(r'/(staff|authors?|contributors?|writers?)/[^/]+/(photo|image|avatar|headshot)')
+          .hasMatch(lower)) {
+        return false;
+      }
+      // Heuristic: very small square images (≤200px) indicated by URL dims
+      if (_smallSquareImagePattern.hasMatch(lower)) return false;
       // Filter out social/share icons
       if (lower.contains('social') && lower.contains('icon')) return false;
       if (lower.contains('share-') || lower.contains('share_')) return false;
@@ -356,6 +783,13 @@ class ReaderModeService {
   /// Matches tiny images likely to be icons (e.g. 16x16, 24x24, 32x32 in URL).
   static final _tinyImagePattern = RegExp(
     r'[/\-_](1[0-6]|2[0-4]|32)x\1[/\-_.]',
+    caseSensitive: false,
+  );
+
+  /// Matches small square images (≤200px) that are likely profile
+  /// photos / avatars based on dimension hints in the URL.
+  static final _smallSquareImagePattern = RegExp(
+    r'[/\-_=](([1-9]\d?|1\d{2}|200)x\2)[/\-_.]',
     caseSensitive: false,
   );
 
@@ -941,6 +1375,7 @@ class ReaderModeResult {
     required this.isMultiArticle,
     this.nextPageUrl,
     this.navigationLinks = const [],
+    this.allEntityUris = const [],
   });
 
   /// URIs of the articles created in the knowledge store.
@@ -954,6 +1389,10 @@ class ReaderModeResult {
 
   /// Navigation links for site navigation (categories, sections).
   final List<ExtractedLink> navigationLinks;
+
+  /// All entity URIs created (articles, people, products, places, etc.).
+  /// This is a superset of [articleUris] — includes all semantic entities.
+  final List<String> allEntityUris;
 
   /// Convenience getter for the first (or only) article URI.
   String get primaryArticleUri => articleUris.first;
@@ -1013,9 +1452,11 @@ class _ParsedBlock {
 ///
 /// Depends on [knowledgeStoreProvider] and [llmServiceProvider].
 final readerModeServiceProvider = Provider<ReaderModeService>((ref) {
+  final llm = ref.read(llmServiceProvider);
   return ReaderModeService(
     store: ref.read(knowledgeStoreProvider),
-    llm: ref.read(llmServiceProvider),
+    llm: llm,
+    semanticExtractor: SemanticExtractorService(llm: llm),
   );
 });
 
