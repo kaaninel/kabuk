@@ -116,13 +116,14 @@ extension KnowledgeStoreSavedSearchExtension on KnowledgeStore {
         .limit(limit)
         .execute();
 
-    final uris = typeTriples.map((t) => t.subject).toSet();
-    final searches = <SavedSearchData>[];
-    for (final uri in uris) {
-      final triples = await getEntity(uri);
-      searches.add(SavedSearchData.fromTriples(uri, triples));
-    }
-    return searches;
+    final uris = typeTriples.map((t) => t.subject).toSet().toList();
+    if (uris.isEmpty) return [];
+    final allTriples = await getEntities(uris);
+    return [
+      for (final uri in uris)
+        if (allTriples[uri] case final triples? when triples.isNotEmpty)
+          SavedSearchData.fromTriples(uri, triples),
+    ];
   }
 
   /// Deletes a saved search by [uri].

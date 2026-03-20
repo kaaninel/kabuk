@@ -156,11 +156,15 @@ extension KnowledgeStoreBookmarkExtension on KnowledgeStore {
         .limit(limit)
         .execute();
 
-    final uris = typeTriples.map((t) => t.subject).toSet();
+    final uris = typeTriples.map((t) => t.subject).toSet().toList();
+    if (uris.isEmpty) return [];
+    final allTriples = await getEntities(uris);
     final bookmarks = <BookmarkData>[];
     for (final uri in uris) {
-      final triples = await getEntity(uri);
-      bookmarks.add(BookmarkData.fromTriples(uri, triples));
+      final triples = allTriples[uri];
+      if (triples != null && triples.isNotEmpty) {
+        bookmarks.add(BookmarkData.fromTriples(uri, triples));
+      }
     }
 
     // Sort by pinOrder (nulls last), then dateCreated descending.

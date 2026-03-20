@@ -452,10 +452,13 @@ extension KnowledgeStoreArticleExtension on KnowledgeStore {
     }
 
     final typeTriples = await q.execute();
-    final uris = typeTriples.map((t) => t.subject).toSet();
+    final uris = typeTriples.map((t) => t.subject).toSet().toList();
+    if (uris.isEmpty) return [];
+    final allTriples = await getEntities(uris);
     final articles = <ArticleData>[];
     for (final uri in uris) {
-      final triples = await getEntity(uri);
+      final triples = allTriples[uri];
+      if (triples == null || triples.isEmpty) continue;
       final article = ArticleData.fromTriples(uri, triples);
       if (unreadOnly == true && article.read) continue;
       articles.add(article);
@@ -507,14 +510,18 @@ extension KnowledgeStoreArticleExtension on KnowledgeStore {
 
     final toDelete = <String>[];
 
-    for (final uri in allUris) {
-      if (bookmarkedUris.contains(uri)) continue; // never prune bookmarks
-      final triples = await getEntity(uri);
-      final article = ArticleData.fromTriples(uri, triples);
-      if (article.read) continue; // read articles use their extended expiry
-      final exp = article.expiresAt;
-      if (exp != null && exp.isBefore(now)) {
-        toDelete.add(uri);
+    if (allUris.isNotEmpty) {
+      final allTriples = await getEntities(allUris.toList());
+      for (final uri in allUris) {
+        if (bookmarkedUris.contains(uri)) continue; // never prune bookmarks
+        final triples = allTriples[uri];
+        if (triples == null || triples.isEmpty) continue;
+        final article = ArticleData.fromTriples(uri, triples);
+        if (article.read) continue; // read articles use their extended expiry
+        final exp = article.expiresAt;
+        if (exp != null && exp.isBefore(now)) {
+          toDelete.add(uri);
+        }
       }
     }
 
@@ -581,13 +588,14 @@ extension KnowledgeStoreArticleExtension on KnowledgeStore {
         .limit(limit)
         .execute();
 
-    final uris = typeTriples.map((t) => t.subject).toSet();
-    final feeds = <FeedSubscriptionData>[];
-    for (final uri in uris) {
-      final triples = await getEntity(uri);
-      feeds.add(FeedSubscriptionData.fromTriples(uri, triples));
-    }
-    return feeds;
+    final uris = typeTriples.map((t) => t.subject).toSet().toList();
+    if (uris.isEmpty) return [];
+    final allTriples = await getEntities(uris);
+    return [
+      for (final uri in uris)
+        if (allTriples[uri] case final triples? when triples.isNotEmpty)
+          FeedSubscriptionData.fromTriples(uri, triples),
+    ];
   }
 
   /// Updates the last-fetched timestamp on a feed subscription.

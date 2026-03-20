@@ -147,9 +147,9 @@ class DriftQueryExecutor implements QueryExecutor {
             .map((t) => t.objectValue)
             .where((uri) => uri.isNotEmpty && visitedUris.add(uri))
             .toList();
-        for (final uri in urisToFollow) {
+        if (urisToFollow.isNotEmpty) {
           final followQ = _db.select(_db.triples)
-            ..where((t) => t.subject.equals(uri));
+            ..where((t) => t.subject.isIn(urisToFollow));
           final followRows = await followQ.get();
           results.addAll(followRows.map(_tripleFromRow));
         }
@@ -206,9 +206,9 @@ class DriftQueryExecutor implements QueryExecutor {
             .map((t) => t.objectValue)
             .where((uri) => uri.isNotEmpty && visitedUris.add(uri))
             .toList();
-        for (final uri in urisToFollow) {
+        if (urisToFollow.isNotEmpty) {
           final followQ = _db.select(_db.triples)
-            ..where((t) => t.subject.equals(uri));
+            ..where((t) => t.subject.isIn(urisToFollow));
           final followRows = await followQ.get();
           results.addAll(followRows.map(_tripleFromRow));
         }

@@ -150,6 +150,44 @@ extension KnowledgeStoreEventExtension on KnowledgeStore {
     return EventData.fromTriples(uri, triples);
   }
 
+  /// Updates mutable fields of an existing Event entity.
+  ///
+  /// Only non-null parameters are written; others are left unchanged.
+  /// Date fields accept ISO 8601 strings.
+  Future<void> updateEvent(
+    String uri, {
+    String? name,
+    String? description,
+    String? startDate,
+    String? endDate,
+    String? location,
+    String? url,
+  }) {
+    return mutate((ctx) async {
+      if (name != null) await ctx.set(uri, NS.schemaName, name);
+      if (description != null) {
+        await ctx.set(uri, NS.schemaDescription, description);
+      }
+      if (startDate != null) {
+        await ctx.set(uri, NS.schemaStartDate, startDate);
+      }
+      if (endDate != null) {
+        await ctx.set(uri, NS.schemaEndDate, endDate);
+      }
+      if (location != null) {
+        await ctx.set(uri, NS.schemaLocation, location);
+      }
+      if (url != null) await ctx.set(uri, NS.schemaUrl, url);
+    });
+  }
+
+  /// Deletes an Event entity and all its triples.
+  Future<void> deleteEvent(String uri) {
+    return mutate((ctx) async {
+      await ctx.remove(subject: uri);
+    });
+  }
+
   /// Lists Event entities ordered by start date (soonest first).
   ///
   /// Returns at most [limit] results.
@@ -160,12 +198,13 @@ extension KnowledgeStoreEventExtension on KnowledgeStore {
         .limit(limit)
         .execute();
 
-    final uris = typeTriples.map((t) => t.subject).toSet();
-    final events = <EventData>[];
-    for (final uri in uris) {
-      final triples = await getEntity(uri);
-      events.add(EventData.fromTriples(uri, triples));
-    }
-    return events;
+    final uris = typeTriples.map((t) => t.subject).toSet().toList();
+    if (uris.isEmpty) return [];
+    final allTriples = await getEntities(uris);
+    return [
+      for (final uri in uris)
+        if (allTriples[uri] case final triples? when triples.isNotEmpty)
+          EventData.fromTriples(uri, triples),
+    ];
   }
 }

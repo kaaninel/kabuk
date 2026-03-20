@@ -340,12 +340,13 @@ extension KnowledgeStoreContentBlockExtension on KnowledgeStore {
         .where(NS.kabukParentDocument, equals: documentUri)
         .execute();
 
-    final blockUris = triples.map((t) => t.subject).toSet();
+    final blockUris = triples.map((t) => t.subject).toSet().toList();
+    if (blockUris.isEmpty) return [];
+    final allTriples = await getEntities(blockUris);
     final blocks = <ContentBlockData>[];
-
     for (final uri in blockUris) {
-      final blockTriples = await getEntity(uri);
-      if (blockTriples.isNotEmpty) {
+      final blockTriples = allTriples[uri];
+      if (blockTriples != null && blockTriples.isNotEmpty) {
         blocks.add(ContentBlockData.fromTriples(uri, blockTriples));
       }
     }

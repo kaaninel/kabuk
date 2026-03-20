@@ -96,10 +96,15 @@ extension KnowledgeStoreFollowExtension on KnowledgeStore {
         .where(NS.rdfType, equals: NS.kabukFollowedUser)
         .execute();
 
+    final uris = typeTriples.map((t) => t.subject).toSet().toList();
+    if (uris.isEmpty) return [];
+    final allTriples = await getEntities(uris);
     final results = <FollowedUserData>[];
-    for (final t in typeTriples) {
-      final triples = await getEntity(t.subject);
-      results.add(FollowedUserData.fromTriples(t.subject, triples));
+    for (final uri in uris) {
+      final triples = allTriples[uri];
+      if (triples != null && triples.isNotEmpty) {
+        results.add(FollowedUserData.fromTriples(uri, triples));
+      }
     }
 
     results.sort((a, b) {

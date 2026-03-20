@@ -210,11 +210,13 @@ extension KnowledgeStoreCollectionExtension on KnowledgeStore {
         .limit(limit)
         .execute();
 
-    final uris = typeTriples.map((t) => t.subject).toSet();
+    final uris = typeTriples.map((t) => t.subject).toSet().toList();
+    if (uris.isEmpty) return [];
+    final allTriples = await getEntities(uris);
     final collections = <CollectionData>[];
-
     for (final uri in uris) {
-      final triples = await getEntity(uri);
+      final triples = allTriples[uri];
+      if (triples == null || triples.isEmpty) continue;
       final data = CollectionData.fromTriples(uri, triples);
       if (data.parentCollection == null) {
         collections.add(data);
@@ -233,11 +235,13 @@ extension KnowledgeStoreCollectionExtension on KnowledgeStore {
         .limit(limit)
         .execute();
 
-    final uris = triples.map((t) => t.subject).toSet();
+    final uris = triples.map((t) => t.subject).toSet().toList();
+    if (uris.isEmpty) return [];
+    final allTriples = await getEntities(uris);
     final collections = <CollectionData>[];
-
     for (final uri in uris) {
-      final entityTriples = await getEntity(uri);
+      final entityTriples = allTriples[uri];
+      if (entityTriples == null || entityTriples.isEmpty) continue;
       // Only include actual Collection entities.
       final isCollection = entityTriples.any(
         (t) => t.predicate == NS.rdfType && t.objectValue == NS.kabukCollection,
@@ -266,14 +270,18 @@ extension KnowledgeStoreCollectionExtension on KnowledgeStore {
         .limit(limit)
         .execute();
 
-    final uris = <String>{};
-    for (final t in triples) {
-      final entityTriples = await getEntity(t.subject);
+    final candidateUris = triples.map((t) => t.subject).toSet().toList();
+    if (candidateUris.isEmpty) return [];
+    final allTriples = await getEntities(candidateUris);
+    final uris = <String>[];
+    for (final uri in candidateUris) {
+      final entityTriples = allTriples[uri];
+      if (entityTriples == null) continue;
       final isNote = entityTriples.any(
         (e) => e.predicate == NS.rdfType && e.objectValue == NS.schemaNote,
       );
-      if (isNote) uris.add(t.subject);
+      if (isNote) uris.add(uri);
     }
-    return uris.toList();
+    return uris;
   }
 }

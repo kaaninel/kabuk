@@ -132,13 +132,14 @@ extension KnowledgeStoreSavedViewExtension on KnowledgeStore {
         .limit(limit)
         .execute();
 
-    final uris = typeTriples.map((t) => t.subject).toSet();
-    final views = <SavedViewData>[];
-    for (final uri in uris) {
-      final triples = await getEntity(uri);
-      views.add(SavedViewData.fromTriples(uri, triples));
-    }
-    return views;
+    final uris = typeTriples.map((t) => t.subject).toSet().toList();
+    if (uris.isEmpty) return [];
+    final allTriples = await getEntities(uris);
+    return [
+      for (final uri in uris)
+        if (allTriples[uri] case final triples? when triples.isNotEmpty)
+          SavedViewData.fromTriples(uri, triples),
+    ];
   }
 
   /// Deletes a SavedView by [uri].

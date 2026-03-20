@@ -283,13 +283,14 @@ extension KnowledgeStoreNostrExtension on KnowledgeStore {
     }
 
     final typeTriples = await q.execute();
-    final uris = typeTriples.map((t) => t.subject).toSet();
-    final notes = <NostrNoteData>[];
-    for (final uri in uris) {
-      final triples = await getEntity(uri);
-      notes.add(NostrNoteData.fromTriples(uri, triples));
-    }
-    return notes;
+    final uris = typeTriples.map((t) => t.subject).toSet().toList();
+    if (uris.isEmpty) return [];
+    final allTriples = await getEntities(uris);
+    return [
+      for (final uri in uris)
+        if (allTriples[uri] case final triples? when triples.isNotEmpty)
+          NostrNoteData.fromTriples(uri, triples),
+    ];
   }
 
   /// Updates the cached social stats for a Nostr note.

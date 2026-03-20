@@ -221,6 +221,51 @@ extension KnowledgeStoreMediaExtension on KnowledgeStore {
     return MediaData.fromTriples(uri, triples);
   }
 
+  /// Updates mutable fields of an existing media entity.
+  ///
+  /// Only non-null parameters are written; others are left unchanged.
+  Future<void> updateMediaObject(
+    String uri, {
+    String? name,
+    String? contentUrl,
+    String? encodingFormat,
+    int? width,
+    int? height,
+  }) {
+    return mutate((ctx) async {
+      if (name != null) await ctx.set(uri, NS.schemaName, name);
+      if (contentUrl != null) {
+        await ctx.set(uri, NS.schemaContentUrl, contentUrl);
+      }
+      if (encodingFormat != null) {
+        await ctx.set(uri, NS.schemaEncodingFormat, encodingFormat);
+      }
+      if (width != null) {
+        await ctx.set(
+          uri,
+          NS.schemaWidth,
+          width,
+          objectType: ObjectType.integer,
+        );
+      }
+      if (height != null) {
+        await ctx.set(
+          uri,
+          NS.schemaHeight,
+          height,
+          objectType: ObjectType.integer,
+        );
+      }
+    });
+  }
+
+  /// Deletes a media entity and all its triples.
+  Future<void> deleteMediaObject(String uri) {
+    return mutate((ctx) async {
+      await ctx.remove(subject: uri);
+    });
+  }
+
   /// Lists media entities, optionally filtered by [type].
   ///
   /// Returns at most [limit] results ordered by name.
@@ -254,10 +299,14 @@ extension KnowledgeStoreMediaExtension on KnowledgeStore {
       uris = allUris.take(limit).toList();
     }
 
+    if (uris.isEmpty) return [];
+    final allTriples = await getEntities(uris);
     final media = <MediaData>[];
     for (final uri in uris) {
-      final triples = await getEntity(uri);
-      media.add(MediaData.fromTriples(uri, triples));
+      final triples = allTriples[uri];
+      if (triples != null && triples.isNotEmpty) {
+        media.add(MediaData.fromTriples(uri, triples));
+      }
     }
     return media;
   }

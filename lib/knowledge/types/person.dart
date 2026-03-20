@@ -362,13 +362,140 @@ extension KnowledgeStorePersonExtension on KnowledgeStore {
         .limit(limit)
         .execute();
 
-    final uris = typeTriples.map((t) => t.subject).toSet();
-    final persons = <PersonData>[];
+    final uris = typeTriples.map((t) => t.subject).toSet().toList();
+    if (uris.isEmpty) return [];
+    final allTriples = await getEntities(uris);
+    return [
+      for (final uri in uris)
+        if (allTriples[uri] case final triples? when triples.isNotEmpty)
+          PersonData.fromTriples(uri, triples),
+    ];
+  }
+
+  /// Finds a Person by [name] (case-insensitive).
+  ///
+  /// Returns the URI of the first matching Person, or `null` if none found.
+  Future<String?> findPersonByName(String name) async {
+    final candidates =
+        await query()
+            .whereType(NS.schemaPerson)
+            .where(NS.schemaName, contains: name)
+            .execute();
+    final lowerName = name.toLowerCase();
+    final uris = candidates.map((t) => t.subject).toSet().toList();
+    if (uris.isEmpty) return null;
+    final allTriples = await getEntities(uris);
     for (final uri in uris) {
-      final triples = await getEntity(uri);
-      persons.add(PersonData.fromTriples(uri, triples));
+      final triples = allTriples[uri];
+      if (triples == null) continue;
+      final entityName =
+          triples
+              .where((t) => t.predicate == NS.schemaName)
+              .firstOrNull
+              ?.objectValue;
+      if (entityName != null && entityName.toLowerCase() == lowerName) {
+        return uri;
+      }
     }
-    return persons;
+    return null;
+  }
+
+  /// Finds a Person whose `schema:url` or `schema:sameAs` matches [url].
+  ///
+  /// Returns the URI of the first matching Person, or `null` if none found.
+  Future<String?> findPersonByUrl(String url) async {
+    // Check schema:url.
+    final byUrl =
+        await query()
+            .whereType(NS.schemaPerson)
+            .where(NS.schemaUrl, equals: url)
+            .execute();
+    if (byUrl.isNotEmpty) return byUrl.first.subject;
+
+    // Check schema:sameAs.
+    final bySameAs =
+        await query()
+            .whereType(NS.schemaPerson)
+            .where(NS.schemaSameAs, equals: url)
+            .execute();
+    if (bySameAs.isNotEmpty) return bySameAs.first.subject;
+
+    return null;
+  }
+
+  /// Creates a new Person or merges into an existing one if a match is found.
+  ///
+  /// Deduplication checks (in order):
+  /// 1. Name (case-insensitive)
+  ///
+  /// Merge strategy: existing non-null values are preserved; nulls are filled
+  /// from the new data. For description, the longer value wins.
+  Future<String> createOrMergePerson({
+    String? name,
+    String? givenName,
+    String? familyName,
+    String? email,
+    String? telephone,
+    String? description,
+    String? nostrPubkey,
+    String? nostrLabel,
+  }) async {
+    // Try to find an existing match.
+    String? existingUri;
+    if (name != null && name.isNotEmpty) {
+      existingUri = await findPersonByName(name);
+    }
+
+    if (existingUri == null) {
+      return createPerson(
+        name: name,
+        givenName: givenName,
+        familyName: familyName,
+        email: email,
+        telephone: telephone,
+        description: description,
+        nostrPubkey: nostrPubkey,
+        nostrLabel: nostrLabel,
+      );
+    }
+
+    // Merge into existing entity.
+    final existing = await getPersonData(existingUri);
+    if (existing == null) {
+      return createPerson(
+        name: name,
+        givenName: givenName,
+        familyName: familyName,
+        email: email,
+        telephone: telephone,
+        description: description,
+        nostrPubkey: nostrPubkey,
+        nostrLabel: nostrLabel,
+      );
+    }
+
+    await mutate((ctx) async {
+      if (existing.givenName == null && givenName != null) {
+        await ctx.set(existingUri!, NS.schemaGivenName, givenName);
+      }
+      if (existing.familyName == null && familyName != null) {
+        await ctx.set(existingUri!, NS.schemaFamilyName, familyName);
+      }
+      if (existing.email == null && email != null) {
+        await ctx.set(existingUri!, NS.schemaEmail, email);
+      }
+      if (existing.telephone == null && telephone != null) {
+        await ctx.set(existingUri!, NS.schemaTelephone, telephone);
+      }
+      // Keep the longer description.
+      if (description != null &&
+          (existing.description == null ||
+              description.length > existing.description!.length)) {
+        await ctx.set(existingUri!, NS.schemaDescription, description);
+      }
+    });
+
+    return existingUri;
   }
 }
 

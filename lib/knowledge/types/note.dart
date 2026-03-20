@@ -216,10 +216,13 @@ extension KnowledgeStoreNoteExtension on KnowledgeStore {
         .limit(limit)
         .execute();
 
-    final uris = triples.map((t) => t.subject).toSet();
+    final uris = triples.map((t) => t.subject).toSet().toList();
+    if (uris.isEmpty) return [];
+    final allTriples = await getEntities(uris);
     final notes = <NoteData>[];
     for (final uri in uris) {
-      final entityTriples = await getEntity(uri);
+      final entityTriples = allTriples[uri];
+      if (entityTriples == null || entityTriples.isEmpty) continue;
       final isNote = entityTriples.any(
         (t) => t.predicate == NS.rdfType && t.objectValue == NS.schemaNote,
       );
@@ -252,13 +255,14 @@ extension KnowledgeStoreNoteExtension on KnowledgeStore {
         .limit(limit)
         .execute();
 
-    final uris = typeTriples.map((t) => t.subject).toSet();
-    final notes = <NoteData>[];
-    for (final uri in uris) {
-      final triples = await getEntity(uri);
-      notes.add(NoteData.fromTriples(uri, triples));
-    }
-    return notes;
+    final uris = typeTriples.map((t) => t.subject).toSet().toList();
+    if (uris.isEmpty) return [];
+    final allTriples = await getEntities(uris);
+    return [
+      for (final uri in uris)
+        if (allTriples[uri] case final triples? when triples.isNotEmpty)
+          NoteData.fromTriples(uri, triples),
+    ];
   }
 
   /// Full-text searches Notes and returns matching [NoteData] objects.
@@ -271,9 +275,13 @@ extension KnowledgeStoreNoteExtension on KnowledgeStore {
     final results = await search(searchQuery, limit: limit);
     final subjectUris = results.map((t) => t.subject).toSet();
 
+    final uris = subjectUris.toList();
+    if (uris.isEmpty) return [];
+    final allTriples = await getEntities(uris);
     final notes = <NoteData>[];
-    for (final uri in subjectUris) {
-      final triples = await getEntity(uri);
+    for (final uri in uris) {
+      final triples = allTriples[uri];
+      if (triples == null || triples.isEmpty) continue;
       final isNote = triples.any(
         (t) => t.predicate == NS.rdfType && t.objectValue == NS.schemaNote,
       );
