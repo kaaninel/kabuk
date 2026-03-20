@@ -118,9 +118,30 @@ class WebPageData {
   }
 }
 
+/// Normalises a URL for consistent matching.
+///
+/// Ensures `https://` scheme, strips `www.` prefix, removes trailing slashes,
+/// and preserves query parameters. This prevents mismatches caused by
+/// http/https, www, or trailing-slash differences.
+String normalizeWebPageUrl(String url) {
+  var u = url.trim();
+  if (u.startsWith('http://')) u = 'https://${u.substring(7)}';
+  if (!u.startsWith('https://')) u = 'https://$u';
+  final uri = Uri.tryParse(u);
+  if (uri == null) return u;
+  final host = uri.host.replaceFirst('www.', '');
+  var path = uri.path;
+  if (path.endsWith('/')) path = path.substring(0, path.length - 1);
+  return 'https://$host$path${uri.hasQuery ? '?${uri.query}' : ''}';
+}
+
 /// Convenience methods for working with WebPage entities in the knowledge store.
 extension KnowledgeStoreWebPageExtension on KnowledgeStore {
   /// Creates a WebPage entity representing a parsed web page.
+  ///
+  /// The [url] is normalised before storage so that subsequent
+  /// [findWebPageByUrl] lookups match regardless of http/https, www, or
+  /// trailing-slash differences.
   Future<String> createWebPage({
     required String name,
     required String url,
@@ -134,6 +155,7 @@ extension KnowledgeStoreWebPageExtension on KnowledgeStore {
     double? confidence,
     List<String>? keywords,
   }) async {
+    final normalizedUrl = normalizeWebPageUrl(url);
     return mutate((ctx) async {
       final uri = ctx.create('WebPage');
       await ctx.set(
@@ -143,7 +165,7 @@ extension KnowledgeStoreWebPageExtension on KnowledgeStore {
         objectType: ObjectType.uri,
       );
       await ctx.set(uri, NS.schemaName, name);
-      await ctx.set(uri, NS.schemaUrl, url);
+      await ctx.set(uri, NS.schemaUrl, normalizedUrl);
       if (description != null) {
         await ctx.set(uri, NS.schemaDescription, description);
       }
@@ -206,15 +228,36 @@ extension KnowledgeStoreWebPageExtension on KnowledgeStore {
   }
 
   /// Finds a WebPage by its canonical URL.
+  ///
+  /// Normalises the input URL and tries several variants (exact, normalised,
+  /// domain-only) so that `http://www.example.com/path/` will match a stored
+  /// `https://example.com/path`.
   Future<WebPageData?> findWebPageByUrl(String url) async {
-    final results = await query()
-        .whereType(NS.schemaWebPage)
-        .where(NS.schemaUrl, equals: url)
-        .limit(1)
-        .execute();
-    if (results.isEmpty) return null;
-    final uri = results.first.subject;
-    return getWebPageData(uri);
+    final normalized = normalizeWebPageUrl(url);
+
+    // Build a set of candidate URLs to try (order matters — most specific
+    // first).
+    final candidates = <String>{url, normalized};
+
+    // Also try the domain root for pages stored without a path.
+    final uri = Uri.tryParse(normalized);
+    if (uri != null) {
+      final domainOnly =
+          'https://${uri.host.replaceFirst('www.', '')}';
+      candidates.add(domainOnly);
+    }
+
+    for (final candidate in candidates) {
+      final results = await query()
+          .whereType(NS.schemaWebPage)
+          .where(NS.schemaUrl, equals: candidate)
+          .limit(1)
+          .execute();
+      if (results.isNotEmpty) {
+        return getWebPageData(results.first.subject);
+      }
+    }
+    return null;
   }
 
   /// Updates mutable fields of an existing WebPage entity.

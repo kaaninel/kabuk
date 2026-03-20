@@ -8,17 +8,22 @@
 /// articles and displayed in a channel format, not in a WebView.
 library;
 
+import 'dart:developer' as dev;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:kabuk/config/namespaces.dart';
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/types/article.dart';
+import 'package:kabuk/knowledge/types/webpage.dart';
 import 'package:kabuk/services/reader_mode.dart';
 import 'package:kabuk/services/web_extractor.dart';
 import 'package:kabuk/ui/explore/article_card.dart';
 import 'package:kabuk/ui/explore/explore_view.dart';
 import 'package:kabuk/ui/explore/reader_view.dart';
+import 'package:kabuk/ui/explore/semantic_cards.dart';
 import 'package:kabuk/ui/theme.dart';
 
 // =============================================================================
@@ -65,6 +70,7 @@ class WebChannelView extends ConsumerStatefulWidget {
 
 class _WebChannelViewState extends ConsumerState<WebChannelView> {
   List<ArticleData> _articles = [];
+  List<_EntityEntry> _entityEntries = [];
   bool _isLoading = true;
   bool _isSubscribed = false;
   String? _subscriptionUri;
@@ -114,9 +120,58 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
       if (article != null) loaded.add(article);
     }
 
+    // Load non-article semantic entities from the WebPage's member list.
+    final articleUriSet = widget.articleUris.toSet();
+    final entities = <_EntityEntry>[];
+
+    // Try finding the WebPage with the URL (findWebPageByUrl already
+    // normalises and tries variants).
+    final webPage = await store.findWebPageByUrl(widget.url);
+
+    // Fallback: search for entities with kabuk:extractedFrom matching the
+    // domain when no WebPage record was found.
+    if (webPage == null) {
+      dev.log(
+        '[WebChannel] No WebPage found for ${widget.url}, trying domain '
+        'fallback',
+        name: 'WebChannelView',
+      );
+      final domain =
+          Uri.tryParse(widget.url)?.host.replaceFirst('www.', '') ?? '';
+      if (domain.isNotEmpty) {
+        final extracted = await store
+            .query()
+            .predicate(NS.kabukMemberEntity)
+            .execute();
+        for (final t in extracted) {
+          final memberUri = t.objectValue;
+          if (articleUriSet.contains(memberUri)) continue;
+          final type = _entityTypeFromUri(memberUri);
+          if (_supportedEntityTypes.contains(type)) {
+            entities.add(_EntityEntry(uri: memberUri, type: type));
+          }
+        }
+      }
+    } else {
+      for (final memberUri in webPage.memberEntities) {
+        if (articleUriSet.contains(memberUri)) continue;
+        final type = _entityTypeFromUri(memberUri);
+        if (_supportedEntityTypes.contains(type)) {
+          entities.add(_EntityEntry(uri: memberUri, type: type));
+        }
+      }
+    }
+
+    dev.log(
+      '[WebChannel] url=${widget.url} webPage=${webPage?.uri} '
+      'articles=${loaded.length} entities=${entities.length}',
+      name: 'WebChannelView',
+    );
+
     if (mounted) {
       setState(() {
         _articles = loaded;
+        _entityEntries = entities;
         _isLoading = false;
       });
     }
@@ -251,6 +306,95 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
     }
   }
 
+  /// Short summary for the channel header showing per-type counts.
+  String get _summaryText {
+    final parts = <String>[];
+    if (_articles.isNotEmpty) {
+      parts.add('${_articles.length} article${_articles.length == 1 ? '' : 's'}');
+    }
+    // Count each entity type individually.
+    final typeCounts = <String, int>{};
+    for (final e in _entityEntries) {
+      typeCounts[e.type] = (typeCounts[e.type] ?? 0) + 1;
+    }
+    for (final MapEntry(:key, :value) in typeCounts.entries) {
+      final label = switch (key) {
+        'Person' => value == 1 ? 'person' : 'people',
+        'Place' => value == 1 ? 'place' : 'places',
+        'Product' => value == 1 ? 'product' : 'products',
+        'Organization' => value == 1 ? 'org' : 'orgs',
+        _ => key.toLowerCase(),
+      };
+      parts.add('$value $label');
+    }
+    return parts.isEmpty ? 'No content' : parts.join(' · ');
+  }
+
+  /// Builds sliver sections for each non-article entity type.
+  ///
+  /// People are rendered as a horizontal scrollable strip for prominence;
+  /// other types use the standard vertical card list.
+  List<Widget> _buildEntitySections() {
+    if (_entityEntries.isEmpty) return const [];
+
+    // Group by type.
+    final grouped = <String, List<_EntityEntry>>{};
+    for (final entry in _entityEntries) {
+      (grouped[entry.type] ??= []).add(entry);
+    }
+
+    // Sort sections by config order, then render.
+    final sortedTypes = grouped.keys.toList()
+      ..sort((a, b) {
+        final oa = _sectionConfig[a]?.$3 ?? 99;
+        final ob = _sectionConfig[b]?.$3 ?? 99;
+        return oa.compareTo(ob);
+      });
+
+    final slivers = <Widget>[];
+    for (final type in sortedTypes) {
+      final entries = grouped[type]!;
+      final config = _sectionConfig[type];
+      final emoji = config?.$1 ?? '📎';
+      final label = config?.$2 ?? type;
+
+      slivers.add(SliverToBoxAdapter(
+        child: _SectionHeader(emoji: emoji, label: label, count: entries.length),
+      ));
+
+      // People get a horizontal scrollable strip for prominence.
+      if (type == 'Person') {
+        slivers.add(SliverToBoxAdapter(
+          child: SizedBox(
+            height: 100,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              itemCount: entries.length,
+              itemBuilder: (context, index) {
+                return _PersonChip(uri: entries[index].uri);
+              },
+            ),
+          ),
+        ));
+      } else {
+        slivers.add(SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, index) {
+              final entry = entries[index];
+              return SemanticEntityCard(
+                entityUri: entry.uri,
+                entityType: entry.type,
+              );
+            },
+            childCount: entries.length,
+          ),
+        ));
+      }
+    }
+    return slivers;
+  }
+
   @override
   Widget build(BuildContext context) {
     // Single-article page → show full reader view with subscribe button.
@@ -266,7 +410,7 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
 
     // Multi-article page → channel-style card list.
     return Scaffold(
-      backgroundColor: KabukTheme.background,
+      backgroundColor: context.kabukBackground,
       body: CustomScrollView(
         controller: _scrollController,
         slivers: [
@@ -274,8 +418,8 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
           SliverAppBar(
             expandedHeight: 100,
             pinned: true,
-            backgroundColor: KabukTheme.surface,
-            foregroundColor: KabukTheme.textPrimary,
+            backgroundColor: context.kabukSurface,
+            foregroundColor: context.kabukTextPrimary,
             flexibleSpace: FlexibleSpaceBar(
               background: Container(
                 decoration: BoxDecoration(
@@ -326,17 +470,17 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
                       children: [
                         Text(
                           _domain,
-                          style: const TextStyle(
-                            color: KabukTheme.textPrimary,
+                          style: TextStyle(
+                            color: context.kabukTextPrimary,
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '${_articles.length} articles',
-                          style: const TextStyle(
-                            color: KabukTheme.textTertiary,
+                          _summaryText,
+                          style: TextStyle(
+                            color: context.kabukTextTertiary,
                             fontSize: 13,
                           ),
                         ),
@@ -372,8 +516,8 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
                         link.title,
                         style: const TextStyle(fontSize: 12),
                       ),
-                      backgroundColor: KabukTheme.surface,
-                      side: const BorderSide(color: KabukTheme.divider),
+                      backgroundColor: context.kabukSurface,
+                      side: BorderSide(color: context.kabukDivider),
                       onPressed: () => _browseLink(link.url),
                     );
                   },
@@ -381,8 +525,8 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
               ),
             ),
 
-          const SliverToBoxAdapter(
-            child: Divider(color: KabukTheme.divider, height: 1),
+          SliverToBoxAdapter(
+            child: Divider(color: context.kabukDivider, height: 1),
           ),
 
           // ── Content ──
@@ -395,29 +539,42 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
                 ),
               ),
             )
-          else if (_articles.isEmpty)
-            const SliverFillRemaining(
+          else if (_articles.isEmpty && _entityEntries.isEmpty)
+            SliverFillRemaining(
               hasScrollBody: false,
               child: Center(
                 child: Text(
-                  'No articles found on this page',
-                  style: TextStyle(color: KabukTheme.textSecondary),
+                  'No content found on this page',
+                  style: TextStyle(color: context.kabukTextSecondary),
                 ),
               ),
             )
-          else
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  return ArticleCard(
-                    article: _articles[index],
-                    articles: _articles,
-                    index: index,
-                  );
-                },
-                childCount: _articles.length,
+          else ...[
+            // ── Semantic entity sections (shown first for prominence) ──
+            ..._buildEntitySections(),
+            // ── Articles section ──
+            if (_articles.isNotEmpty) ...[
+              SliverToBoxAdapter(
+                child: _SectionHeader(
+                  emoji: '📰',
+                  label: 'Articles',
+                  count: _articles.length,
+                ),
               ),
-            ),
+              SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    return ArticleCard(
+                      article: _articles[index],
+                      articles: _articles,
+                      index: index,
+                    );
+                  },
+                  childCount: _articles.length,
+                ),
+              ),
+            ],
+          ],
 
           // ── Load more indicator ──
           if (_isLoadingMore)
@@ -454,6 +611,194 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
         ],
       ),
     );
+  }
+}
+
+// =============================================================================
+// Helpers and models
+// =============================================================================
+
+/// Holds a non-article entity URI and its Schema.org type for display.
+class _EntityEntry {
+  const _EntityEntry({required this.uri, required this.type});
+  final String uri;
+  final String type;
+}
+
+/// Entity types that have dedicated card widgets.
+const _supportedEntityTypes = {'Person', 'Product', 'Place', 'Organization'};
+
+/// Section config: emoji prefix, display label, and sort order.
+const _sectionConfig = <String, (String, String, int)>{
+  'Person': ('👤', 'People', 1),
+  'Product': ('🛍️', 'Products', 2),
+  'Place': ('📍', 'Places', 3),
+  'Organization': ('🏢', 'Organizations', 4),
+};
+
+/// Extracts the Schema.org type name from a Kabuk entity URI.
+///
+/// URIs follow the pattern `kabuk:TypeName/uuid`.
+String _entityTypeFromUri(String uri) {
+  final parts = uri.split(':');
+  if (parts.length < 2) return 'Article';
+  final typePart = parts[1].split('/').first;
+  return typePart;
+}
+
+// =============================================================================
+// Section header widget
+// =============================================================================
+
+/// Displays a labeled section divider (e.g. "📰 Articles (3)").
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({
+    required this.emoji,
+    required this.label,
+    required this.count,
+  });
+
+  final String emoji;
+  final String label;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+      child: Row(
+        children: [
+          Text(emoji, style: const TextStyle(fontSize: 16)),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: context.kabukTextPrimary,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '($count)',
+            style: TextStyle(
+              color: context.kabukTextTertiary,
+              fontSize: 13,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// Person chip for horizontal strip
+// =============================================================================
+
+/// Compact circular chip showing a person's initials and name.
+///
+/// Used in the horizontal people strip at the top of a channel view.
+/// Tapping expands to the full [PersonCard] in a bottom sheet.
+class _PersonChip extends ConsumerWidget {
+  const _PersonChip({required this.uri});
+
+  final String uri;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final asyncPerson = ref.watch(personDataProvider(uri));
+
+    return asyncPerson.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 6),
+        child: SizedBox(
+          width: 64,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircleAvatar(
+                radius: 26,
+                backgroundColor: Color(0x20AB47BC),
+              ),
+              SizedBox(height: 6),
+              SizedBox(height: 10, width: 48),
+            ],
+          ),
+        ),
+      ),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (person) {
+        if (person == null) return const SizedBox.shrink();
+        final name = person.name ??
+            person.givenName ??
+            person.familyName ??
+            'Unknown';
+        final initials = _initials(name);
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: GestureDetector(
+            onTap: () => _showPersonSheet(context, uri),
+            child: SizedBox(
+              width: 64,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircleAvatar(
+                    radius: 26,
+                    backgroundColor: KabukTheme.purpleAccent.withAlpha(38),
+                    child: Text(
+                      initials,
+                      style: const TextStyle(
+                        color: KabukTheme.purpleAccent,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    name,
+                    style: TextStyle(
+                      color: context.kabukTextPrimary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Shows the full PersonCard in a bottom sheet.
+  static void _showPersonSheet(BuildContext context, String uri) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: context.kabukCardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.only(top: 8, bottom: 24),
+        child: PersonCard(uri: uri),
+      ),
+    );
+  }
+
+  /// Extracts up to two initials from a name.
+  static String _initials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) return parts[0][0].toUpperCase();
+    return '${parts[0][0]}${parts.last[0]}'.toUpperCase();
   }
 }
 
@@ -585,10 +930,10 @@ class _LinkLoaderState extends ConsumerState<_LinkLoader> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: KabukTheme.background,
+      backgroundColor: context.kabukBackground,
       appBar: AppBar(
-        backgroundColor: KabukTheme.surface,
-        foregroundColor: KabukTheme.textPrimary,
+        backgroundColor: context.kabukSurface,
+        foregroundColor: context.kabukTextPrimary,
         title: Text(
           Uri.tryParse(widget.url)?.host ?? widget.url,
           style: const TextStyle(fontSize: 14),
@@ -599,7 +944,7 @@ class _LinkLoaderState extends ConsumerState<_LinkLoader> {
             ? const CircularProgressIndicator(color: KabukTheme.blueAccent)
             : Text(
                 _error ?? 'Failed to load',
-                style: const TextStyle(color: KabukTheme.textSecondary),
+                style: TextStyle(color: context.kabukTextSecondary),
               ),
       ),
     );

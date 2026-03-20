@@ -581,12 +581,23 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
       final entities = <(String, String)>[];
       String? authorUri;
 
+      dev.log(
+        '[ArticleDetail] Loading entities for article: $articleUri',
+        name: 'ArticleDetail',
+      );
+
       // 1. Check for direct schema:author on the article.
       final authorTriples = await store
           .query()
           .subject(articleUri)
           .predicate(NS.schemaAuthor)
           .execute();
+
+      dev.log(
+        '[ArticleDetail] Author triples found: ${authorTriples.length}',
+        name: 'ArticleDetail',
+      );
+
       if (authorTriples.isNotEmpty) {
         final uri = authorTriples.first.objectValue;
         // Verify it's a Person entity by checking rdf:type.
@@ -609,6 +620,12 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
           .execute();
 
       final webPageUri = webPageTriples.firstOrNull?.subject;
+
+      dev.log(
+        '[ArticleDetail] WebPage found: $webPageUri',
+        name: 'ArticleDetail',
+      );
+
       if (webPageUri != null) {
         // Get ALL member entities of that WebPage.
         final memberTriples = await store
@@ -645,6 +662,12 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
       }
 
       if (!mounted) return;
+
+      dev.log(
+        '[ArticleDetail] Related entities: ${entities.length}',
+        name: 'ArticleDetail',
+      );
+
       setState(() {
         _relatedEntities = entities;
         _authorEntityUri = authorUri;
@@ -1222,20 +1245,20 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
         .replaceAll(RegExp(r'\s{2,}'), ' ')
         .trim();
     if (cleaned.isNotEmpty) return cleaned;
-    // Web-sourced articles get a domain-based fallback.
+
+    // Try to get domain from article URL
     final a = _enrichedArticle ?? widget.article;
-    final source = a.feedSource ?? '';
-    if (source.startsWith('web:') ||
-        a.tags.contains('web') ||
-        a.tags.contains('reader-mode')) {
-      final aUrl = a.url;
-      if (aUrl != null) {
-        final uri = Uri.tryParse(aUrl);
-        if (uri != null && uri.host.isNotEmpty) {
-          return uri.host.replaceFirst('www.', '');
-        }
+    final articleUrl = a.url;
+    if (articleUrl != null && articleUrl.isNotEmpty) {
+      final uri = Uri.tryParse(articleUrl);
+      if (uri != null && uri.host.isNotEmpty) {
+        return uri.host.replaceFirst('www.', '');
       }
-      return 'Web page';
+    }
+    // Also check feedSource
+    final source = a.feedSource ?? '';
+    if (source.startsWith('web:')) {
+      return source.substring(4);
     }
     return 'Nostr post';
   }
