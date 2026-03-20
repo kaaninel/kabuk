@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:kabuk/config/namespaces.dart';
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/knowledge/types/bookmark.dart';
@@ -29,6 +30,7 @@ import 'package:kabuk/ui/explore/nostr_providers.dart';
 import 'package:kabuk/ui/explore/profile_view.dart';
 import 'package:kabuk/ui/explore/quick_peek_sheet.dart';
 import 'package:kabuk/ui/explore/reddit_comments.dart';
+import 'package:kabuk/ui/explore/semantic_cards.dart';
 import 'package:kabuk/ui/shared/feed_image.dart';
 import 'package:kabuk/ui/shared/fullscreen_image_viewer.dart';
 import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
@@ -475,6 +477,13 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
   ArticleData? _enrichedArticle;
   List<ContentBlockData>? _contentBlocks;
 
+  /// Related semantic entities extracted from the article's parent WebPage.
+  /// Each tuple is (entityUri, schemaType) where schemaType is e.g. "Person".
+  List<(String uri, String type)>? _relatedEntities;
+
+  /// The URI of the author entity if a schema:author Person exists.
+  String? _authorEntityUri;
+
   /// Whether this article needs full content fetching.
   ///
   /// True when the article has a URL but no content blocks have been loaded
@@ -501,6 +510,8 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
       _fetchAttempted = false;
       _enrichedArticle = null;
       _contentBlocks = null;
+      _relatedEntities = null;
+      _authorEntityUri = null;
       _loadExistingBlocks();
     }
   }
@@ -518,6 +529,9 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
     } else if (_needsContentFetch) {
       unawaited(_fetchContent());
     }
+
+    // Load related semantic entities in the background.
+    unawaited(_loadRelatedEntities());
   }
 
   Future<void> _fetchContent() async {
@@ -558,6 +572,93 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
     }
   }
 
+  /// Loads related semantic entities (Person, Place, Product, Organization)
+  /// linked to the article's parent WebPage, plus direct schema:author.
+  Future<void> _loadRelatedEntities() async {
+    try {
+      final store = ref.read(knowledgeStoreProvider);
+      final articleUri = widget.article.uri;
+      final entities = <(String, String)>[];
+      String? authorUri;
+
+      // 1. Check for direct schema:author on the article.
+      final authorTriples = await store
+          .query()
+          .subject(articleUri)
+          .predicate(NS.schemaAuthor)
+          .execute();
+      if (authorTriples.isNotEmpty) {
+        final uri = authorTriples.first.objectValue;
+        // Verify it's a Person entity by checking rdf:type.
+        final typeTriples = await store
+            .query()
+            .subject(uri)
+            .predicate(NS.rdfType)
+            .object(NS.schemaPerson)
+            .execute();
+        if (typeTriples.isNotEmpty) {
+          authorUri = uri;
+        }
+      }
+
+      // 2. Find the WebPage that contains this article as a memberEntity.
+      final webPageTriples = await store
+          .query()
+          .predicate(NS.kabukMemberEntity)
+          .object(articleUri)
+          .execute();
+
+      final webPageUri = webPageTriples.firstOrNull?.subject;
+      if (webPageUri != null) {
+        // Get ALL member entities of that WebPage.
+        final memberTriples = await store
+            .query()
+            .subject(webPageUri)
+            .predicate(NS.kabukMemberEntity)
+            .execute();
+
+        for (final triple in memberTriples) {
+          final memberUri = triple.objectValue;
+          // Skip the article itself.
+          if (memberUri == articleUri) continue;
+
+          // Look up the rdf:type for this entity.
+          final typeTriples = await store
+              .query()
+              .subject(memberUri)
+              .predicate(NS.rdfType)
+              .execute();
+
+          for (final tt in typeTriples) {
+            final fullType = tt.objectValue;
+            // Extract short type name from Schema.org URI.
+            final shortType = fullType.startsWith(NS.schema)
+                ? fullType.substring(NS.schema.length)
+                : fullType;
+            if (const {'Person', 'Place', 'Product', 'Organization'}
+                .contains(shortType)) {
+              entities.add((memberUri, shortType));
+              break;
+            }
+          }
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _relatedEntities = entities;
+        _authorEntityUri = authorUri;
+      });
+    } on Object catch (e, st) {
+      dev.log(
+        'Failed to load related entities for ${widget.article.uri}',
+        name: 'ArticleDetail',
+        error: e,
+        stackTrace: st,
+      );
+    }
+  }
+
   /// Opens the fullscreen gallery at the image matching [imageUrl].
   ///
   /// If channel images are available, uses the full channel gallery.
@@ -584,6 +685,123 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
         tag: tag,
       );
     }
+  }
+
+  /// Builds a prominent author card when a Person entity exists for the author.
+  Widget _buildAuthorSection(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.person_rounded, size: 14, color: KabukTheme.purpleAccent),
+              const SizedBox(width: 6),
+              Text(
+                'Author',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: context.kabukTextSecondary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          PersonCard(uri: _authorEntityUri!),
+        ],
+      ),
+    );
+  }
+
+  /// Builds the related entities section, grouped by type.
+  Widget _buildRelatedEntitiesSection(BuildContext context) {
+    final entities = _relatedEntities!;
+
+    // Exclude the author from the "People" list.
+    final nonAuthorEntities = entities.where((e) {
+      if (e.$2 == 'Person' && e.$1 == _authorEntityUri) return false;
+      return true;
+    }).toList();
+
+    if (nonAuthorEntities.isEmpty) return const SizedBox.shrink();
+
+    // Group by type.
+    final people = nonAuthorEntities.where((e) => e.$2 == 'Person').toList();
+    final places = nonAuthorEntities.where((e) => e.$2 == 'Place').toList();
+    final orgs = nonAuthorEntities
+        .where((e) => e.$2 == 'Organization')
+        .toList();
+    final products =
+        nonAuthorEntities.where((e) => e.$2 == 'Product').toList();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.hub_rounded, size: 14, color: KabukTheme.accentGreen),
+              const SizedBox(width: 6),
+              Text(
+                'Related',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: context.kabukTextSecondary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (places.isNotEmpty) ...[
+            _entityGroupHeader(context, '📍', 'Places mentioned'),
+            for (final e in places) ...[
+              SemanticEntityCard(entityUri: e.$1, entityType: e.$2),
+              const SizedBox(height: 8),
+            ],
+          ],
+          if (orgs.isNotEmpty) ...[
+            _entityGroupHeader(context, '🏢', 'Organizations'),
+            for (final e in orgs) ...[
+              SemanticEntityCard(entityUri: e.$1, entityType: e.$2),
+              const SizedBox(height: 8),
+            ],
+          ],
+          if (products.isNotEmpty) ...[
+            _entityGroupHeader(context, '🛍', 'Products'),
+            for (final e in products) ...[
+              SemanticEntityCard(entityUri: e.$1, entityType: e.$2),
+              const SizedBox(height: 8),
+            ],
+          ],
+          if (people.isNotEmpty) ...[
+            _entityGroupHeader(context, '👤', 'People'),
+            for (final e in people) ...[
+              SemanticEntityCard(entityUri: e.$1, entityType: e.$2),
+              const SizedBox(height: 8),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Small header for an entity group within the related section.
+  Widget _entityGroupHeader(BuildContext context, String emoji, String label) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6, top: 4),
+      child: Text(
+        '$emoji  $label',
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+          color: context.kabukTextTertiary,
+        ),
+      ),
+    );
   }
 
   @override
@@ -680,7 +898,7 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
             ),
           ),
 
-        // ── Compact meta: date + source link ───────────────────────────────
+        // ── Compact meta: date + source link + author ──────────────────────
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
           child: Row(
@@ -718,6 +936,42 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
                         ),
                       ),
                     ],
+                  ),
+                ),
+              ],
+              // Show author with person icon when entity exists.
+              if (article.author != null && article.author!.isNotEmpty) ...[
+                if (article.datePublished != null ||
+                    (article.url != null && !_isInternalUrl(article.url!)))
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: Text('·',
+                        style: TextStyle(
+                            fontSize: 12, color: context.kabukTextTertiary)),
+                  ),
+                if (_authorEntityUri != null)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 4),
+                    child: Icon(
+                      Icons.person_rounded,
+                      size: 12,
+                      color: KabukTheme.purpleAccent,
+                    ),
+                  ),
+                Flexible(
+                  child: Text(
+                    article.author!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _authorEntityUri != null
+                          ? KabukTheme.purpleAccent
+                          : context.kabukTextTertiary,
+                      fontWeight: _authorEntityUri != null
+                          ? FontWeight.w500
+                          : FontWeight.normal,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
@@ -867,6 +1121,14 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
               ),
             ),
           ),
+
+        // ── Author entity card ─────────────────────────────────────────
+        if (_authorEntityUri != null)
+          _buildAuthorSection(context),
+
+        // ── Related semantic entities ─────────────────────────────────────
+        if (_relatedEntities != null && _relatedEntities!.isNotEmpty)
+          _buildRelatedEntitiesSection(context),
 
         // ── Unified discussion (Nostr + Reddit + 4chan) ────────────────────
         _DiscussionSection(key: ValueKey(article.uri), article: article),
