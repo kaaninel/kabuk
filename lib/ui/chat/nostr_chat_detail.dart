@@ -20,6 +20,7 @@ import 'package:kabuk/knowledge/database.dart';
 import 'package:kabuk/services/media.dart';
 import 'package:kabuk/ui/chat/chat_input.dart';
 import 'package:kabuk/ui/explore/article_detail_page.dart' show openUrlSmart;
+import 'package:kabuk/ui/shared/error_retry.dart';
 import 'package:kabuk/ui/shell.dart';
 import 'package:kabuk/ui/theme.dart';
 
@@ -236,7 +237,7 @@ class _NostrChatDetailState extends ConsumerState<NostrChatDetail> {
     unawaited(showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: KabukTheme.surface,
+        backgroundColor: context.kabukSurface,
         title: const Row(
           children: [
             Icon(Icons.security, color: KabukTheme.accentGreen),
@@ -362,7 +363,7 @@ class _NostrChatDetailState extends ConsumerState<NostrChatDetail> {
   Future<void> _attachMedia() async {
     final picked = await showModalBottomSheet<_AttachType>(
       context: context,
-      backgroundColor: KabukTheme.surface,
+      backgroundColor: context.kabukSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -396,7 +397,7 @@ class _NostrChatDetailState extends ConsumerState<NostrChatDetail> {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          backgroundColor: KabukTheme.surface,
+          backgroundColor: context.kabukSurface,
           title: const Text('Send image?'),
           content: ClipRRect(
             borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
@@ -674,7 +675,12 @@ class _NostrChatDetailState extends ConsumerState<NostrChatDetail> {
                     data: _buildMessageList,
                     loading: () =>
                         const Center(child: CircularProgressIndicator()),
-                    error: (e, _) => Center(child: Text('Error: $e')),
+                    error: (e, _) => ErrorRetryWidget.fromError(
+                      e,
+                      onRetry: () => ref.invalidate(
+                        _nostrDmMessagesProvider(widget.conversationId),
+                      ),
+                    ),
                   ),
                 if (!_isNearBottom && !_isSearchActive)
                   Positioned(
@@ -682,8 +688,8 @@ class _NostrChatDetailState extends ConsumerState<NostrChatDetail> {
                     bottom: KabukTheme.spacingSm,
                     child: FloatingActionButton.small(
                       onPressed: _scrollToBottom,
-                      backgroundColor: KabukTheme.cardColor.withAlpha(230),
-                      foregroundColor: KabukTheme.textSecondary,
+                      backgroundColor: context.kabukCardColor.withAlpha(230),
+                      foregroundColor: context.kabukTextSecondary,
                       elevation: 2,
                       child: const Icon(Icons.keyboard_arrow_down),
                     ),
@@ -742,10 +748,10 @@ class _NostrChatDetailState extends ConsumerState<NostrChatDetail> {
       controller: _searchController,
       autofocus: true,
       style: const TextStyle(fontSize: 15),
-      decoration: const InputDecoration(
+      decoration: InputDecoration(
         hintText: 'Search messages…',
         border: InputBorder.none,
-        hintStyle: TextStyle(color: KabukTheme.textSecondary),
+        hintStyle: TextStyle(color: context.kabukTextSecondary),
       ),
       onChanged: (q) {
         setState(() => _searchQuery = q);
@@ -760,7 +766,7 @@ class _NostrChatDetailState extends ConsumerState<NostrChatDetail> {
       return Center(
         child: Text(
           _searchQuery.isEmpty ? 'Type to search…' : 'No results found',
-          style: const TextStyle(color: KabukTheme.textSecondary),
+          style: TextStyle(color: context.kabukTextSecondary),
         ),
       );
     }
@@ -824,7 +830,7 @@ class _NostrChatDetailState extends ConsumerState<NostrChatDetail> {
               textAlign: TextAlign.center,
               style: Theme.of(
                 context,
-              ).textTheme.bodyMedium?.copyWith(color: KabukTheme.textSecondary),
+              ).textTheme.bodyMedium?.copyWith(color: context.kabukTextSecondary),
             ),
           ],
         ),
@@ -929,7 +935,7 @@ class _AttachOption extends StatelessWidget {
               width: 56,
               height: 56,
               decoration: BoxDecoration(
-                color: KabukTheme.cardColor,
+                color: context.kabukCardColor,
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Icon(icon, color: KabukTheme.accentGreen, size: 28),
@@ -937,9 +943,9 @@ class _AttachOption extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
               ),
             ),
           ],
@@ -975,7 +981,7 @@ class _PinnedMessagesBanner extends ConsumerWidget {
           child: GestureDetector(
           onTap: () => showModalBottomSheet<void>(
             context: context,
-            backgroundColor: KabukTheme.surface,
+            backgroundColor: context.kabukSurface,
             shape: const RoundedRectangleBorder(
               borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
             ),
@@ -992,8 +998,8 @@ class _PinnedMessagesBanner extends ConsumerWidget {
             ),
             decoration: BoxDecoration(
               color: KabukTheme.accentGreen.withAlpha(15),
-              border: const Border(
-                bottom: BorderSide(color: KabukTheme.divider, width: 0.5),
+              border: Border(
+                bottom: BorderSide(color: context.kabukDivider, width: 0.5),
               ),
             ),
             child: Row(
@@ -1009,9 +1015,9 @@ class _PinnedMessagesBanner extends ConsumerWidget {
                     first.content,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: KabukTheme.textSecondary,
+                      color: context.kabukTextSecondary,
                     ),
                   ),
                 ),
@@ -1126,9 +1132,9 @@ class _TypingIndicatorBarState extends ConsumerState<_TypingIndicatorBar> {
       ),
       child: Text(
         '${widget.displayName} is typing…',
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
-          color: KabukTheme.textSecondary,
+          color: context.kabukTextSecondary,
           fontStyle: FontStyle.italic,
         ),
       ),
@@ -1335,7 +1341,7 @@ class _DmBubbleState extends ConsumerState<_DmBubble> {
                         decoration: BoxDecoration(
                           color: _isOwnMessage
                               ? KabukTheme.accentGreen.withAlpha(30)
-                              : KabukTheme.cardColor,
+                              : context.kabukCardColor,
                           borderRadius: BorderRadius.only(
                             topLeft: const Radius.circular(KabukTheme.radiusMd),
                             topRight: const Radius.circular(
@@ -1351,7 +1357,7 @@ class _DmBubbleState extends ConsumerState<_DmBubble> {
                           border: Border.all(
                             color: _isOwnMessage
                                 ? KabukTheme.accentGreen.withAlpha(50)
-                                : KabukTheme.divider,
+                                : context.kabukDivider,
                             width: 0.5,
                           ),
                         ),
@@ -1397,24 +1403,24 @@ class _DmBubbleState extends ConsumerState<_DmBubble> {
                                     height: 80,
                                     alignment: Alignment.center,
                                     decoration: BoxDecoration(
-                                      color: KabukTheme.surfaceVariant,
+                                      color: context.kabukSurfaceVariant,
                                       borderRadius: BorderRadius.circular(
                                         KabukTheme.radiusSm,
                                       ),
                                     ),
-                                    child: const Row(
+                                    child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         Icon(
                                           Icons.broken_image_outlined,
                                           size: 18,
-                                          color: KabukTheme.textSecondary,
+                                          color: context.kabukTextSecondary,
                                         ),
                                         SizedBox(width: 4),
                                         Text(
                                           'Image unavailable',
                                           style: TextStyle(
-                                            color: KabukTheme.textSecondary,
+                                            color: context.kabukTextSecondary,
                                             fontSize: 12,
                                           ),
                                         ),
@@ -1435,8 +1441,8 @@ class _DmBubbleState extends ConsumerState<_DmBubble> {
                             if (_hasTextContent)
                               Text(
                                 widget.message.content,
-                                style: const TextStyle(
-                                  color: KabukTheme.textPrimary,
+                                style: TextStyle(
+                                  color: context.kabukTextPrimary,
                                   fontSize: 14,
                                   height: 1.4,
                                 ),
@@ -1478,7 +1484,7 @@ class _DmBubbleState extends ConsumerState<_DmBubble> {
                                 Text(
                                   _formatTime(widget.message.timestamp),
                                   style: TextStyle(
-                                    color: KabukTheme.textSecondary.withAlpha(
+                                    color: context.kabukTextSecondary.withAlpha(
                                       150,
                                     ),
                                     fontSize: 10,
@@ -1491,7 +1497,7 @@ class _DmBubbleState extends ConsumerState<_DmBubble> {
                                     size: 12,
                                     color: _isDelivered
                                         ? Colors.greenAccent
-                                        : KabukTheme.textSecondary.withAlpha(
+                                        : context.kabukTextSecondary.withAlpha(
                                             150,
                                           ),
                                   ),
@@ -1533,7 +1539,7 @@ class _DmBubbleState extends ConsumerState<_DmBubble> {
     HapticFeedback.mediumImpact();
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: KabukTheme.surface,
+      backgroundColor: context.kabukSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -1731,7 +1737,7 @@ class _BubbleOptionsSheet extends ConsumerWidget {
     final selected = await showDialog<Duration?>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        backgroundColor: KabukTheme.surface,
+        backgroundColor: context.kabukSurface,
         title: const Text('Disappear after…'),
         children: options.entries.map((e) {
           return SimpleDialogOption(
@@ -1756,7 +1762,7 @@ class _BubbleOptionsSheet extends ConsumerWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: KabukTheme.surface,
+        backgroundColor: context.kabukSurface,
         title: const Text('Delete message?'),
         content: const Text(
           'This removes the message locally and sends a NIP-09 deletion request to relays.',
@@ -1844,9 +1850,9 @@ class _ReplyPreview extends ConsumerWidget {
                 parent.content,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                 ),
               ),
             ],
@@ -1928,9 +1934,9 @@ class _ReactionRow extends ConsumerWidget {
                     vertical: 3,
                   ),
                   decoration: BoxDecoration(
-                    color: KabukTheme.cardColor,
+                    color: context.kabukCardColor,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: KabukTheme.divider, width: 0.5),
+                    border: Border.all(color: context.kabukDivider, width: 0.5),
                   ),
                   child: Text(
                     '${e.key} ${e.value}',
@@ -2042,7 +2048,7 @@ class _LinkPreviewCardState extends State<_LinkPreviewCard> {
       child: Container(
         margin: const EdgeInsets.only(bottom: 6),
         decoration: BoxDecoration(
-          color: KabukTheme.surfaceVariant,
+          color: context.kabukSurfaceVariant,
           borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
           border: const Border(
             left: BorderSide(color: KabukTheme.accentGreen, width: 3),
@@ -2077,10 +2083,10 @@ class _LinkPreviewCardState extends State<_LinkPreviewCard> {
                       d.title!,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: KabukTheme.textPrimary,
+                        color: context.kabukTextPrimary,
                       ),
                     ),
                   if (d.description != null)
@@ -2088,9 +2094,9 @@ class _LinkPreviewCardState extends State<_LinkPreviewCard> {
                       d.description!,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
-                        color: KabukTheme.textSecondary,
+                        color: context.kabukTextSecondary,
                       ),
                     ),
                   Text(

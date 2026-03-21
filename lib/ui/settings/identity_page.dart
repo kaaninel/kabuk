@@ -11,6 +11,7 @@ import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/config/result.dart';
 import 'package:kabuk/services/auth.dart';
 import 'package:kabuk/ui/settings/settings_shared.dart';
+import 'package:kabuk/ui/shared/error_retry.dart';
 import 'package:kabuk/ui/theme.dart';
 
 /// Identity management sub-page — full identity lifecycle.
@@ -49,25 +50,25 @@ class _IdentityPageState extends ConsumerState<IdentityPage> {
     final nsec = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: KabukTheme.surface,
+        backgroundColor: context.kabukSurface,
         title: const Text('Import Identity'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Paste your Nostr private key (nsec) to import an existing identity.',
-              style: TextStyle(color: KabukTheme.textSecondary, fontSize: 13),
+              style: TextStyle(color: context.kabukTextSecondary, fontSize: 13),
             ),
             const SizedBox(height: KabukTheme.spacingMd),
             TextField(
               controller: controller,
               decoration: InputDecoration(
                 hintText: 'nsec1...',
-                hintStyle: const TextStyle(color: KabukTheme.textTertiary),
+                hintStyle: TextStyle(color: context.kabukTextTertiary),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
-                  borderSide: const BorderSide(color: KabukTheme.divider),
+                  borderSide: BorderSide(color: context.kabukDivider),
                 ),
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 12,
@@ -136,7 +137,7 @@ class _IdentityPageState extends ConsumerState<IdentityPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: KabukTheme.surface,
+        backgroundColor: context.kabukSurface,
         icon: const Icon(Icons.warning_rounded, color: KabukTheme.error, size: 32),
         title: const Text('Delete Identity?'),
         content: Column(
@@ -146,8 +147,8 @@ class _IdentityPageState extends ConsumerState<IdentityPage> {
               'This will permanently delete "${identity.displayName}". '
               'Make sure you have backed up the nsec if you want to '
               'recover this identity later.',
-              style: const TextStyle(
-                color: KabukTheme.textSecondary,
+              style: TextStyle(
+                color: context.kabukTextSecondary,
                 fontSize: 14,
                 height: 1.4,
               ),
@@ -156,10 +157,10 @@ class _IdentityPageState extends ConsumerState<IdentityPage> {
             if (identity.npub != null)
               Text(
                 _truncateNpub(identity.npub!),
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'monospace',
                   fontSize: 11,
-                  color: KabukTheme.textTertiary,
+                  color: context.kabukTextTertiary,
                 ),
               ),
           ],
@@ -210,16 +211,16 @@ class _IdentityPageState extends ConsumerState<IdentityPage> {
     final newName = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: KabukTheme.surface,
+        backgroundColor: context.kabukSurface,
         title: const Text('Rename Identity'),
         content: TextField(
           controller: controller,
           decoration: InputDecoration(
             hintText: 'Display name',
-            hintStyle: const TextStyle(color: KabukTheme.textTertiary),
+            hintStyle: TextStyle(color: context.kabukTextTertiary),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
-              borderSide: const BorderSide(color: KabukTheme.divider),
+              borderSide: BorderSide(color: context.kabukDivider),
             ),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 12,
@@ -283,7 +284,7 @@ class _IdentityPageState extends ConsumerState<IdentityPage> {
   void _showIdentityDetail(UserIdentity identity, bool isActive) {
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: KabukTheme.surface,
+      backgroundColor: context.kabukSurface,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
@@ -331,7 +332,7 @@ class _IdentityPageState extends ConsumerState<IdentityPage> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
             ),
-            color: KabukTheme.surface,
+            color: context.kabukSurface,
             onSelected: (value) {
               if (value == 'generate') _generateKeyPair();
               if (value == 'import') _showImportDialog();
@@ -363,7 +364,10 @@ class _IdentityPageState extends ConsumerState<IdentityPage> {
       ),
       body: identitiesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => ErrorRetryWidget.fromError(
+          e,
+          onRetry: () => ref.invalidate(allIdentitiesProvider),
+        ),
         data: (identities) {
           if (identities.isEmpty) return _buildEmptyState();
           final current = currentAsync.valueOrNull;
@@ -401,12 +405,12 @@ class _IdentityPageState extends ConsumerState<IdentityPage> {
               ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: KabukTheme.spacingSm),
-            const Text(
+            Text(
               'Create a secp256k1 keypair or import an existing nsec '
               'to get started with Nostr.',
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
                 fontSize: 14,
                 height: 1.4,
               ),
@@ -562,12 +566,12 @@ class _IdentityCard extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: KabukTheme.spacingSm),
       decoration: BoxDecoration(
-        color: KabukTheme.cardColor,
+        color: context.kabukCardColor,
         borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
         border: Border.all(
           color: isActive
               ? KabukTheme.accentGreen.withAlpha(60)
-              : KabukTheme.divider,
+              : context.kabukDivider,
           width: isActive ? 1.0 : 0.5,
         ),
       ),
@@ -614,10 +618,10 @@ class _IdentityCard extends StatelessWidget {
                               identity.displayName.isNotEmpty
                                   ? identity.displayName
                                   : 'Unnamed',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w600,
-                                color: KabukTheme.textPrimary,
+                                color: context.kabukTextPrimary,
                               ),
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -651,18 +655,18 @@ class _IdentityCard extends StatelessWidget {
                         identity.npub != null
                             ? _IdentityPageState._truncateNpub(identity.npub!)
                             : identity.id.substring(0, 16),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontFamily: 'monospace',
                           fontSize: 11,
-                          color: KabukTheme.textSecondary,
+                          color: context.kabukTextSecondary,
                         ),
                       ),
                       if (identity.createdAt != null)
                         Text(
                           _IdentityPageState._formatDate(identity.createdAt!),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 10,
-                            color: KabukTheme.textTertiary,
+                            color: context.kabukTextTertiary,
                           ),
                         ),
                     ],
@@ -672,7 +676,7 @@ class _IdentityCard extends StatelessWidget {
                 if (!isActive && onSwitch != null)
                   IconButton(
                     icon: const Icon(Icons.swap_horiz_rounded, size: 20),
-                    color: KabukTheme.textSecondary,
+                    color: context.kabukTextSecondary,
                     tooltip: 'Switch to this identity',
                     onPressed: onSwitch,
                   )
@@ -682,10 +686,10 @@ class _IdentityCard extends StatelessWidget {
                     size: 22,
                     color: KabukTheme.accentGreen,
                   ),
-                const Icon(
+                Icon(
                   Icons.chevron_right_rounded,
                   size: 20,
-                  color: KabukTheme.textTertiary,
+                  color: context.kabukTextTertiary,
                 ),
               ],
             ),
@@ -759,7 +763,7 @@ class _IdentityDetailSheetState extends State<_IdentityDetailSheet> {
               height: 4,
               margin: const EdgeInsets.only(bottom: KabukTheme.spacingMd),
               decoration: BoxDecoration(
-                color: KabukTheme.textTertiary,
+                color: context.kabukTextTertiary,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -832,9 +836,9 @@ class _IdentityDetailSheetState extends State<_IdentityDetailSheet> {
                 padding: const EdgeInsets.only(top: 2),
                 child: Text(
                   'Created ${_IdentityPageState._formatDate(identity.createdAt!)}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
-                    color: KabukTheme.textTertiary,
+                    color: context.kabukTextTertiary,
                   ),
                 ),
               ),
@@ -1005,12 +1009,12 @@ class _ActionTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: destructive
             ? KabukTheme.error.withAlpha(6)
-            : KabukTheme.cardColor,
+            : context.kabukCardColor,
         borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
         border: Border.all(
           color: destructive
               ? KabukTheme.error.withAlpha(20)
-              : KabukTheme.divider,
+              : context.kabukDivider,
           width: 0.5,
         ),
       ),
@@ -1034,16 +1038,16 @@ class _ActionTile extends StatelessWidget {
                     style: TextStyle(
                       color: destructive
                           ? KabukTheme.error
-                          : KabukTheme.textPrimary,
+                          : context.kabukTextPrimary,
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
-                const Icon(
+                Icon(
                   Icons.chevron_right_rounded,
                   size: 18,
-                  color: KabukTheme.textTertiary,
+                  color: context.kabukTextTertiary,
                 ),
               ],
             ),
@@ -1082,12 +1086,12 @@ class KeyDisplayTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: sensitive ? KabukTheme.error.withAlpha(5) : KabukTheme.surface,
+        color: sensitive ? KabukTheme.error.withAlpha(5) : context.kabukSurface,
         borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
         border: Border.all(
           color: sensitive
               ? KabukTheme.error.withAlpha(20)
-              : KabukTheme.divider,
+              : context.kabukDivider,
           width: 0.5,
         ),
       ),
@@ -1114,10 +1118,10 @@ class KeyDisplayTile extends StatelessWidget {
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: 'monospace',
                 fontSize: 11,
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
               ),
               overflow: TextOverflow.ellipsis,
             ),
@@ -1129,7 +1133,7 @@ class KeyDisplayTile extends StatelessWidget {
               iconSize: 14,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-              color: KabukTheme.textTertiary,
+              color: context.kabukTextTertiary,
             ),
         ],
       ),

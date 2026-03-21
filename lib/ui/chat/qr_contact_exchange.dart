@@ -18,6 +18,7 @@ import 'package:kabuk/knowledge/database.dart';
 import 'package:kabuk/knowledge/types/person.dart';
 import 'package:kabuk/services/peer_exchange.dart';
 import 'package:kabuk/ui/chat/nostr_chat_detail.dart';
+import 'package:kabuk/ui/shared/error_retry.dart';
 import 'package:kabuk/ui/theme.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -54,14 +55,14 @@ class _QrContactExchangeState extends ConsumerState<QrContactExchange>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: KabukTheme.background,
+      backgroundColor: context.kabukBackground,
       appBar: AppBar(
         title: const Text('Add Contact'),
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: KabukTheme.accentGreen,
           labelColor: KabukTheme.accentGreen,
-          unselectedLabelColor: KabukTheme.textSecondary,
+          unselectedLabelColor: context.kabukTextSecondary,
           tabs: const [
             Tab(icon: Icon(Icons.qr_code_rounded), text: 'My Code'),
             Tab(icon: Icon(Icons.qr_code_scanner_rounded), text: 'Scan'),
@@ -215,7 +216,7 @@ class _MyCodeTab extends ConsumerWidget {
               Container(
                 padding: const EdgeInsets.all(KabukTheme.spacingLg),
                 decoration: BoxDecoration(
-                  color: KabukTheme.surfaceElevated,
+                  color: context.kabukSurfaceElevated,
                   borderRadius: BorderRadius.circular(KabukTheme.radiusXl),
                   border: Border.all(
                     color: KabukTheme.accentGreen.withAlpha(40),
@@ -243,8 +244,8 @@ class _MyCodeTab extends ConsumerWidget {
                       identity.displayName.isNotEmpty
                           ? identity.displayName
                           : 'Anonymous',
-                      style: const TextStyle(
-                        color: KabukTheme.textPrimary,
+                      style: TextStyle(
+                        color: context.kabukTextPrimary,
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
                       ),
@@ -254,8 +255,8 @@ class _MyCodeTab extends ConsumerWidget {
                       identity.npub ?? '',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: KabukTheme.textSecondary,
+                      style: TextStyle(
+                        color: context.kabukTextSecondary,
                         fontSize: 11,
                         fontFamily: 'monospace',
                       ),
@@ -317,12 +318,12 @@ class _MyCodeTab extends ConsumerWidget {
               const SizedBox(height: KabukTheme.spacingLg),
 
               // Instructions.
-              const Text(
+              Text(
                 'Show this code to another Kabuk user so they can\n'
                 'scan it and start an encrypted conversation with you.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                   fontSize: 13,
                   height: 1.5,
                 ),
@@ -332,8 +333,9 @@ class _MyCodeTab extends ConsumerWidget {
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(
-        child: Text('Error: $e', style: const TextStyle(color: KabukTheme.error)),
+      error: (e, _) => ErrorRetryWidget.fromError(
+        e,
+        onRetry: () => ref.invalidate(currentIdentityProvider),
       ),
     );
   }
@@ -352,24 +354,24 @@ class _NoIdentityMessage extends StatelessWidget {
             Icon(
               Icons.key_off_rounded,
               size: 48,
-              color: KabukTheme.textSecondary.withAlpha(120),
+              color: context.kabukTextSecondary.withAlpha(120),
             ),
             const SizedBox(height: KabukTheme.spacingMd),
-            const Text(
+            Text(
               'No Identity',
               style: TextStyle(
-                color: KabukTheme.textPrimary,
+                color: context.kabukTextPrimary,
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: KabukTheme.spacingSm),
-            const Text(
+            Text(
               'Generate an identity first from the identity\n'
               'switcher in the top-left corner.',
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
                 fontSize: 13,
                 height: 1.5,
               ),
@@ -416,7 +418,7 @@ class _ScanTabState extends State<_ScanTab> {
   @override
   Widget build(BuildContext context) {
     if (widget.alreadyScanned) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -425,7 +427,7 @@ class _ScanTabState extends State<_ScanTab> {
             Text(
               'Contact added!',
               style: TextStyle(
-                color: KabukTheme.textPrimary,
+                color: context.kabukTextPrimary,
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
               ),
@@ -433,7 +435,7 @@ class _ScanTabState extends State<_ScanTab> {
             SizedBox(height: KabukTheme.spacingSm),
             Text(
               'Opening conversation...',
-              style: TextStyle(color: KabukTheme.textSecondary, fontSize: 13),
+              style: TextStyle(color: context.kabukTextSecondary, fontSize: 13),
             ),
           ],
         ),
@@ -470,8 +472,8 @@ class _ScanTabState extends State<_ScanTab> {
                 },
               ),
               style: IconButton.styleFrom(
-                backgroundColor: KabukTheme.surface.withAlpha(180),
-                foregroundColor: KabukTheme.textPrimary,
+                backgroundColor: context.kabukSurface.withAlpha(180),
+                foregroundColor: context.kabukTextPrimary,
               ),
             ),
           ),
@@ -518,7 +520,7 @@ class _ScanOverlay extends StatelessWidget {
               vertical: KabukTheme.spacingSm,
             ),
             decoration: BoxDecoration(
-              color: KabukTheme.surface.withAlpha(200),
+              color: context.kabukSurface.withAlpha(200),
               borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
             ),
             child: Text(
@@ -526,8 +528,8 @@ class _ScanOverlay extends StatelessWidget {
                   ? 'Adding contact...'
                   : 'Point your camera at a Kabuk QR code',
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: KabukTheme.textPrimary,
+              style: TextStyle(
+                color: context.kabukTextPrimary,
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
               ),

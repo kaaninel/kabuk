@@ -20,6 +20,7 @@ import 'package:kabuk/ui/chat/nostr_chat_detail.dart';
 import 'package:kabuk/ui/explore/explore_view.dart';
 import 'package:kabuk/ui/explore/profile_view.dart';
 import 'package:kabuk/ui/settings/dev_mode_page.dart';
+import 'package:kabuk/ui/shared/error_retry.dart';
 import 'package:kabuk/ui/theme.dart';
 import 'package:kabuk/ui/vault/vault_view.dart';
 
@@ -691,7 +692,11 @@ class _ChatSheetOverlayState extends ConsumerState<_ChatSheetOverlay> {
                             _buildMessageList(messages, sheetScrollController),
                         loading: () =>
                             const Center(child: CircularProgressIndicator()),
-                        error: (e, _) => Center(child: Text('Error: $e')),
+                        error: (e, _) => ErrorRetryWidget.fromError(
+                          e,
+                          onRetry: () =>
+                              ref.invalidate(messagesProvider),
+                        ),
                       ),
               ),
               // Streaming response.
