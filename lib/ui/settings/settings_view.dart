@@ -17,6 +17,7 @@ import 'package:kabuk/agents/llm.dart';
 import 'package:kabuk/config/constants.dart';
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/ui/explore/explore_view.dart';
+import 'package:kabuk/ui/explore/usenet_settings_sheet.dart';
 import 'package:kabuk/ui/settings/dev_mode_page.dart';
 import 'package:kabuk/ui/settings/feed_sources_page.dart';
 import 'package:kabuk/ui/settings/identity_page.dart';
@@ -26,6 +27,7 @@ import 'package:kabuk/ui/settings/my_profile_page.dart';
 import 'package:kabuk/ui/settings/relay_settings_page.dart';
 import 'package:kabuk/ui/settings/service_providers_page.dart';
 import 'package:kabuk/ui/settings/settings_shared.dart';
+import 'package:kabuk/ui/settings/usenet_settings_page.dart';
 import 'package:kabuk/ui/theme.dart';
 
 // Re-export shared types so existing imports still work.
@@ -85,6 +87,10 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
     final devMode = ref.watch(devModeProvider);
     final feedSubs = ref.watch(subscriptionsProvider);
     final feedCount = feedSubs.valueOrNull?.length ?? 0;
+    final usenetIndexers = ref.watch(usenetIndexersProvider);
+    final usenetProviders = ref.watch(usenetProvidersProvider);
+    final usenetCount = (usenetIndexers.valueOrNull?.length ?? 0) +
+        (usenetProviders.valueOrNull?.length ?? 0);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -294,6 +300,52 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) => const FeedSourcesPage(),
+              ),
+            ),
+          ),
+          const SizedBox(height: KabukTheme.spacingLg),
+
+          // --- Usenet Section ---
+          const SettingsSectionHeader(
+            icon: Icons.dns_rounded,
+            title: 'Usenet',
+            color: KabukTheme.blueAccent,
+          ),
+          const SizedBox(height: KabukTheme.spacingSm),
+          SettingsTile(
+            icon: Icons.search_rounded,
+            iconColor: KabukTheme.blueAccent,
+            title: 'Indexers & Providers',
+            subtitle: usenetCount > 0
+                ? '$usenetCount configured'
+                : 'Manage Newznab indexers and NNTP servers',
+            trailing: usenetCount > 0
+                ? Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: KabukTheme.blueAccent.withAlpha(15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '$usenetCount',
+                      style: const TextStyle(
+                        color: KabukTheme.blueAccent,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  )
+                : Icon(
+                    Icons.chevron_right,
+                    color: context.kabukTextSecondary,
+                    size: 20,
+                  ),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const UsenetSettingsPage(),
               ),
             ),
           ),
