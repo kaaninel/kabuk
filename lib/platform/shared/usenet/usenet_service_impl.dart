@@ -378,12 +378,14 @@ class UsenetServiceImpl implements UsenetService {
     int? limit,
   }) async {
     try {
-      final allIndexers = await _store.queryUsenetIndexers(enabled: true);
+      final allIndexers = await _store.queryUsenetIndexers();
 
       // Filter to requested indexer IDs or use all enabled.
       final indexers = indexerIds != null
-          ? allIndexers.where((i) => indexerIds.contains(i.uri)).toList()
-          : allIndexers;
+          ? allIndexers
+              .where((i) => indexerIds.contains(i.uri) && i.enabled)
+              .toList()
+          : allIndexers.where((i) => i.enabled).toList();
 
       if (indexers.isEmpty) {
         return const Result.failure(
@@ -689,7 +691,8 @@ class UsenetServiceImpl implements UsenetService {
   /// Registers all enabled providers in the [NntpConnectionPool] that are
   /// not already present.
   Future<void> _ensureProvidersInPool() async {
-    final providers = await _store.queryUsenetProviders(enabled: true);
+    final allProviders = await _store.queryUsenetProviders();
+    final providers = allProviders.where((p) => p.enabled).toList();
     for (final p in providers) {
       try {
         final password = await _resolveVaultSecret(p.passwordRef);
