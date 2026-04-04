@@ -9,6 +9,7 @@ import 'dart:async' show unawaited;
 import 'dart:developer' as dev;
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:kabuk/ui/explore/web_channel_view.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -22,9 +23,10 @@ import 'package:kabuk/knowledge/types/nostr_social.dart';
 import 'package:kabuk/services/feed.dart';
 import 'package:kabuk/services/media_cache.dart';
 import 'package:kabuk/services/reader_mode.dart';
-import 'package:kabuk/ui/explore/article_card.dart' show bookmarkStatusProvider;
+import 'package:kabuk/ui/explore/article_card.dart' show bookmarkStatusProvider, entityNameProvider;
 import 'package:kabuk/ui/explore/browse_session.dart';
 import 'package:kabuk/ui/explore/channel_view.dart';
+import 'package:kabuk/ui/explore/explore_tab.dart';
 import 'package:kabuk/ui/explore/fourchan_comments.dart';
 import 'package:kabuk/ui/explore/nostr_providers.dart';
 import 'package:kabuk/ui/explore/profile_view.dart';
@@ -33,7 +35,7 @@ import 'package:kabuk/ui/explore/reddit_comments.dart';
 import 'package:kabuk/ui/explore/semantic_cards.dart';
 import 'package:kabuk/ui/shared/feed_image.dart';
 import 'package:kabuk/ui/shared/fullscreen_image_viewer.dart';
-import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
+import 'package:kabuk/ui/shared/kabuk_markdown.dart';
 import 'package:kabuk/ui/shared/video_thumbnail.dart';
 import 'package:kabuk/ui/theme.dart';
 
@@ -47,7 +49,11 @@ final _redditUserPattern = RegExp(r'reddit\.com/u(?:ser)?/(\w+)', caseSensitive:
 
 /// Opens a URL intelligently: routes Reddit subreddit/user URLs to native
 /// ChannelView, and everything else to the in-app browser (QuickPeekSheet).
-void openUrlSmart(BuildContext context, String url, {String? title}) {
+///
+/// When [ref] is provided and [preferClassicWebProvider] is enabled,
+/// HTTP/HTTPS URLs are opened in Classic Web mode on the active explore tab
+/// instead of the semantic [WebChannelLoader].
+void openUrlSmart(BuildContext context, String url, {String? title, WidgetRef? ref}) {
   // Reddit subreddit → native ChannelView
   final subMatch = _redditSubPattern.firstMatch(url);
   if (subMatch != null) {
@@ -76,8 +82,22 @@ void openUrlSmart(BuildContext context, String url, {String? title}) {
     return;
   }
 
-  // Everything else → in-app browser
-  QuickPeekSheet.show(context, url: url, title: title);
+  // Classic Web override — switch the active explore tab to WebView mode.
+  if (ref != null && ref.read(preferClassicWebProvider)) {
+    ref.read(exploreTabsProvider.notifier)
+      ..setActiveMode(ExploreTabMode.classic)
+      ..updateActiveUrl(url, title: title);
+    // Pop back to the explore view so the classic tab is visible.
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    return;
+  }
+
+  // Everything else → WebChannelView (semantic browser)
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => WebChannelLoader(url: url),
+    ),
+  );
 }
 
 /// Navigation helper — pushes [ArticleDetailPage] on the navigator.
@@ -310,7 +330,7 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
     // Dismiss any active keyboard when entering article detail.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        ref.read(keyboardModeProvider.notifier).state = KeyboardMode.none;
+        FocusManager.instance.primaryFocus?.unfocus();
       }
     });
   }
@@ -328,7 +348,7 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
     if (!_currentArticle.read) {
       store.markArticleRead(_currentArticle.uri);
     }
-    ref.read(keyboardModeProvider.notifier).state = KeyboardMode.none;
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _slideForward = true;
       _currentIndex++;
@@ -340,7 +360,7 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
   void _goToPreviousArticle() {
     if (!_hasPrevious) return;
     HapticFeedback.mediumImpact();
-    ref.read(keyboardModeProvider.notifier).state = KeyboardMode.none;
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _currentIndex--;
       _currentArticle = widget.articles![_currentIndex];
@@ -354,7 +374,7 @@ class _ArticleDetailPageState extends ConsumerState<ArticleDetailPage> {
     if (index < 0 || index >= widget.articles!.length) return;
     if (index == _currentIndex) return;
     HapticFeedback.mediumImpact();
-    ref.read(keyboardModeProvider.notifier).state = KeyboardMode.none;
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _slideForward = index > _currentIndex;
       _currentIndex = index;
@@ -485,15 +505,38 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
   String? _authorEntityUri;
 
   /// Whether this article needs full content fetching.
+  /// Whether the article needs a full content fetch via reader mode.
   ///
-  /// True when the article has a URL but no content blocks have been loaded
-  /// yet. This covers both description-less stubs and articles parsed from
-  /// index pages that have og:description but no body content.
+  /// True when the article has an external URL but no content blocks.
+  /// Skips fetch for native-feed articles (Reddit, 4chan, Nostr) whose URLs
+  /// point back to their own platform — the content is already available in
+  /// [ArticleData.description] from the feed API.
   bool get _needsContentFetch {
     final a = widget.article;
-    return a.url != null &&
-        a.url!.startsWith('http') &&
-        (_contentBlocks == null || _contentBlocks!.isEmpty);
+    if (a.url == null || !a.url!.startsWith('http')) return false;
+    if (_contentBlocks != null && _contentBlocks!.isNotEmpty) return false;
+
+    final url = a.url!.toLowerCase();
+    final source = a.feedSource ?? '';
+
+    // Reddit self-posts link back to reddit.com — never run reader mode on
+    // these; the selftext is already in `description`.
+    final isRedditSource =
+        source.startsWith('r/') || source.contains('reddit');
+    final isRedditUrl = url.contains('reddit.com/r/');
+    if (isRedditSource && isRedditUrl) return false;
+
+    // 4chan threads — content already extracted via API.
+    if (source.startsWith('4chan://') || url.contains('boards.4chan.org')) {
+      return false;
+    }
+
+    // Nostr events — content already in description.
+    if (source.startsWith('nostr:') || source.startsWith('kabuk:')) {
+      return false;
+    }
+
+    return true;
   }
 
   @override
@@ -603,7 +646,16 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
             .object(NS.schemaPerson)
             .execute();
         if (typeTriples.isNotEmpty) {
-          authorUri = uri;
+          // Check that the author's name isn't a generic/boilerplate name.
+          final nameTriples = await store
+              .query()
+              .subject(uri)
+              .predicate(NS.schemaName)
+              .execute();
+          final authorName = nameTriples.firstOrNull?.objectValue ?? '';
+          if (!_ArticleOmniBar._isGenericAuthor(authorName)) {
+            authorUri = uri;
+          }
         }
       }
 
@@ -662,11 +714,47 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
 
       if (!mounted) return;
 
-      debugPrint('[ArticleDetail] Related entities: ${entities.length} '
-          '(${entities.map((e) => '${e.$2}:${e.$1}').join(', ')})');
+      // Filter boilerplate entities (e.g. "Wikimedia Foundation" on Wikipedia).
+      final articleUrl = widget.article.url ?? '';
+      final filteredEntities = <(String, String)>[];
+      // Cache resolved names, descriptions, urls, and sameAs for dedup pass.
+      final entityNames = <String, String>{};
+      final entityDescs = <String, String>{};
+      final entityUrls = <String, String>{};
+      final entitySameAs = <String, Set<String>>{};
+      for (final entity in entities) {
+        final triples = await store.getEntity(entity.$1);
+        final name = triples
+            .where((t) => t.predicate == NS.schemaName)
+            .firstOrNull
+            ?.objectValue ?? '';
+        if (_isBoilerplateEntity(name, articleUrl)) continue;
+        entityNames[entity.$1] = name;
+        entityDescs[entity.$1] = triples
+            .where((t) => t.predicate == NS.schemaDescription)
+            .firstOrNull
+            ?.objectValue ?? '';
+        entityUrls[entity.$1] = triples
+            .where((t) => t.predicate == NS.schemaUrl)
+            .firstOrNull
+            ?.objectValue ?? '';
+        entitySameAs[entity.$1] = triples
+            .where((t) => t.predicate == NS.schemaSameAs)
+            .map((t) => t.objectValue.toLowerCase())
+            .toSet();
+        filteredEntities.add(entity);
+      }
+
+      // Deduplicate entities with similar names within the same type.
+      final dedupedEntities = _deduplicateEntities(
+        filteredEntities, entityNames, entityDescs, entityUrls, entitySameAs,
+      );
+
+      debugPrint('[ArticleDetail] Related entities: ${dedupedEntities.length} '
+          '(${dedupedEntities.map((e) => '${e.$2}:${e.$1}').join(', ')})');
 
       setState(() {
-        _relatedEntities = entities;
+        _relatedEntities = dedupedEntities;
         _authorEntityUri = authorUri;
       });
     } on Object catch (e, st) {
@@ -980,20 +1068,30 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
                     ),
                   ),
                 Flexible(
-                  child: Text(
-                    article.author!,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: _authorEntityUri != null
-                          ? KabukTheme.purpleAccent
-                          : context.kabukTextTertiary,
-                      fontWeight: _authorEntityUri != null
-                          ? FontWeight.w500
-                          : FontWeight.normal,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  child: Builder(builder: (ctx) {
+                    final raw = article.author!;
+                    // Resolve kabuk: URIs to human-readable names.
+                    var display = raw.startsWith('kabuk:')
+                        ? ref.watch(entityNameProvider(raw)).valueOrNull ?? ''
+                        : raw;
+                    // Filter generic/boilerplate author names.
+                    if (_ArticleOmniBar._isGenericAuthor(display)) display = '';
+                    if (display.isEmpty) return const SizedBox.shrink();
+                    return Text(
+                      display,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _authorEntityUri != null
+                            ? KabukTheme.purpleAccent
+                            : ctx.kabukTextTertiary,
+                        fontWeight: _authorEntityUri != null
+                            ? FontWeight.w500
+                            : FontWeight.normal,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    );
+                  }),
                 ),
               ],
             ],
@@ -1015,14 +1113,14 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
                         height: 1.65,
                         color: context.kabukTextPrimary,
                       ),
-                      code: const TextStyle(
+                      code: TextStyle(
                         fontSize: 13,
                         fontFamily: 'monospace',
                         color: KabukTheme.accentGreen,
-                        backgroundColor: Color(0xFF1A1A1A),
+                        backgroundColor: context.kabukSurfaceVariant,
                       ),
                       codeblockDecoration: BoxDecoration(
-                        color: const Color(0xFF1A1A1A),
+                        color: context.kabukSurfaceVariant,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       blockquote: TextStyle(
@@ -1089,8 +1187,13 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
         // ── Content blocks (from reader mode) ─────────────────────────────
         if (_contentBlocks != null && _contentBlocks!.isNotEmpty)
           for (final block in _contentBlocks!)
-            // Skip blocks that duplicate the article title or description.
-            if (!_isDuplicateBlock(block, article))
+            // Skip blocks that duplicate the article title or description,
+            // or image blocks whose URL matches the hero image.
+            if (!_isDuplicateBlock(block, article) &&
+                !(block.type == BlockType.image &&
+                    block.mediaUri != null &&
+                    article.image != null &&
+                    _isSameImage(block.mediaUri!, article.image!)))
               _renderContentBlock(context, block),
 
         // ── Load full article button (when no content and not loading) ─────
@@ -1238,9 +1341,13 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
 
   /// Strips raw URLs from a title for clean display.
   String _cleanTitle(String title) {
-    final cleaned = title
+    var cleaned = title
         .replaceAll(RegExp(r'https?://\S+'), '')
         .replaceAll(RegExp(r'\s{2,}'), ' ')
+        .trim();
+    // Strip common site-name suffixes like "- Wikipedia", "| CNN", "- The Verge"
+    cleaned = cleaned
+        .replaceFirst(RegExp(r'\s*[\-–—|]\s*(Wikipedia|Wiki)\s*$', caseSensitive: false), '')
         .trim();
     if (cleaned.isNotEmpty) return cleaned;
 
@@ -1303,7 +1410,14 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
     // Strip everything except alphanumerics so spacing differences
     // (e.g. "peoplewant" vs "people want") don't break the match.
     String norm(String s) => s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
-    return norm(blockText) == norm(title);
+    final normBlock = norm(blockText);
+    final normTitle = norm(title);
+    if (normBlock.isEmpty) return false;
+    // Exact match or one is a prefix of the other (handles "SpaceX" vs
+    // "SpaceX - Wikipedia" style suffixed titles).
+    return normBlock == normTitle ||
+        normTitle.startsWith(normBlock) ||
+        normBlock.startsWith(normTitle);
   }
 
   /// Returns true when a content block duplicates the article title or
@@ -1315,6 +1429,16 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
     if (block.type == BlockType.heading &&
         _isSameTitle(block.content!, article.name ?? '')) {
       return true;
+    }
+
+    // Skip text blocks whose first line is a markdown heading matching the
+    // article title (e.g. "# SpaceX" when article.name == "SpaceX").
+    if (block.type == BlockType.text && article.name != null) {
+      final firstLine = block.content!.trimLeft().split('\n').first.trim();
+      if (firstLine.startsWith('#')) {
+        final headingText = firstLine.replaceFirst(RegExp(r'^#{1,6}\s*'), '');
+        if (_isSameTitle(headingText, article.name!)) return true;
+      }
     }
 
     // Skip the first text block if it substantially overlaps with the
@@ -1340,6 +1464,273 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
     return false;
   }
 
+  /// Compares two image URLs, ignoring query parameters and fragments.
+  bool _isSameImage(String a, String b) {
+    if (a == b) return true;
+    try {
+      final uriA = Uri.parse(a);
+      final uriB = Uri.parse(b);
+      // Same host+path is definitely the same image
+      if (uriA.host == uriB.host && uriA.path == uriB.path) return true;
+
+      // Wikipedia/Wikimedia: /thumb/.../px-File.jpg vs /.../File.jpg
+      // Normalize by stripping /thumb/ prefix and /NNNpx-* size suffix
+      if (uriA.host.contains('wikimedia') || uriB.host.contains('wikimedia') ||
+          uriA.host.contains('wikipedia') || uriB.host.contains('wikipedia')) {
+        final normA = _wikiImageKey(uriA.path);
+        final normB = _wikiImageKey(uriB.path);
+        if (normA.isNotEmpty && normA == normB) return true;
+      }
+
+      if (uriA.host != uriB.host) return false;
+      // Same filename (last path segment) on same host
+      final fileA = uriA.pathSegments.isNotEmpty ? uriA.pathSegments.last : '';
+      final fileB = uriB.pathSegments.isNotEmpty ? uriB.pathSegments.last : '';
+      if (fileA.isNotEmpty && fileA == fileB) return true;
+      // Compare base filenames stripped of dimension suffixes
+      // e.g. "spectrum-rocket-1152x648.jpg" → "spectrum-rocket"
+      final baseA = _imageBaseName(fileA);
+      final baseB = _imageBaseName(fileB);
+      if (baseA.isNotEmpty && baseA == baseB) return true;
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Extracts a canonical key from Wikipedia/Wikimedia image paths.
+  /// e.g. "/wikipedia/commons/thumb/a/ac/SpaceX.jpg/220px-SpaceX.jpg"
+  ///   → "a/ac/SpaceX.jpg"
+  static String _wikiImageKey(String path) {
+    // Remove /thumb/ prefix
+    var p = path.replaceFirst('/thumb', '');
+    // Remove /NNNpx-* size suffix (last segment like "220px-SpaceX.jpg")
+    final segments = p.split('/').where((s) => s.isNotEmpty).toList();
+    if (segments.isNotEmpty &&
+        RegExp(r'^\d+px-').hasMatch(segments.last)) {
+      segments.removeLast();
+    }
+    // Skip the first two segments (wikipedia/commons or wikipedia/en)
+    if (segments.length >= 3) {
+      return segments.sublist(2).join('/');
+    }
+    return segments.join('/');
+  }
+
+  /// Strips dimension suffixes and extension from an image filename.
+  /// "spectrum-rocket-1152x648.jpg" → "spectrum-rocket"
+  /// "photo-2048x1365.webp" → "photo"
+  static String _imageBaseName(String filename) {
+    // Remove extension
+    final dotIdx = filename.lastIndexOf('.');
+    final noExt = dotIdx > 0 ? filename.substring(0, dotIdx) : filename;
+    // Strip trailing dimension patterns like -1152x648, _2048x1365
+    return noExt.replaceFirst(RegExp(r'[\-_]\d{2,5}x\d{2,5}$'), '');
+  }
+
+  /// Returns true if an image URL looks like a logo, icon, or badge.
+  bool _isLogoOrIcon(String url) {
+    final lower = url.toLowerCase();
+    return _displayPromoPattern.hasMatch(lower) ||
+        _displayTinyPattern.hasMatch(lower) ||
+        _displaySmallSquarePattern.hasMatch(lower) ||
+        lower.contains('favicon') ||
+        lower.contains('/icon') ||
+        (lower.contains('logo') && !lower.contains('logistics'));
+  }
+
+  /// Returns true for boilerplate entities that shouldn't display.
+  static bool _isBoilerplateEntity(String name, String url) {
+    final lower = name.toLowerCase().trim();
+    if (lower.isEmpty) return true;
+    final domain = Uri.tryParse(url)?.host ?? '';
+    // Wikipedia/Wikimedia entities on Wikipedia pages.
+    if (domain.contains('wikipedia') || domain.contains('wikimedia')) {
+      if (lower.contains('wikimedia') || lower.contains('wikipedia') ||
+          lower.contains('contributor')) {
+        return true;
+      }
+    }
+    // Generic hosting/analytics entities everywhere.
+    if (lower.contains('cloudflare') || lower.contains('google analytics') ||
+        lower.contains('disqus') || lower.contains('facebook pixel')) {
+      return true;
+    }
+    return false;
+  }
+
+  /// Deduplicates entities that have similar names within the same type.
+  ///
+  /// For example, "SpaceX", "Space Exploration Technologies Corp", and
+  /// "Space Exploration Technologies" are all the same Organization.
+  /// Keeps the entity with the longest/most descriptive name.
+  static List<(String, String)> _deduplicateEntities(
+    List<(String, String)> entities,
+    Map<String, String> entityNames,
+    Map<String, String> entityDescs,
+    Map<String, String> entityUrls,
+    Map<String, Set<String>> entitySameAs,
+  ) {
+    // Group by type.
+    final byType = <String, List<(String, String)>>{};
+    for (final e in entities) {
+      byType.putIfAbsent(e.$2, () => []).add(e);
+    }
+
+    final result = <(String, String)>[];
+    for (final group in byType.values) {
+      final kept = <(String, String)>[];
+      for (final entity in group) {
+        final name = entityNames[entity.$1] ?? '';
+        final isDup = kept.any((k) {
+          final kName = entityNames[k.$1] ?? '';
+          return _areSimilarEntities(
+            entity.$1, name, k.$1, kName,
+            entityDescs, entityUrls, entitySameAs,
+          );
+        });
+        if (isDup) {
+          // Replace existing if this one has a longer name (more descriptive).
+          final idx = kept.indexWhere((k) {
+            final kName = entityNames[k.$1] ?? '';
+            return _areSimilarEntities(
+              entity.$1, name, k.$1, kName,
+              entityDescs, entityUrls, entitySameAs,
+            );
+          });
+          if (idx != -1) {
+            final existingName = entityNames[kept[idx].$1] ?? '';
+            if (name.length > existingName.length) {
+              kept[idx] = entity;
+            }
+          }
+        } else {
+          kept.add(entity);
+        }
+      }
+      result.addAll(kept);
+    }
+    return result;
+  }
+
+  /// Checks if two entities likely refer to the same real-world entity.
+  ///
+  /// Combines name similarity with URL/sameAs overlap and description
+  /// cross-referencing (one entity's name mentioned in the other's
+  /// description).
+  static bool _areSimilarEntities(
+    String uriA, String nameA, String uriB, String nameB,
+    Map<String, String> descs,
+    Map<String, String> urls,
+    Map<String, Set<String>> sameAs,
+  ) {
+    if (_areSimilarNames(nameA, nameB)) return true;
+
+    // URL match.
+    final urlA = (urls[uriA] ?? '').toLowerCase();
+    final urlB = (urls[uriB] ?? '').toLowerCase();
+    if (urlA.isNotEmpty && urlB.isNotEmpty && urlA == urlB) return true;
+
+    // sameAs overlap: if one's URL is in the other's sameAs, or sets overlap.
+    final saA = sameAs[uriA] ?? const {};
+    final saB = sameAs[uriB] ?? const {};
+    if (urlA.isNotEmpty && saB.contains(urlA)) return true;
+    if (urlB.isNotEmpty && saA.contains(urlB)) return true;
+    if (saA.isNotEmpty && saB.isNotEmpty &&
+        saA.intersection(saB).isNotEmpty) {
+      return true;
+    }
+
+    // Description cross-reference: name appears in the other's description
+    // (e.g. "SpaceX" in desc of "Space Exploration Technologies Corp.").
+    final la = nameA.toLowerCase().trim();
+    final lb = nameB.toLowerCase().trim();
+    final descA = (descs[uriA] ?? '').toLowerCase();
+    final descB = (descs[uriB] ?? '').toLowerCase();
+    if (la.length >= 4 && descB.contains(la)) return true;
+    if (lb.length >= 4 && descA.contains(lb)) return true;
+
+    return false;
+  }
+
+  /// Checks if two entity names likely refer to the same real-world entity.
+  ///
+  /// Uses multiple strategies:
+  /// 1. One name contains the other (substring)
+  /// 2. Significant word overlap (>= 50% of shorter name's words)
+  /// 3. One is an acronym/abbreviation of the other
+  static bool _areSimilarNames(String a, String b) {
+    if (a.isEmpty || b.isEmpty) return false;
+    final la = a.toLowerCase().trim();
+    final lb = b.toLowerCase().trim();
+    if (la == lb) return true;
+
+    // Substring containment.
+    if (la.contains(lb) || lb.contains(la)) return true;
+
+    // Strip common suffixes for comparison.
+    final stripped = [
+      'inc', 'inc.', 'llc', 'ltd', 'corp', 'corp.', 'corporation',
+      'company', 'co', 'co.', 'group', 'holdings', 'technologies',
+      'technology', 'the',
+    ];
+    var sa = la;
+    var sb = lb;
+    for (final suffix in stripped) {
+      sa = sa.replaceAll(RegExp('\\b${RegExp.escape(suffix)}\\b'), '').trim();
+      sb = sb.replaceAll(RegExp('\\b${RegExp.escape(suffix)}\\b'), '').trim();
+    }
+    // Remove trailing punctuation after stripping.
+    sa = sa.replaceAll(RegExp(r'[,.\s]+$'), '').trim();
+    sb = sb.replaceAll(RegExp(r'[,.\s]+$'), '').trim();
+    if (sa.isNotEmpty && sb.isNotEmpty && (sa == sb ||
+        sa.contains(sb) || sb.contains(sa))) {
+      return true;
+    }
+
+    // Word overlap — if >= 50% of shorter name's words appear in longer.
+    final wordsA = la.split(RegExp(r'[\s,.\-]+'))
+        .where((w) => w.length > 2 && !stripped.contains(w))
+        .toSet();
+    final wordsB = lb.split(RegExp(r'[\s,.\-]+'))
+        .where((w) => w.length > 2 && !stripped.contains(w))
+        .toSet();
+    if (wordsA.isNotEmpty && wordsB.isNotEmpty) {
+      final shorter = wordsA.length <= wordsB.length ? wordsA : wordsB;
+      final longer = wordsA.length <= wordsB.length ? wordsB : wordsA;
+      final overlap = shorter.intersection(longer).length;
+      if (overlap >= (shorter.length * 0.5).ceil() && overlap >= 1) {
+        return true;
+      }
+    }
+
+    // Brand-abbreviation pattern: a single-token name whose leading portion
+    // matches the first word of a multi-word name (after suffix stripping).
+    // E.g. "SpaceX" starts with "Space" (first word of "Space Exploration"),
+    // covering 5/6 = 83% of the shorter name → likely the same entity.
+    if (sa.isNotEmpty && sb.isNotEmpty) {
+      final saWords = sa.split(' ').where((w) => w.length >= 3).toList();
+      final sbWords = sb.split(' ').where((w) => w.length >= 3).toList();
+      final single = saWords.length == 1 && sbWords.length > 1
+          ? sa.replaceAll(' ', '')
+          : sbWords.length == 1 && saWords.length > 1
+              ? sb.replaceAll(' ', '')
+              : null;
+      final multiFirst = saWords.length == 1 && sbWords.length > 1
+          ? sbWords.first
+          : sbWords.length == 1 && saWords.length > 1
+              ? saWords.first
+              : null;
+      if (single != null && multiFirst != null && multiFirst.length >= 4 &&
+          single.startsWith(multiFirst) &&
+          multiFirst.length >= (single.length * 0.7).ceil()) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   String _normContent(String s) =>
       s.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 
@@ -1351,7 +1742,7 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
       r'^(Image|Photo|Illustration|Credit|Source)\s*[:by]',
       caseSensitive: false);
   static final _authorBioPattern = RegExp(
-      r'(?:\b(?:is|was)\s+(?:a|an|the)\s+\w+\s+(?:editor|reporter|writer|journalist|correspondent))'
+      r'(?:\b(?:is|was)\s+(?:a|an|the)\s+[\w\s\-]+?\b(?:editor|reporter|writer|journalist|correspondent|columnist|contributor|producer|analyst)\b)'
       r'|(?:^By\s+[A-Z][\w\s]+\b(?:BBC|CNN|AP|Reuters|Sport|News|Channel|Press|Editor|Reporter|Journalist|Correspondent)\b)',
       caseSensitive: false);
   static final _noisePatterns = [
@@ -1380,12 +1771,134 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
     // Standalone "Getty Images", "AFP", etc. credit lines
     RegExp(r'^(Getty\s+Images?|AFP|Reuters|AP\s+Photo|PA\s+Media|Alamy)\s*$',
         caseSensitive: false),
+    // Standalone role/title lines (e.g. "Senior Space Editor", "Staff Writer")
+    RegExp(
+        r'^(Senior|Junior|Staff|Managing|Deputy|Associate|Assistant|Chief|Lead|Executive|Contributing)\s+'
+        r'(Space\s+|Science\s+|Tech\s+|Technology\s+|News\s+|Sports?\s+|Political?\s+|Business\s+|'
+        r'Health\s+|Entertainment\s+|Culture\s+|Food\s+|Travel\s+|Opinion\s+|Features?\s+|'
+        r'Digital\s+|Multimedia\s+|Visual\s+|Data\s+|Investigative\s+|National\s+|Foreign\s+|'
+        r'Economics?\s+|Military\s+|Security\s+|Climate\s+|Environment\s+)?'
+        r'(Editor|Writer|Reporter|Journalist|Correspondent|Analyst|Contributor|Producer|Director|Columnist)\s*$',
+        caseSensitive: false),
+    // "N Comments" / "N Replies" page chrome
+    RegExp(r'^\d+\s+(Comments?|Replies|Responses?|Reactions?)\s*$',
+        caseSensitive: false),
   ];
+
+  /// Known UI control words from settings panels / theme selectors.
+  static final _uiChromeWords = <String>{
+    'small', 'standard', 'large', 'medium', 'wide', 'narrow', 'compact',
+    'default', 'normal', 'expanded', 'collapsed', 'on', 'off', 'enabled',
+    'disabled', 'auto', 'orange', 'blue', 'green', 'red', 'dark', 'light',
+    'white', 'black', 'gray', 'grey', 'purple', 'yellow', 'cyan', 'teal',
+    'amber', 'indigo',
+  };
+
+  /// Settings labels with optional asterisk (e.g. "Width *").
+  static final _uiSettingLabel = RegExp(
+    r'^(Width|Height|Size|Color|Theme|Font|Layout|View|Display|Spacing|'
+    r'Appearance|Mode|Style|Contrast)\s*\*?\s*$',
+    caseSensitive: false,
+  );
+
+  /// Paywall / access gate text with optional bullet prefix.
+  static final _paywallText = RegExp(
+    r'^[\s\u00B7\u2022•·\-*]*\s*'
+    r'(Subscribers?\s+only|Members?\s+only|Premium\s+content|'
+    r'Exclusive\s+content|Paid\s+content|Learn\s+more|Story\s+text)\s*$',
+    caseSensitive: false,
+  );
+
+  /// Returns true if a short text block is likely page chrome / UI noise.
+  bool _isChromeLine(String line) {
+    final stripped = line
+        .replaceAll(RegExp(r'^[\s\u00B7\u2022•·\-*]+'), '')
+        .trim();
+    if (stripped.isEmpty) return true;
+    final lower = stripped.toLowerCase();
+    if (_uiChromeWords.contains(lower)) return true;
+    if (_uiSettingLabel.hasMatch(stripped)) return true;
+    if (_paywallText.hasMatch(line)) return true;
+    return false;
+  }
 
   List<ContentBlockData> _cleanContentBlocks(List<ContentBlockData> blocks) {
     final seen = <String>{};
-    return blocks.where((b) {
-      if (b.type == BlockType.text && b.content != null) {
+    final seenImageBases = <String>{};
+    final articleTitle = widget.article.name ?? '';
+
+    // Strip trailing image-only blocks (page chrome at article end)
+    var endIdx = blocks.length;
+    while (endIdx > 0 && blocks[endIdx - 1].type == BlockType.image) {
+      endIdx--;
+    }
+    // Keep trailing images only if there are ≤2 (likely article-relevant)
+    final trailingCount = blocks.length - endIdx;
+    final effectiveBlocks = trailingCount > 2
+        ? blocks.sublist(0, endIdx)
+        : blocks;
+
+    // Pre-pass: strip leading markdown heading from text blocks when it
+    // matches the article title (avoids "SpaceX" shown twice).
+    final processed = effectiveBlocks.map((b) {
+      if (b.type == BlockType.text &&
+          b.content != null &&
+          articleTitle.isNotEmpty) {
+        final lines = b.content!.split('\n');
+        if (lines.isNotEmpty) {
+          final first = lines.first.trimLeft();
+          if (first.startsWith('#')) {
+            final headingText =
+                first.replaceFirst(RegExp(r'^#{1,6}\s*'), '').trim();
+            if (_isSameTitle(headingText, articleTitle)) {
+              // Strip the heading line (and any blank line after it).
+              var start = 1;
+              while (start < lines.length && lines[start].trim().isEmpty) {
+                start++;
+              }
+              final remaining = lines.sublist(start).join('\n').trim();
+              if (remaining.isEmpty) return null; // Entire block was the heading
+              return ContentBlockData(
+                uri: b.uri,
+                type: b.type,
+                order: b.order,
+                parentDocument: b.parentDocument,
+                content: remaining,
+                mediaUri: b.mediaUri,
+                caption: b.caption,
+                language: b.language,
+                checked: b.checked,
+                level: b.level,
+                dateCreated: b.dateCreated,
+                dateModified: b.dateModified,
+              );
+            }
+          }
+        }
+      }
+      return b;
+    }).whereType<ContentBlockData>();
+
+    return processed.where((b) {
+      // Filter image blocks: remove logos, icons, badges, and dedup by base name
+      if (b.type == BlockType.image && b.mediaUri != null) {
+        final url = b.mediaUri!;
+        if (_isLogoOrIcon(url)) return false;
+        // Dedup images by base name (strips dimensions + query params)
+        try {
+          final uri = Uri.parse(url);
+          final file = uri.pathSegments.isNotEmpty ? uri.pathSegments.last : url;
+          final base = '${uri.host}/${_imageBaseName(file)}';
+          if (seenImageBases.contains(base)) return false;
+          seenImageBases.add(base);
+        } catch (_) {
+          // fall through
+        }
+      }
+
+      // Apply chrome filtering to both text and heading blocks
+      if ((b.type == BlockType.text || b.type == BlockType.heading) &&
+          b.content != null) {
         final trimmed = b.content!.trim();
         if (trimmed.isEmpty) return false;
         // Remove separator-only blocks
@@ -1395,17 +1908,17 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
         if (_authorBioPattern.hasMatch(trimmed)) return false;
         // Remove known noise patterns
         if (_noisePatterns.any((p) => p.hasMatch(trimmed))) return false;
-        // Remove paywall/settings UI text
-        final lower = trimmed.toLowerCase();
-        if (lower == 'subscribers only' || lower == 'learn more' ||
-            lower == 'story text') {
+
+        // Short block: check if it's a UI chrome line
+        if (trimmed.length <= 30 && _isChromeLine(trimmed)) return false;
+
+        // Multi-line block where all lines are chrome → remove entire block
+        final lines = trimmed.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
+        if (lines.length > 1 && lines.length <= 10 &&
+            lines.every((l) => l.length <= 30 && _isChromeLine(l))) {
           return false;
         }
-        // Remove single-word UI labels (e.g. "Size", "Standard", "Wide")
-        if (trimmed.length <= 15 && !trimmed.contains(' ') &&
-            RegExp(r'^[A-Z][a-z]+\s*\*?$').hasMatch(trimmed)) {
-          return false;
-        }
+
         // Dedup: skip blocks with identical normalized content
         final norm = _normContent(trimmed);
         if (norm.length >= 10) {
@@ -1540,7 +2053,7 @@ class _ArticleDetailContentState extends ConsumerState<_ArticleDetailContent> {
           child: Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFF1A1A1A),
+              color: context.kabukSurfaceVariant,
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
@@ -1622,20 +2135,28 @@ class _ArticleOmniBar extends ConsumerWidget implements PreferredSizeWidget {
     if (_isReddit) return 'Reddit';
     if (_isFourchan) return '4chan';
     if (_isNostr) return 'Nostr';
+    final source = article.feedSource ?? '';
     final url = article.url;
     if (url != null) {
       try {
-        return Uri.parse(url).host.replaceFirst('www.', '');
+        final host = Uri.parse(url).host.replaceFirst('www.', '');
+        if (host.isNotEmpty) return host;
       } catch (e) {
         dev.log('Feed source parse failed', name: 'ArticleDetail', error: e);
       }
     }
+    // Strip "web:" prefix for web-browsed sources.
+    if (source.startsWith('web:')) return source.substring(4);
     return 'Feed';
   }
 
   String get _authorDisplay {
     final author = article.author;
     if (author == null) return '';
+    // kabuk: URIs are resolved asynchronously in build(); return empty here.
+    if (author.startsWith('kabuk:')) return '';
+    // Filter out generic/boilerplate author names.
+    if (_isGenericAuthor(author)) return '';
     if (_isReddit) {
       final name = author.startsWith('u/') ? author.substring(2) : author;
       return name;
@@ -1644,6 +2165,22 @@ class _ArticleOmniBar extends ConsumerWidget implements PreferredSizeWidget {
       return '${author.substring(0, 8)}…';
     }
     return author;
+  }
+
+  /// Returns true for generic author names that shouldn't display in breadcrumb.
+  static bool _isGenericAuthor(String author) {
+    final lower = author.toLowerCase().trim();
+    return lower.contains('contributor') ||
+        lower.contains('wikimedia') ||
+        lower.contains('wikipedia') ||
+        lower == 'staff' ||
+        lower == 'editor' ||
+        lower == 'editors' ||
+        lower == 'admin' ||
+        lower == 'webmaster' ||
+        lower == 'anonymous' ||
+        lower.startsWith('http://') ||
+        lower.startsWith('https://');
   }
 
   /// The channel (subreddit, board, etc.) if known.
@@ -1672,9 +2209,23 @@ class _ArticleOmniBar extends ConsumerWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final channel = _channelDisplay;
-    final author = _authorDisplay;
     final title = _titleShort;
     const chevron = _BreadcrumbChevron();
+
+    // Resolve kabuk: URIs to human-readable names from the knowledge store.
+    final rawAuthor = article.author;
+    final rawSource = article.feedSource ?? '';
+    String author = _authorDisplay;
+    if (rawAuthor != null && rawAuthor.startsWith('kabuk:')) {
+      author = ref.watch(entityNameProvider(rawAuthor)).valueOrNull ?? '';
+    }
+    // Filter generic author names after resolution.
+    if (author.isNotEmpty && _isGenericAuthor(author)) author = '';
+    String sourceName = _sourceName;
+    if (rawSource.startsWith('kabuk:')) {
+      final resolved = ref.watch(entityNameProvider(rawSource)).valueOrNull;
+      if (resolved != null) sourceName = resolved;
+    }
 
     // Build breadcrumb segments: Source › Channel › Author › Title
     final segments = <Widget>[];
@@ -1683,7 +2234,7 @@ class _ArticleOmniBar extends ConsumerWidget implements PreferredSizeWidget {
     segments.add(
       _BreadcrumbSegment(
         icon: _sourceIcon,
-        label: _sourceName,
+        label: sourceName,
         color: _sourceColor,
         onTap: () {
           // Clear any browse session and pop back to main Explore feed.
@@ -1962,6 +2513,8 @@ class _UnifiedComment {
     this.isPending = false,
     this.redditReplies = const [],
     this.depth = 0,
+    this.imageUrl,
+    this.fullImageUrl,
   });
 
   final String id;
@@ -1974,6 +2527,8 @@ class _UnifiedComment {
   final bool isPending;
   final List<RedditComment> redditReplies; // only for Reddit top-level
   final int depth;
+  final String? imageUrl;
+  final String? fullImageUrl;
 
   static _UnifiedComment fromNostr(NostrComment c) => _UnifiedComment(
     id: c.eventId,
@@ -1994,6 +2549,7 @@ class _UnifiedComment {
     score: c.score,
     redditReplies: c.replies,
     depth: c.depth,
+    imageUrl: _extractFirstImageUrl(c.body),
   );
 
   static _UnifiedComment fromFourchan(FourchanPost p) => _UnifiedComment(
@@ -2002,7 +2558,27 @@ class _UnifiedComment {
     content: p.content,
     timestamp: p.createdAt,
     source: _CommentSource.fourchan,
+    imageUrl: p.thumbnailUrl,
+    fullImageUrl: p.fullImageUrl,
   );
+
+  /// Extracts the first image URL from markdown/plain text (Reddit comments).
+  static String? _extractFirstImageUrl(String text) {
+    // Match markdown images: ![alt](url)
+    final mdImage = RegExp(r'!\[.*?\]\((https?://\S+?)\)').firstMatch(text);
+    if (mdImage != null) return mdImage.group(1);
+
+    // Match bare image URLs (imgur, i.redd.it, etc.)
+    final bareUrl = RegExp(
+      r'(https?://(?:i\.redd\.it|i\.imgur\.com|preview\.redd\.it|'
+      r'media\.tenor\.com|pbs\.twimg\.com)[^\s)\]]+?'
+      r'\.(?:jpg|jpeg|png|gif|webp)(?:\?[^\s)\]]*)?)',
+      caseSensitive: false,
+    ).firstMatch(text);
+    if (bareUrl != null) return bareUrl.group(1);
+
+    return null;
+  }
 }
 
 /// A unified multi-source discussion section.
@@ -2033,7 +2609,19 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
   void _focusCommentInput() {
     setState(() => _expanded = true);
     _commentFocusNode.requestFocus();
-    ref.read(keyboardModeProvider.notifier).state = KeyboardMode.text;
+  }
+
+  void _openChannelView(
+    BuildContext context,
+    ArticleData article,
+    List<_UnifiedComment> comments,
+  ) {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => _CommentChannelView(
+        article: article,
+        comments: comments,
+      ),
+    ));
   }
 
   @override
@@ -2204,6 +2792,21 @@ class _DiscussionSectionState extends ConsumerState<_DiscussionSection> {
                   ),
                 ),
               ),
+              if (unified.length >= 2) ...[
+                const SizedBox(width: 12),
+                Semantics(
+                  label: 'Open channel view',
+                  button: true,
+                  child: GestureDetector(
+                    onTap: () => _openChannelView(context, article, unified),
+                    child: Icon(
+                      Icons.forum_rounded,
+                      size: 18,
+                      color: context.kabukTextTertiary,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -2648,16 +3251,55 @@ class _UnifiedCommentTileState extends State<_UnifiedCommentTile> {
                           ],
                         ),
                         const SizedBox(height: 8),
-                        Text(
-                          c.content,
-                          style: TextStyle(
-                            fontSize: c.depth > 0 ? 12.5 : 13,
-                            height: 1.5,
-                            color: context.kabukTextPrimary,
-                          ),
+                        // Render content with markdown support.
+                        _CommentContent(
+                          content: c.content,
+                          source: c.source,
+                          fontSize: c.depth > 0 ? 12.5 : 13,
                           maxLines: c.depth > 1 ? 6 : 10,
-                          overflow: TextOverflow.ellipsis,
                         ),
+                        // Render attached media (4chan images, Reddit inline images).
+                        if (c.imageUrl != null) ...[
+                          const SizedBox(height: 8),
+                          GestureDetector(
+                            onTap: () {
+                              final url = c.fullImageUrl ?? c.imageUrl!;
+                              FullscreenImageViewer.show(
+                                context,
+                                imageUrl: url,
+                              );
+                            },
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxHeight: 200,
+                                  maxWidth: double.infinity,
+                                ),
+                                child: CachedNetworkImage(
+                                  imageUrl: c.imageUrl!,
+                                  fit: BoxFit.cover,
+                                  placeholder: (_, _) => Container(
+                                    height: 100,
+                                    color: context.kabukSurfaceVariant
+                                        .withAlpha(30),
+                                    child: const Center(
+                                      child: SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 1.5,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  errorWidget: (_, _, _) =>
+                                      const SizedBox.shrink(),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                         if (hasReplies) ...[
                           const SizedBox(height: 6),
                           GestureDetector(
@@ -2751,6 +3393,118 @@ class _UnifiedCommentTileState extends State<_UnifiedCommentTile> {
 }
 
 // =============================================================================
+// Comment content renderer (markdown + greentext)
+// =============================================================================
+
+/// Renders comment content with source-appropriate formatting.
+///
+/// - **Reddit**: Full markdown via [KabukMarkdown].
+/// - **4chan**: Greentext lines (starting with >) styled green, post
+///   references (>>12345) styled as links, rest as plain text.
+/// - **Nostr**: Markdown via [KabukMarkdown].
+class _CommentContent extends StatelessWidget {
+  const _CommentContent({
+    required this.content,
+    required this.source,
+    this.fontSize = 13,
+    this.maxLines,
+  });
+
+  final String content;
+  final _CommentSource source;
+  final double fontSize;
+  final int? maxLines;
+
+  @override
+  Widget build(BuildContext context) {
+    if (content.trim().isEmpty) return const SizedBox.shrink();
+
+    return switch (source) {
+      _CommentSource.fourchan => _buildFourchanContent(context),
+      _CommentSource.reddit ||
+      _CommentSource.nostr => _buildMarkdownContent(context),
+    };
+  }
+
+  /// Renders 4chan content with greentext styling.
+  Widget _buildFourchanContent(BuildContext context) {
+    final lines = content.split('\n');
+    final spans = <InlineSpan>[];
+
+    for (var i = 0; i < lines.length; i++) {
+      if (i > 0) spans.add(const TextSpan(text: '\n'));
+      final line = lines[i];
+
+      if (line.startsWith('>') && !line.startsWith('>>')) {
+        // Greentext — classic 4chan quote styling.
+        spans.add(TextSpan(
+          text: line,
+          style: TextStyle(
+            color: const Color(0xFF789922),
+            fontSize: fontSize,
+            height: 1.5,
+            fontStyle: FontStyle.italic,
+          ),
+        ));
+      } else if (line.contains('>>')) {
+        // Lines with post references: style >>12345 as links.
+        final parts = RegExp(r'(>>(\d+))').allMatches(line).toList();
+        var lastEnd = 0;
+        for (final match in parts) {
+          if (match.start > lastEnd) {
+            spans.add(TextSpan(
+              text: line.substring(lastEnd, match.start),
+              style: _defaultStyle(context),
+            ));
+          }
+          spans.add(TextSpan(
+            text: match.group(1),
+            style: TextStyle(
+              color: KabukTheme.blueAccent,
+              fontSize: fontSize,
+              height: 1.5,
+              decoration: TextDecoration.underline,
+            ),
+          ));
+          lastEnd = match.end;
+        }
+        if (lastEnd < line.length) {
+          spans.add(TextSpan(
+            text: line.substring(lastEnd),
+            style: _defaultStyle(context),
+          ));
+        }
+      } else {
+        spans.add(TextSpan(text: line, style: _defaultStyle(context)));
+      }
+
+      if (maxLines != null && i >= maxLines! - 1) break;
+    }
+
+    return Text.rich(
+      TextSpan(children: spans),
+      maxLines: maxLines,
+      overflow: maxLines != null ? TextOverflow.ellipsis : TextOverflow.clip,
+    );
+  }
+
+  /// Renders Reddit / Nostr content with full markdown.
+  Widget _buildMarkdownContent(BuildContext context) {
+    return KabukMarkdown(
+      data: content,
+      selectable: false,
+      shrinkWrap: true,
+    );
+  }
+
+  TextStyle _defaultStyle(BuildContext context) => TextStyle(
+    fontSize: fontSize,
+    height: 1.5,
+    color: context.kabukTextPrimary,
+  );
+}
+
+// =============================================================================
 // Show more replies (expands hidden comments inline)
 // =============================================================================
 
@@ -2841,10 +3595,7 @@ class _CommentInputState extends ConsumerState<_CommentInput> {
   }
 
   void _onFocusChange() {
-    if (_focusNode.hasFocus) {
-      // Auto-open custom keyboard when comment input gets focus.
-      ref.read(keyboardModeProvider.notifier).state = KeyboardMode.text;
-    }
+    // System keyboard opens automatically when focus is gained.
   }
 
   Future<void> _submit() async {
@@ -2858,7 +3609,6 @@ class _CommentInputState extends ConsumerState<_CommentInput> {
       if (success) {
         _controller.clear();
         _focusNode.unfocus();
-        ref.read(keyboardModeProvider.notifier).state = KeyboardMode.none;
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -2872,13 +3622,31 @@ class _CommentInputState extends ConsumerState<_CommentInput> {
 
   @override
   Widget build(BuildContext context) {
-    return KabukKeyboard(
+    return TextField(
       controller: _controller,
       focusNode: _focusNode,
       enabled: !_sending,
       maxLines: 3,
-      hintText: 'Write a comment\u2026',
-      onSend: _submit,
+      minLines: 1,
+      style: TextStyle(color: context.kabukTextPrimary, fontSize: 14),
+      decoration: InputDecoration(
+        hintText: 'Write a comment\u2026',
+        hintStyle: TextStyle(
+          color: context.kabukTextSecondary,
+          fontSize: 14,
+        ),
+        filled: true,
+        fillColor: context.kabukSurfaceVariant,
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(20),
+          borderSide: BorderSide.none,
+        ),
+      ),
       onSubmitted: (_) => _submit(),
     );
   }
@@ -3054,5 +3822,262 @@ class _DetailGalleryCarouselState extends State<_DetailGalleryCarousel> {
         ),
       ),
     );
+  }
+}
+
+// =============================================================================
+// Comment Channel View — shows comments as a chat-like channel
+// =============================================================================
+
+/// Displays article comments in a channel/chat layout.
+///
+/// The article title serves as the channel name, and each comment is shown
+/// as an individual message card — similar to a Discord channel or group chat.
+/// Useful for thread-heavy discussions (4chan, Reddit mega-threads).
+class _CommentChannelView extends StatelessWidget {
+  const _CommentChannelView({
+    required this.article,
+    required this.comments,
+  });
+
+  final ArticleData article;
+  final List<_UnifiedComment> comments;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: context.kabukBackground,
+      appBar: AppBar(
+        backgroundColor: context.kabukSurface,
+        foregroundColor: context.kabukTextPrimary,
+        elevation: 0,
+        titleSpacing: 0,
+        title: Row(
+          children: [
+            Icon(
+              Icons.tag_rounded,
+              size: 20,
+              color: context.kabukTextTertiary,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    article.name ?? 'Discussion',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: context.kabukTextPrimary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    '${comments.length} messages',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: context.kabukTextTertiary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      body: ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        itemCount: comments.length,
+        itemBuilder: (context, index) {
+          final c = comments[index];
+          final showAuthorHeader = index == 0 ||
+              comments[index - 1].displayAuthor != c.displayAuthor ||
+              c.timestamp.difference(comments[index - 1].timestamp).inMinutes >
+                  5;
+
+          return Padding(
+            padding: EdgeInsets.only(top: showAuthorHeader ? 12 : 2),
+            child: _ChannelMessageTile(
+              comment: c,
+              showHeader: showAuthorHeader,
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// A single message in the channel view — styled like a chat message.
+class _ChannelMessageTile extends StatelessWidget {
+  const _ChannelMessageTile({
+    required this.comment,
+    required this.showHeader,
+  });
+
+  final _UnifiedComment comment;
+  final bool showHeader;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Avatar (only on header rows, otherwise spacer).
+        SizedBox(
+          width: 36,
+          child: showHeader
+              ? CircleAvatar(
+                  radius: 16,
+                  backgroundColor:
+                      _sourceColor(comment.source).withAlpha(25),
+                  backgroundImage: comment.authorPicture != null
+                      ? NetworkImage(comment.authorPicture!)
+                      : null,
+                  child: comment.authorPicture == null
+                      ? Icon(
+                          Icons.person_rounded,
+                          size: 16,
+                          color: _sourceColor(comment.source).withAlpha(140),
+                        )
+                      : null,
+                )
+              : null,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (showHeader)
+                Row(
+                  children: [
+                    _SourceBadge(source: comment.source),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        comment.displayAuthor,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: _authorColor(context, comment.source),
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _formatTime(comment.timestamp),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: context.kabukTextTertiary,
+                      ),
+                    ),
+                    if (comment.score != null) ...[
+                      const Spacer(),
+                      Icon(
+                        Icons.arrow_upward_rounded,
+                        size: 11,
+                        color: _sourceColor(comment.source).withAlpha(180),
+                      ),
+                      const SizedBox(width: 2),
+                      Text(
+                        _fmtScore(comment.score!),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: context.kabukTextSecondary,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              if (showHeader) const SizedBox(height: 4),
+              _CommentContent(
+                content: comment.content,
+                source: comment.source,
+                fontSize: 13,
+              ),
+              if (comment.imageUrl != null) ...[
+                const SizedBox(height: 6),
+                GestureDetector(
+                  onTap: () {
+                    final url = comment.fullImageUrl ?? comment.imageUrl!;
+                    FullscreenImageViewer.show(
+                      context,
+                      imageUrl: url,
+                    );
+                  },
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        maxHeight: 250,
+                        maxWidth: double.infinity,
+                      ),
+                      child: CachedNetworkImage(
+                        imageUrl: comment.imageUrl!,
+                        fit: BoxFit.cover,
+                        placeholder: (_, _) => Container(
+                          height: 100,
+                          color: context.kabukSurfaceVariant.withAlpha(30),
+                          child: const Center(
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 1.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                        errorWidget: (_, _, _) => const SizedBox.shrink(),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  static Color _sourceColor(_CommentSource source) => switch (source) {
+    _CommentSource.nostr => KabukTheme.purpleAccent,
+    _CommentSource.reddit => KabukTheme.redditOrange,
+    _CommentSource.fourchan => const Color(0xFF00B300),
+  };
+
+  static Color _authorColor(BuildContext context, _CommentSource source) =>
+      switch (source) {
+        _CommentSource.nostr => context.kabukTextSecondary,
+        _CommentSource.reddit => KabukTheme.blueAccent,
+        _CommentSource.fourchan => const Color(0xFF00B300),
+      };
+
+  static String _formatTime(DateTime utc) {
+    final local = utc.toLocal();
+    final now = DateTime.now();
+    final diff = now.difference(local);
+
+    if (diff.inMinutes < 1) return 'now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+
+    final month = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ][local.month - 1];
+    final year = local.year != now.year ? ' ${local.year}' : '';
+    return '$month ${local.day}$year';
+  }
+
+  static String _fmtScore(int score) {
+    if (score.abs() >= 1000) return '${(score / 1000).toStringAsFixed(1)}k';
+    return score.toString();
   }
 }

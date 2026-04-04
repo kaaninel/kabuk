@@ -18,7 +18,6 @@ import 'package:kabuk/services/nostr_utils.dart';
 import 'package:kabuk/ui/explore/article_detail_page.dart';
 import 'package:kabuk/ui/explore/discovery_providers.dart';
 import 'package:kabuk/ui/shared/feed_image.dart';
-import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
 import 'package:kabuk/ui/theme.dart';
 
 /// Enhanced search dialog with local + Nostr search and save capability.
@@ -158,7 +157,7 @@ class _SearchDialogState extends ConsumerState<SearchDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      backgroundColor: KabukTheme.surface,
+      backgroundColor: context.kabukSurface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       insetPadding: const EdgeInsets.all(16),
       child: ConstrainedBox(
@@ -173,12 +172,35 @@ class _SearchDialogState extends ConsumerState<SearchDialog> {
               child: Row(
                 children: [
                   Expanded(
-                    child: KabukKeyboard(
-                      simple: true,
+                    child: TextField(
                       controller: _controller,
                       autofocus: true,
                       onChanged: _search,
-                      hintText: 'Search articles & Nostr...',
+                      maxLines: 1,
+                      minLines: 1,
+                      textInputAction: TextInputAction.done,
+                      style: TextStyle(
+                        color: context.kabukTextPrimary,
+                        fontSize: 14,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: 'Search articles & Nostr...',
+                        hintStyle: TextStyle(
+                          color: context.kabukTextSecondary,
+                          fontSize: 14,
+                        ),
+                        filled: true,
+                        fillColor: context.kabukSurfaceVariant,
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
                     ),
                   ),
                   if (_activeQuery.isNotEmpty) ...[
@@ -254,7 +276,7 @@ class _SearchDialogState extends ConsumerState<SearchDialog> {
           color: isSelected ? c.withAlpha(30) : Colors.transparent,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: isSelected ? c.withAlpha(80) : KabukTheme.divider,
+            color: isSelected ? c.withAlpha(80) : context.kabukDivider,
           ),
         ),
         child: Row(
@@ -263,7 +285,7 @@ class _SearchDialogState extends ConsumerState<SearchDialog> {
             Icon(
               icon,
               size: 14,
-              color: isSelected ? c : KabukTheme.textTertiary,
+              color: isSelected ? c : context.kabukTextTertiary,
             ),
             const SizedBox(width: 6),
             Text(
@@ -271,7 +293,7 @@ class _SearchDialogState extends ConsumerState<SearchDialog> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                color: isSelected ? c : KabukTheme.textSecondary,
+                color: isSelected ? c : context.kabukTextSecondary,
               ),
             ),
           ],
@@ -282,11 +304,11 @@ class _SearchDialogState extends ConsumerState<SearchDialog> {
 
   Widget _buildLocalResults() {
     if (_localResults.isEmpty && _activeQuery.isNotEmpty) {
-      return const Padding(
+      return Padding(
         padding: EdgeInsets.all(24),
         child: Text(
           'No local results found',
-          style: TextStyle(color: KabukTheme.textSecondary),
+          style: TextStyle(color: context.kabukTextSecondary),
         ),
       );
     }
@@ -316,13 +338,13 @@ class _SearchDialogState extends ConsumerState<SearchDialog> {
                     width: 44,
                     height: 44,
                     decoration: BoxDecoration(
-                      color: KabukTheme.surfaceVariant,
+                      color: context.kabukSurfaceVariant,
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.article_outlined,
                       size: 20,
-                      color: KabukTheme.textTertiary,
+                      color: context.kabukTextTertiary,
                     ),
                   ),
             title: Text(
@@ -334,9 +356,9 @@ class _SearchDialogState extends ConsumerState<SearchDialog> {
             subtitle: article.author != null
                 ? Text(
                     article.author!,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: KabukTheme.textTertiary,
+                      color: context.kabukTextTertiary,
                     ),
                   )
                 : null,
@@ -355,7 +377,7 @@ class _SearchDialogState extends ConsumerState<SearchDialog> {
 
   Widget _buildNostrResults() {
     if (_nostrSearching) {
-      return const Padding(
+      return Padding(
         padding: EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -364,19 +386,19 @@ class _SearchDialogState extends ConsumerState<SearchDialog> {
             SizedBox(height: 12),
             Text(
               'Searching Nostr relays...',
-              style: TextStyle(color: KabukTheme.textSecondary, fontSize: 13),
+              style: TextStyle(color: context.kabukTextSecondary, fontSize: 13),
             ),
           ],
         ),
       );
     }
     if (_nostrResults.isEmpty && _activeQuery.isNotEmpty) {
-      return const Padding(
+      return Padding(
         padding: EdgeInsets.all(24),
         child: Text(
           'No Nostr results found.\nNot all relays support NIP-50 search.',
           textAlign: TextAlign.center,
-          style: TextStyle(color: KabukTheme.textSecondary),
+          style: TextStyle(color: context.kabukTextSecondary),
         ),
       );
     }
@@ -413,9 +435,9 @@ class _SearchDialogState extends ConsumerState<SearchDialog> {
             ),
             subtitle: Text(
               '$author... \u2022 ${_formatDate(date)}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
-                color: KabukTheme.textTertiary,
+                color: context.kabukTextTertiary,
               ),
             ),
           );

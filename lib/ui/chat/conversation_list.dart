@@ -20,7 +20,6 @@ import 'package:kabuk/ui/chat/nostr_channel_detail.dart';
 import 'package:kabuk/ui/chat/nostr_chat_detail.dart';
 import 'package:kabuk/ui/chat/qr_contact_exchange.dart';
 import 'package:kabuk/ui/shared/identity_quick_switcher.dart';
-import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
 import 'package:kabuk/ui/theme.dart';
 
 /// The main chat tab — a messaging-style conversation list.
@@ -65,7 +64,6 @@ class _ConversationListState extends ConsumerState<ConversationList> {
 
     return Scaffold(
       appBar: AppBar(
-        leading: const IdentityQuickSwitcher(),
         title: const Text('Chat'),
         actions: [
           PopupMenuButton<String>(
@@ -74,7 +72,7 @@ class _ConversationListState extends ConsumerState<ConversationList> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
             ),
-            color: KabukTheme.surface,
+            color: context.kabukSurface,
             onSelected: (value) {
               switch (value) {
                 case 'qr':
@@ -147,6 +145,7 @@ class _ConversationListState extends ConsumerState<ConversationList> {
               ),
             ],
           ),
+          const IdentityQuickSwitcher(),
         ],
       ),
       body: conversationsAsync.when(
@@ -211,18 +210,41 @@ class _ConversationListState extends ConsumerState<ConversationList> {
               KabukTheme.spacingMd,
               KabukTheme.spacingXs,
             ),
-            child: KabukKeyboard(
-              simple: true,
+            child: TextField(
               controller: _searchController,
               onChanged: _onSearchChanged,
-              hintText: 'Search conversations\u2026',
+              maxLines: 1,
+              minLines: 1,
+              textInputAction: TextInputAction.done,
+              style: TextStyle(
+                color: context.kabukTextPrimary,
+                fontSize: 14,
+              ),
+              decoration: InputDecoration(
+                hintText: 'Search conversations\u2026',
+                hintStyle: TextStyle(
+                  color: context.kabukTextSecondary,
+                  fontSize: 14,
+                ),
+                filled: true,
+                fillColor: context.kabukSurfaceVariant,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  borderSide: BorderSide.none,
+                ),
+              ),
             ),
           ),
         ),
 
         // Section header.
         if (contacts.isNotEmpty)
-          const SliverToBoxAdapter(
+          SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.fromLTRB(
                 KabukTheme.spacingMd,
@@ -233,7 +255,7 @@ class _ConversationListState extends ConsumerState<ConversationList> {
               child: Text(
                 'Recent',
                 style: TextStyle(
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
@@ -256,14 +278,14 @@ class _ConversationListState extends ConsumerState<ConversationList> {
 
         // Empty state when search returns no results.
         if (filtered.isEmpty && _searchQuery.isNotEmpty)
-          const SliverToBoxAdapter(
+          SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.all(KabukTheme.spacingLg),
               child: Center(
                 child: Text(
                   'No conversations found',
                   style: TextStyle(
-                    color: KabukTheme.textSecondary,
+                    color: context.kabukTextSecondary,
                     fontSize: 14,
                   ),
                 ),
@@ -281,7 +303,7 @@ class _ConversationListState extends ConsumerState<ConversationList> {
 
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: KabukTheme.surface,
+      backgroundColor: context.kabukSurface,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
@@ -304,7 +326,7 @@ class _ConversationListState extends ConsumerState<ConversationList> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: KabukTheme.textSecondary.withAlpha(100),
+                  color: context.kabukTextSecondary.withAlpha(100),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -325,15 +347,15 @@ class _ConversationListState extends ConsumerState<ConversationList> {
               ],
             ),
             const SizedBox(height: 4),
-            const Text(
+            Text(
               'Create a public channel',
-              style: TextStyle(color: KabukTheme.textSecondary, fontSize: 12),
+              style: TextStyle(color: context.kabukTextSecondary, fontSize: 12),
             ),
             const SizedBox(height: KabukTheme.spacingMd),
             TextField(
               controller: nameCtrl,
               textCapitalization: TextCapitalization.words,
-              style: const TextStyle(color: KabukTheme.textPrimary),
+              style: TextStyle(color: context.kabukTextPrimary),
               decoration: const InputDecoration(
                 labelText: 'Channel Name',
                 prefixIcon: Icon(Icons.tag_rounded, size: 20),
@@ -343,7 +365,7 @@ class _ConversationListState extends ConsumerState<ConversationList> {
             TextField(
               controller: aboutCtrl,
               maxLines: 2,
-              style: const TextStyle(color: KabukTheme.textPrimary),
+              style: TextStyle(color: context.kabukTextPrimary),
               decoration: const InputDecoration(
                 labelText: 'Description (optional)',
                 prefixIcon: Icon(Icons.info_outline, size: 20),
@@ -418,7 +440,7 @@ class _ConversationListState extends ConsumerState<ConversationList> {
 
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: KabukTheme.surface,
+      backgroundColor: context.kabukSurface,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
@@ -441,7 +463,7 @@ class _ConversationListState extends ConsumerState<ConversationList> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: KabukTheme.textSecondary.withAlpha(100),
+                  color: context.kabukTextSecondary.withAlpha(100),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -452,7 +474,7 @@ class _ConversationListState extends ConsumerState<ConversationList> {
             TextField(
               controller: nameCtrl,
               textCapitalization: TextCapitalization.words,
-              style: const TextStyle(color: KabukTheme.textPrimary),
+              style: TextStyle(color: context.kabukTextPrimary),
               decoration: const InputDecoration(
                 labelText: 'Name',
                 prefixIcon: Icon(Icons.person_outline, size: 20),
@@ -461,17 +483,17 @@ class _ConversationListState extends ConsumerState<ConversationList> {
             const SizedBox(height: KabukTheme.spacingSm),
             TextField(
               controller: nostrCtrl,
-              style: const TextStyle(
-                color: KabukTheme.textPrimary,
+              style: TextStyle(
+                color: context.kabukTextPrimary,
                 fontFamily: 'monospace',
                 fontSize: 13,
               ),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Nostr pubkey (npub or hex)',
                 prefixIcon: Icon(Icons.key_rounded, size: 20),
                 hintText: 'npub1... or 64-char hex',
                 hintStyle: TextStyle(
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                   fontSize: 12,
                 ),
               ),
@@ -480,7 +502,7 @@ class _ConversationListState extends ConsumerState<ConversationList> {
             TextField(
               controller: emailCtrl,
               keyboardType: TextInputType.emailAddress,
-              style: const TextStyle(color: KabukTheme.textPrimary),
+              style: TextStyle(color: context.kabukTextPrimary),
               decoration: const InputDecoration(
                 labelText: 'Email (optional)',
                 prefixIcon: Icon(Icons.email_outlined, size: 20),
@@ -490,7 +512,7 @@ class _ConversationListState extends ConsumerState<ConversationList> {
             TextField(
               controller: phoneCtrl,
               keyboardType: TextInputType.phone,
-              style: const TextStyle(color: KabukTheme.textPrimary),
+              style: TextStyle(color: context.kabukTextPrimary),
               decoration: const InputDecoration(
                 labelText: 'Phone (optional)',
                 prefixIcon: Icon(Icons.phone_outlined, size: 20),
@@ -599,7 +621,7 @@ class _ConversationListState extends ConsumerState<ConversationList> {
 
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: KabukTheme.surface,
+      backgroundColor: context.kabukSurface,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
@@ -622,7 +644,7 @@ class _ConversationListState extends ConsumerState<ConversationList> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: KabukTheme.textSecondary.withAlpha(100),
+                  color: context.kabukTextSecondary.withAlpha(100),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -640,24 +662,24 @@ class _ConversationListState extends ConsumerState<ConversationList> {
               ],
             ),
             const SizedBox(height: 4),
-            const Text(
+            Text(
               'End-to-end encrypted',
-              style: TextStyle(color: KabukTheme.textSecondary, fontSize: 12),
+              style: TextStyle(color: context.kabukTextSecondary, fontSize: 12),
             ),
             const SizedBox(height: KabukTheme.spacingMd),
             TextField(
               controller: pubkeyCtrl,
-              style: const TextStyle(
-                color: KabukTheme.textPrimary,
+              style: TextStyle(
+                color: context.kabukTextPrimary,
                 fontFamily: 'monospace',
                 fontSize: 13,
               ),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Recipient pubkey',
                 prefixIcon: Icon(Icons.key_rounded, size: 20),
                 hintText: 'npub1... or 64-char hex',
                 hintStyle: TextStyle(
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                   fontSize: 12,
                 ),
               ),
@@ -666,7 +688,7 @@ class _ConversationListState extends ConsumerState<ConversationList> {
             TextField(
               controller: nameCtrl,
               textCapitalization: TextCapitalization.words,
-              style: const TextStyle(color: KabukTheme.textPrimary),
+              style: TextStyle(color: context.kabukTextPrimary),
               decoration: const InputDecoration(
                 labelText: 'Display name (optional)',
                 prefixIcon: Icon(Icons.person_outline, size: 20),
@@ -928,9 +950,9 @@ class _ContactAvatar extends ConsumerWidget {
                 (contact.name ?? '?').split(' ').first,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                 ),
               ),
             ],
@@ -1035,11 +1057,11 @@ class _KabukAiTile extends ConsumerWidget {
         isConfigured ? 'Your personal assistant' : 'Model downloading…',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(color: KabukTheme.textSecondary, fontSize: 13),
+        style: TextStyle(color: context.kabukTextSecondary, fontSize: 13),
       ),
-      trailing: const Icon(
+      trailing: Icon(
         Icons.chevron_right,
-        color: KabukTheme.textSecondary,
+        color: context.kabukTextSecondary,
         size: 20,
       ),
       onTap: () => _openKabukAi(context, ref),
@@ -1123,12 +1145,12 @@ class _ConversationTile extends ConsumerWidget {
                   size: 20,
                 ),
               )
-            : const CircleAvatar(
+            : CircleAvatar(
                 radius: 22,
-                backgroundColor: KabukTheme.surfaceVariant,
+                backgroundColor: context.kabukSurfaceVariant,
                 child: Icon(
                   Icons.chat_outlined,
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                   size: 20,
                 ),
               ),
@@ -1142,7 +1164,7 @@ class _ConversationTile extends ConsumerWidget {
           conversation.lastMessage ?? _formatTimestamp(conversation.updatedAt),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: KabukTheme.textSecondary, fontSize: 12),
+          style: TextStyle(color: context.kabukTextSecondary, fontSize: 12),
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
@@ -1179,15 +1201,15 @@ class _ConversationTile extends ConsumerWidget {
               _formatTimestamp(
                 conversation.lastMessageAt ?? conversation.updatedAt,
               ),
-              style: const TextStyle(
-                color: KabukTheme.textSecondary,
+              style: TextStyle(
+                color: context.kabukTextSecondary,
                 fontSize: 11,
               ),
             ),
             const SizedBox(width: 4),
-            const Icon(
+            Icon(
               Icons.chevron_right,
-              color: KabukTheme.textSecondary,
+              color: context.kabukTextSecondary,
               size: 20,
             ),
           ],
@@ -1261,7 +1283,7 @@ class _ConversationTile extends ConsumerWidget {
   void _showContextMenu(BuildContext context, WidgetRef ref) {
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: KabukTheme.surface,
+      backgroundColor: context.kabukSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
           top: Radius.circular(KabukTheme.radiusXl),
@@ -1278,16 +1300,16 @@ class _ConversationTile extends ConsumerWidget {
                 height: 4,
                 margin: const EdgeInsets.only(top: KabukTheme.spacingSm),
                 decoration: BoxDecoration(
-                  color: KabukTheme.textSecondary.withAlpha(100),
+                  color: context.kabukTextSecondary.withAlpha(100),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
             ),
             if (conversation.unreadCount > 0)
               ListTile(
-                leading: const Icon(
+                leading: Icon(
                   Icons.mark_email_read_outlined,
-                  color: KabukTheme.textPrimary,
+                  color: context.kabukTextPrimary,
                 ),
                 title: const Text('Mark as read'),
                 onTap: () {
@@ -1325,7 +1347,7 @@ class _ConversationTile extends ConsumerWidget {
     return showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: KabukTheme.surface,
+        backgroundColor: context.kabukSurface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
         ),
@@ -1333,7 +1355,7 @@ class _ConversationTile extends ConsumerWidget {
         content: Text(
           'This will permanently delete "${conversation.title}" '
           'and all its messages.',
-          style: const TextStyle(color: KabukTheme.textSecondary),
+          style: TextStyle(color: context.kabukTextSecondary),
         ),
         actions: [
           TextButton(
@@ -1439,8 +1461,8 @@ class _NostrDmAvatar extends ConsumerWidget {
           child: Container(
             width: 14,
             height: 14,
-            decoration: const BoxDecoration(
-              color: KabukTheme.background,
+            decoration: BoxDecoration(
+              color: context.kabukBackground,
               shape: BoxShape.circle,
             ),
             child: const Icon(

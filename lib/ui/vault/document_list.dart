@@ -10,7 +10,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/types/note.dart';
-import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
 import 'package:kabuk/ui/theme.dart';
 import 'package:kabuk/ui/vault/document_editor.dart' show DocumentEditor;
 import 'package:kabuk/ui/vault/vault_view.dart';
@@ -150,7 +149,7 @@ class _DocumentListViewState extends ConsumerState<DocumentListView> {
               }
               return RefreshIndicator(
                 color: KabukTheme.accentGreen,
-                backgroundColor: KabukTheme.surface,
+                backgroundColor: context.kabukSurface,
                 onRefresh: () async {
                   ref.invalidate(notesListProvider);
                   await ref.read(notesListProvider.future);
@@ -204,21 +203,21 @@ class _DocumentListViewState extends ConsumerState<DocumentListView> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: KabukTheme.surfaceElevated,
-        title: const Text(
+        backgroundColor: context.kabukSurfaceElevated,
+        title: Text(
           'Delete document?',
-          style: TextStyle(color: KabukTheme.textPrimary),
+          style: TextStyle(color: context.kabukTextPrimary),
         ),
-        content: const Text(
+        content: Text(
           'This action cannot be undone.',
-          style: TextStyle(color: KabukTheme.textSecondary),
+          style: TextStyle(color: context.kabukTextSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text(
+            child: Text(
               'Cancel',
-              style: TextStyle(color: KabukTheme.textSecondary),
+              style: TextStyle(color: context.kabukTextSecondary),
             ),
           ),
           TextButton(
@@ -279,21 +278,21 @@ class _Toolbar extends StatelessWidget {
                   height: 36,
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
-                    color: KabukTheme.surface,
+                    color: context.kabukSurface,
                     borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
                       Icon(
                         Icons.search_rounded,
                         size: 18,
-                        color: KabukTheme.textTertiary,
+                        color: context.kabukTextTertiary,
                       ),
                       SizedBox(width: 8),
                       Text(
                         'Search documents...',
                         style: TextStyle(
-                          color: KabukTheme.textTertiary,
+                          color: context.kabukTextTertiary,
                           fontSize: 13,
                         ),
                       ),
@@ -303,12 +302,35 @@ class _Toolbar extends StatelessWidget {
               ),
               secondChild: SizedBox(
                 height: 36,
-                child: KabukKeyboard(
-                  simple: true,
+                child: TextField(
                   controller: searchController,
                   onChanged: onSearchChanged,
                   autofocus: true,
-                  hintText: 'Search...',
+                  maxLines: 1,
+                  minLines: 1,
+                  textInputAction: TextInputAction.done,
+                  style: TextStyle(
+                    color: context.kabukTextPrimary,
+                    fontSize: 14,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'Search...',
+                    hintStyle: TextStyle(
+                      color: context.kabukTextSecondary,
+                      fontSize: 14,
+                    ),
+                    filled: true,
+                    fillColor: context.kabukSurfaceVariant,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(20),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
                 ),
               ),
               crossFadeState: searchActive
@@ -323,16 +345,16 @@ class _Toolbar extends StatelessWidget {
           // Sort toggle.
           PopupMenuButton<_SortMode>(
             onSelected: onSortChanged,
-            color: KabukTheme.surfaceElevated,
-            icon: const Icon(
+            color: context.kabukSurfaceElevated,
+            icon: Icon(
               Icons.sort_rounded,
               size: 20,
-              color: KabukTheme.textSecondary,
+              color: context.kabukTextSecondary,
             ),
             itemBuilder: (_) => [
-              _sortItem(_SortMode.modified, 'Last modified', sortMode),
-              _sortItem(_SortMode.created, 'Date created', sortMode),
-              _sortItem(_SortMode.alphabetical, 'Alphabetical', sortMode),
+              _sortItem(context, _SortMode.modified, 'Last modified', sortMode),
+              _sortItem(context, _SortMode.created, 'Date created', sortMode),
+              _sortItem(context, _SortMode.alphabetical, 'Alphabetical', sortMode),
             ],
           ),
         ],
@@ -341,6 +363,7 @@ class _Toolbar extends StatelessWidget {
   }
 
   PopupMenuItem<_SortMode> _sortItem(
+    BuildContext context,
     _SortMode mode,
     String label,
     _SortMode current,
@@ -364,7 +387,7 @@ class _Toolbar extends StatelessWidget {
             style: TextStyle(
               color: isSelected
                   ? KabukTheme.accentGreen
-                  : KabukTheme.textPrimary,
+                  : context.kabukTextPrimary,
               fontSize: 13,
             ),
           ),
@@ -401,9 +424,9 @@ class _DocumentCard extends StatelessWidget {
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color: KabukTheme.surface,
+          color: context.kabukSurface,
           borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
-          border: Border.all(color: KabukTheme.divider, width: 0.5),
+          border: Border.all(color: context.kabukDivider, width: 0.5),
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
@@ -439,8 +462,8 @@ class _DocumentCard extends StatelessWidget {
                     Expanded(
                       child: Text(
                         title,
-                        style: const TextStyle(
-                          color: KabukTheme.textPrimary,
+                        style: TextStyle(
+                          color: context.kabukTextPrimary,
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
                         ),
@@ -453,11 +476,11 @@ class _DocumentCard extends StatelessWidget {
                       onSelected: (action) {
                         if (action == 'delete') onDelete();
                       },
-                      color: KabukTheme.surfaceElevated,
-                      icon: const Icon(
+                      color: context.kabukSurfaceElevated,
+                      icon: Icon(
                         Icons.more_horiz_rounded,
                         size: 18,
-                        color: KabukTheme.textTertiary,
+                        color: context.kabukTextTertiary,
                       ),
                       itemBuilder: (_) => [
                         const PopupMenuItem(
@@ -491,8 +514,8 @@ class _DocumentCard extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
                       preview,
-                      style: const TextStyle(
-                        color: KabukTheme.textSecondary,
+                      style: TextStyle(
+                        color: context.kabukTextSecondary,
                         fontSize: 13,
                         height: 1.4,
                       ),
@@ -511,7 +534,7 @@ class _DocumentCard extends StatelessWidget {
                           Text(
                             dateStr,
                             style: TextStyle(
-                              color: KabukTheme.textTertiary.withAlpha(180),
+                              color: context.kabukTextTertiary.withAlpha(180),
                               fontSize: 11,
                             ),
                           ),
@@ -529,7 +552,7 @@ class _DocumentCard extends StatelessWidget {
                                     child: Text(
                                       '+${note.tags.length - 3}',
                                       style: TextStyle(
-                                        color: KabukTheme.textTertiary
+                                        color: context.kabukTextTertiary
                                             .withAlpha(150),
                                         fontSize: 11,
                                         fontWeight: FontWeight.w500,
@@ -605,7 +628,7 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (hasFilter) {
-      return const Center(
+      return Center(
         child: Padding(
           padding: EdgeInsets.all(KabukTheme.spacingXl),
           child: Column(
@@ -614,13 +637,13 @@ class _EmptyState extends StatelessWidget {
               Icon(
                 Icons.search_off_rounded,
                 size: 48,
-                color: KabukTheme.textTertiary,
+                color: context.kabukTextTertiary,
               ),
               SizedBox(height: KabukTheme.spacingMd),
               Text(
                 'No matching documents',
                 style: TextStyle(
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                 ),
@@ -628,7 +651,7 @@ class _EmptyState extends StatelessWidget {
               SizedBox(height: KabukTheme.spacingSm),
               Text(
                 'Try a different search query',
-                style: TextStyle(color: KabukTheme.textTertiary, fontSize: 13),
+                style: TextStyle(color: context.kabukTextTertiary, fontSize: 13),
               ),
             ],
           ),
@@ -645,15 +668,15 @@ class _EmptyState extends StatelessWidget {
             Icon(
               Icons.note_add_rounded,
               size: 64,
-              color: KabukTheme.textSecondary.withAlpha(128),
+              color: context.kabukTextSecondary.withAlpha(128),
             ),
             const SizedBox(height: KabukTheme.spacingMd),
-            const Text(
+            Text(
               'Start capturing your thoughts',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
               ),
               textAlign: TextAlign.center,
             ),
@@ -661,7 +684,7 @@ class _EmptyState extends StatelessWidget {
             Text(
               'Notes, ideas, and reminders — all in one place',
               style: TextStyle(
-                color: KabukTheme.textSecondary.withAlpha(180),
+                color: context.kabukTextSecondary.withAlpha(180),
               ),
               textAlign: TextAlign.center,
             ),

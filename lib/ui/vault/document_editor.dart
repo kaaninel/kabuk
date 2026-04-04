@@ -20,7 +20,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/types/content_block.dart';
 import 'package:kabuk/knowledge/types/note.dart';
-import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
 import 'package:kabuk/ui/shared/markdown_editor.dart';
 import 'package:kabuk/ui/theme.dart';
 import 'package:kabuk/ui/vault/vault_view.dart';
@@ -58,9 +57,6 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
   final _bodyController = TextEditingController();
   final _bodyFocusNode = FocusNode();
 
-  /// Tracks which controller is currently focused for keyboard input.
-  late TextEditingController _activeController = _bodyController;
-
   bool _loading = true;
   List<ContentBlockData> _blocks = [];
   Timer? _saveTimer;
@@ -71,13 +67,11 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
   @override
   void initState() {
     super.initState();
-    _titleFocusNode.addListener(_onFocusChange);
-    _bodyFocusNode.addListener(_onFocusChange);
     _loadDocument();
-    // Reset keyboard mode when entering editor.
+    // Reset keyboard state when entering editor.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        ref.read(keyboardModeProvider.notifier).state = KeyboardMode.none;
+        FocusManager.instance.primaryFocus?.unfocus();
       }
     });
   }
@@ -93,21 +87,11 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
         bodyText: _bodyController.text,
       );
     }
-    _titleFocusNode.removeListener(_onFocusChange);
-    _bodyFocusNode.removeListener(_onFocusChange);
     _titleController.dispose();
     _titleFocusNode.dispose();
     _bodyController.dispose();
     _bodyFocusNode.dispose();
     super.dispose();
-  }
-
-  void _onFocusChange() {
-    if (_titleFocusNode.hasFocus) {
-      setState(() => _activeController = _titleController);
-    } else if (_bodyFocusNode.hasFocus) {
-      setState(() => _activeController = _bodyController);
-    }
   }
 
   Future<void> _loadDocument() async {
@@ -418,7 +402,7 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
                   widget.onBack();
                 },
                 icon: const Icon(Icons.arrow_back_rounded),
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(
                   minWidth: 36,
@@ -432,17 +416,17 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
                   controller: _titleController,
                   focusNode: _titleFocusNode,
                   onChanged: _onTitleChanged,
-                  keyboardType: TextInputType.none,
+                  keyboardType: TextInputType.text,
                   showCursor: true,
-                  style: const TextStyle(
-                    color: KabukTheme.textPrimary,
+                  style: TextStyle(
+                    color: context.kabukTextPrimary,
                     fontSize: 17,
                     fontWeight: FontWeight.w700,
                   ),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     hintText: 'Untitled',
                     hintStyle: TextStyle(
-                      color: KabukTheme.textTertiary,
+                      color: context.kabukTextTertiary,
                       fontSize: 17,
                       fontWeight: FontWeight.w700,
                     ),
@@ -452,10 +436,6 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
                   ),
                   maxLines: 1,
                   textInputAction: TextInputAction.next,
-                  onTap: () {
-                    ref.read(keyboardModeProvider.notifier).state =
-                        KeyboardMode.text;
-                  },
                   onSubmitted: (_) => _bodyFocusNode.requestFocus(),
                 ),
               ),
@@ -482,11 +462,11 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
               // More actions.
               PopupMenuButton<String>(
                 onSelected: _onMenuAction,
-                color: KabukTheme.surfaceElevated,
-                icon: const Icon(
+                color: context.kabukSurfaceElevated,
+                icon: Icon(
                   Icons.more_vert_rounded,
                   size: 20,
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                 ),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(
@@ -494,20 +474,20 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
                   minHeight: 36,
                 ),
                 itemBuilder: (_) => [
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'save',
                     child: Row(
                       children: [
                         Icon(
                           Icons.save_rounded,
                           size: 16,
-                          color: KabukTheme.textPrimary,
+                          color: context.kabukTextPrimary,
                         ),
                         SizedBox(width: 8),
                         Text(
                           'Save now',
                           style: TextStyle(
-                            color: KabukTheme.textPrimary,
+                            color: context.kabukTextPrimary,
                             fontSize: 13,
                           ),
                         ),
@@ -547,23 +527,12 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
             focusNode: _bodyFocusNode,
             hintText: 'Start writing...',
             onChanged: _onBodyChanged,
-            onTap: () {
-              ref.read(keyboardModeProvider.notifier).state =
-                  KeyboardMode.text;
-            },
             minLines: 12,
-            suppressSystemKeyboard: true,
             showToolbar: false,
             showPreviewToggle: false,
           ),
         ),
 
-        // Custom keyboard with integrated markdown toolbar.
-        KabukKeyboardAttachment(
-          controller: _activeController,
-          showMarkdownToolbar: true,
-          markdownFocusNode: _bodyFocusNode,
-        ),
       ],
     );
   }
@@ -582,21 +551,21 @@ class _DocumentEditorState extends ConsumerState<DocumentEditor> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: KabukTheme.surfaceElevated,
-        title: const Text(
+        backgroundColor: context.kabukSurfaceElevated,
+        title: Text(
           'Delete document?',
-          style: TextStyle(color: KabukTheme.textPrimary),
+          style: TextStyle(color: context.kabukTextPrimary),
         ),
-        content: const Text(
+        content: Text(
           'This action cannot be undone.',
-          style: TextStyle(color: KabukTheme.textSecondary),
+          style: TextStyle(color: context.kabukTextSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text(
+            child: Text(
               'Cancel',
-              style: TextStyle(color: KabukTheme.textSecondary),
+              style: TextStyle(color: context.kabukTextSecondary),
             ),
           ),
           TextButton(

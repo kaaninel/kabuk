@@ -19,7 +19,6 @@ import 'package:kabuk/ui/explore/quick_peek_sheet.dart';
 import 'package:kabuk/ui/settings/settings_view.dart';
 import 'package:kabuk/ui/shared/error_retry.dart';
 import 'package:kabuk/ui/shared/identity_quick_switcher.dart';
-import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
 import 'package:kabuk/ui/theme.dart';
 import 'package:kabuk/ui/vault/document_editor.dart' show DocumentEditor;
 
@@ -288,7 +287,7 @@ class AppsView extends ConsumerWidget {
                   _ToolChip(
                     icon: Icons.search_rounded,
                     label: 'Search',
-                    color: const Color(0xFF78909C),
+                    color: context.kabukTextSecondary,
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
                         builder: (_) => const _SearchAppView(),
@@ -315,13 +314,13 @@ class AppsView extends ConsumerWidget {
             const SliverToBoxAdapter(child: _DevSection()),
 
           // ─── Marketplace ──────────────────────────────────────────
-          const SliverToBoxAdapter(
+          SliverToBoxAdapter(
             child: Padding(
-              padding: EdgeInsets.only(top: KabukTheme.spacingLg),
+              padding: const EdgeInsets.only(top: KabukTheme.spacingLg),
               child: _SectionHeader(
                 icon: Icons.storefront_rounded,
                 title: 'Marketplace',
-                color: Color(0xFF78909C),
+                color: context.kabukTextSecondary,
               ),
             ),
           ),
@@ -1807,15 +1806,8 @@ class _SearchAppViewState extends ConsumerState<_SearchAppView> {
             child: TextField(
               controller: _controller,
               autofocus: true,
-              keyboardType: TextInputType.none,
+              keyboardType: TextInputType.text,
               onSubmitted: _search,
-              onTap: () {
-                final mode = ref.read(keyboardModeProvider);
-                if (mode == KeyboardMode.none) {
-                  ref.read(keyboardModeProvider.notifier).state =
-                      KeyboardMode.text;
-                }
-              },
               decoration: InputDecoration(
                 hintText: 'Search your knowledge...',
                 prefixIcon: const Icon(Icons.search_rounded),
@@ -1872,10 +1864,6 @@ class _SearchAppViewState extends ConsumerState<_SearchAppView> {
           )
           else
             const Spacer(),
-          KabukKeyboardAttachment(
-            controller: _controller,
-            onSend: () => _search(_controller.text),
-          ),
         ],
       ),
     );

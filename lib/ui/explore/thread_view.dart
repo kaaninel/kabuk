@@ -11,7 +11,6 @@ import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/services/nostr.dart';
 import 'package:kabuk/services/nostr_utils.dart';
 import 'package:kabuk/ui/explore/nostr_providers.dart';
-import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
 import 'package:kabuk/ui/shared/nostr_author_row.dart';
 import 'package:kabuk/ui/theme.dart';
 
@@ -88,11 +87,11 @@ class _ThreadViewState extends ConsumerState<ThreadView> {
     final repliesAsync = ref.watch(threadRepliesProvider(widget.eventId));
 
     return Scaffold(
-      backgroundColor: KabukTheme.background,
+      backgroundColor: context.kabukBackground,
       appBar: AppBar(
         title: const Text('Thread'),
-        backgroundColor: KabukTheme.surface,
-        foregroundColor: KabukTheme.textPrimary,
+        backgroundColor: context.kabukSurface,
+        foregroundColor: context.kabukTextPrimary,
         elevation: 0,
       ),
       body: Column(
@@ -101,10 +100,10 @@ class _ThreadViewState extends ConsumerState<ThreadView> {
             child: rootAsync.when(
               data: (rootEvent) {
                 if (rootEvent == null) {
-                  return const Center(
+                  return Center(
                     child: Text(
                       'Event not found',
-                      style: TextStyle(color: KabukTheme.textSecondary),
+                      style: TextStyle(color: context.kabukTextSecondary),
                     ),
                   );
                 }
@@ -153,19 +152,42 @@ class _ThreadViewState extends ConsumerState<ThreadView> {
   Widget _buildReplyInput() {
     return Container(
       padding: const EdgeInsets.all(KabukTheme.spacingMd),
-      decoration: const BoxDecoration(
-        color: KabukTheme.surface,
-        border: Border(top: BorderSide(color: KabukTheme.divider)),
+      decoration: BoxDecoration(
+        color: context.kabukSurface,
+        border: Border(top: BorderSide(color: context.kabukDivider)),
       ),
       child: SafeArea(
         bottom: false,
         child: Row(
           children: [
             Expanded(
-              child: KabukKeyboard(
-                simple: true,
+              child: TextField(
                 controller: _replyController,
-                hintText: 'Write a reply...',
+                maxLines: 1,
+                minLines: 1,
+                textInputAction: TextInputAction.done,
+                style: TextStyle(
+                  color: context.kabukTextPrimary,
+                  fontSize: 14,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'Write a reply...',
+                  hintStyle: TextStyle(
+                    color: context.kabukTextSecondary,
+                    fontSize: 14,
+                  ),
+                  filled: true,
+                  fillColor: context.kabukSurfaceVariant,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
               ),
             ),
             const SizedBox(width: KabukTheme.spacingSm),
@@ -233,7 +255,7 @@ class _NoteCard extends ConsumerWidget {
       margin: const EdgeInsets.only(bottom: KabukTheme.spacingSm),
       padding: const EdgeInsets.all(KabukTheme.spacingMd),
       decoration: BoxDecoration(
-        color: isRoot ? KabukTheme.surfaceElevated : KabukTheme.cardColor,
+        color: isRoot ? context.kabukSurfaceElevated : context.kabukCardColor,
         borderRadius: BorderRadius.circular(KabukTheme.radiusLg),
         border: isRoot
             ? Border.all(color: KabukTheme.primaryGreen.withValues(alpha: 0.3))
@@ -270,7 +292,7 @@ class _NoteCard extends ConsumerWidget {
           Text(
             event.content,
             style: TextStyle(
-              color: KabukTheme.textPrimary,
+              color: context.kabukTextPrimary,
               fontSize: isRoot ? 15 : 14,
               height: 1.5,
             ),
@@ -292,7 +314,7 @@ class _NoteCard extends ConsumerWidget {
                           color: KabukTheme.purpleAccent,
                         ),
                       ),
-                      backgroundColor: KabukTheme.surfaceVariant,
+                      backgroundColor: context.kabukSurfaceVariant,
                       padding: EdgeInsets.zero,
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       side: BorderSide.none,

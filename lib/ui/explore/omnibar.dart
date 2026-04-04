@@ -21,22 +21,29 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kabuk/config/providers.dart';
+import 'package:kabuk/config/result.dart';
 import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/knowledge/types/saved_search.dart';
+import 'package:kabuk/knowledge/types/usenet.dart';
+import 'package:kabuk/platform/shared/tmdb_client.dart';
+import 'package:kabuk/services/media_metadata.dart';
 import 'package:kabuk/services/nip19.dart';
 import 'package:kabuk/services/nostr.dart';
 import 'package:kabuk/services/nostr_utils.dart';
 import 'package:kabuk/services/reader_mode.dart';
+import 'package:kabuk/services/usenet.dart';
 import 'package:kabuk/ui/explore/article_detail_page.dart' show openUrlSmart;
 import 'package:kabuk/ui/explore/browse_session.dart';
 import 'package:kabuk/ui/explore/discovery_providers.dart';
+import 'package:kabuk/ui/explore/explore_tab.dart';
 import 'package:kabuk/ui/explore/explore_view.dart';
 import 'package:kabuk/ui/explore/feed_management_sheet.dart';
+import 'package:kabuk/ui/explore/media_detail_page.dart' show pushMediaDetail;
 import 'package:kabuk/ui/explore/profile_view.dart';
 import 'package:kabuk/ui/explore/topic_following.dart';
+import 'package:kabuk/ui/explore/usenet_detail_page.dart' show pushUsenetDetail;
 import 'package:kabuk/ui/explore/web_channel_view.dart';
 import 'package:kabuk/ui/shared/feed_image.dart';
-import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
 import 'package:kabuk/ui/theme.dart';
 
 // =============================================================================
@@ -106,13 +113,93 @@ bool _isFourchanBoardQuery(String q) {
       t.startsWith('4chan:');
 }
 
+/// Detects if a query looks like a Usenet search.
+///
+/// Supported forms:
+/// - `nzb:query` — search all indexers for "query"
+/// - `usenet:query` — same as above
+/// - `nzb:movies:query` — search with a category filter
+/// - `usenet:tv:query` — search with a category filter
+bool _isUsenetQuery(String q) {
+  final t = q.trim().toLowerCase();
+  return t.startsWith('nzb:') || t.startsWith('usenet:');
+}
+
+/// Parses a Usenet search query into its components.
+///
+/// Returns a record of `(query, category)` where [category] is `null`
+/// when no category prefix was given.
+///
+/// Examples:
+/// - `nzb:interstellar`    → `('interstellar', null)`
+/// - `usenet:movies:dune`  → `('dune', 'movies')`
+({String query, String? category}) _parseUsenetQuery(String q) {
+  final t = q.trim();
+  // Strip the leading prefix (nzb: or usenet:).
+  final afterPrefix = t.contains(':')
+      ? t.substring(t.indexOf(':') + 1)
+      : t;
+
+  // Check for an optional category segment: `category:searchTerms`.
+  const categories = {
+    'movies', 'tv', 'tvshows', 'music', 'games',
+    'software', 'books', 'audio', 'other',
+  };
+  final colonIdx = afterPrefix.indexOf(':');
+  if (colonIdx > 0) {
+    final maybeCat = afterPrefix.substring(0, colonIdx).toLowerCase();
+    if (categories.contains(maybeCat)) {
+      return (
+        query: afterPrefix.substring(colonIdx + 1).trim(),
+        category: maybeCat,
+      );
+    }
+  }
+
+  return (query: afterPrefix.trim(), category: null);
+}
+
+/// Builds a `usenet://` URL for a Usenet search query.
+///
+/// When [category] is provided, appends it as a `&cat=` parameter.
+String _buildUsenetSearchUrl(String query, {String? category}) {
+  final encoded = Uri.encodeComponent(query);
+  final base = 'usenet://search?q=$encoded';
+  if (category != null && category.isNotEmpty) {
+    return '$base&cat=${Uri.encodeComponent(category)}';
+  }
+  return base;
+}
+
+/// Detects if a query uses the `media:` prefix for TMDB-only search.
+///
+/// Examples: `media:breaking bad`, `media:inception`.
+bool _isMediaQuery(String q) {
+  final t = q.trim().toLowerCase();
+  return t.startsWith('media:');
+}
+
+/// Strips the `media:` prefix from a query.
+String _parseMediaQuery(String q) {
+  final t = q.trim();
+  if (t.toLowerCase().startsWith('media:')) {
+    return t.substring(6).trim();
+  }
+  return t;
+}
+
+/// Accent colour for TMDB / media search elements.
+const _mediaAccent = Color(0xFF00BCD4);
+
 /// Returns true when the query matches a structured browseable pattern
-/// (subreddit, Reddit user, Nostr entity, or 4chan board).
+/// (subreddit, Reddit user, Nostr entity, 4chan board, or Usenet search).
 bool _isBrowseableQuery(String q) =>
     _isSubredditQuery(q) ||
     _isRedditUserQuery(q) ||
     _isNostrEntityQuery(q) ||
-    _isFourchanBoardQuery(q);
+    _isFourchanBoardQuery(q) ||
+    _isUsenetQuery(q) ||
+    _isMediaQuery(q);
 
 /// Resolves a Nostr entity string to a hex pubkey, or null if unrecognised.
 String? _resolveNostrPubkey(String q) {
@@ -146,7 +233,7 @@ String? _extractFourchanBoard(String q) {
 /// Shows the current feed scope (if any) and a search hint. Tap to open
 /// the full [OmniBarSearchPage]. Tap the × on the scope chip to clear
 /// the current feed filter.
-class OmniBar extends StatelessWidget {
+class OmniBar extends ConsumerWidget {
   /// Creates an [OmniBar].
   const OmniBar({
     required this.selectedFeed,
@@ -173,28 +260,72 @@ class OmniBar extends StatelessWidget {
   final VoidCallback onScopeClear;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final hasScope = selectedFeed != null;
     final isNostrScope =
         selectedFeed == 'nostr:global' || selectedFeedType == 'nostr';
+    final activeTab = ref.watch(activeExploreTabProvider);
+    final isClassic = activeTab?.mode == ExploreTabMode.classic;
 
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 44,
-        decoration: BoxDecoration(
-          color: KabukTheme.surfaceVariant,
+    // In classic mode with a URL, display the URL instead of the hint.
+    final displayText = hasScope
+        ? 'Search in ${selectedFeedName ?? "feed"}...'
+        : isClassic && activeTab?.url != null
+            ? _formatDisplayUrl(activeTab!.url!)
+            : 'Search or enter URL…';
+
+    return Semantics(
+      button: true,
+      label: 'Search or enter URL',
+      child: Material(
+        color: context.kabukSurfaceVariant,
+        borderRadius: BorderRadius.circular(22),
+        child: InkWell(
           borderRadius: BorderRadius.circular(22),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        child: Row(
-          children: [
-            const Icon(
-              Icons.search_rounded,
-              size: 20,
-              color: KabukTheme.textTertiary,
-            ),
-            const SizedBox(width: 10),
+          onTap: onTap,
+          child: SizedBox(
+            height: 44,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.search_rounded,
+                    size: 20,
+                    color: context.kabukTextTertiary,
+                  ),
+                  // Mode toggle — semantic ✨ / classic 🌐.
+                  GestureDetector(
+                    onTap: () {
+                      final tabs = ref.read(exploreTabsProvider.notifier);
+                      final active = ref.read(activeExploreTabProvider);
+                      if (active != null) {
+                        tabs.setActiveMode(
+                          active.mode == ExploreTabMode.semantic
+                              ? ExploreTabMode.classic
+                              : ExploreTabMode.semantic,
+                        );
+                      }
+                    },
+                    child: Tooltip(
+                      message: isClassic
+                          ? 'Switch to Semantic mode'
+                          : 'Switch to Classic mode',
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Icon(
+                          isClassic
+                              ? Icons.language_rounded
+                              : Icons.auto_awesome_rounded,
+                          size: 18,
+                          color: isClassic
+                              ? KabukTheme.warmAccent
+                              : KabukTheme.blueAccent,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
             // Scope chip (shows current feed context).
             if (hasScope) ...[
               GestureDetector(
@@ -242,34 +373,51 @@ class OmniBar extends StatelessWidget {
               ),
               const SizedBox(width: 8),
             ],
-            // Hint text.
+            // Hint text or URL display.
             Expanded(
               child: Text(
-                hasScope
-                    ? 'Search in ${selectedFeedName ?? "feed"}...'
-                    : 'Search or enter URL…',
-                style: const TextStyle(
+                displayText,
+                style: TextStyle(
                   fontSize: 14,
-                  color: KabukTheme.textTertiary,
+                  color: isClassic && activeTab?.url != null
+                      ? context.kabukTextSecondary
+                      : context.kabukTextTertiary,
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
         ),
+            ),
+          ),
+        ),
       ),
     );
+  }
+
+  /// Formats a URL for compact display (strips scheme and www prefix).
+  static String _formatDisplayUrl(String url) {
+    try {
+      final uri = Uri.parse(url);
+      final host = uri.host.replaceFirst('www.', '');
+      final path = uri.path == '/' ? '' : uri.path;
+      return '$host$path';
+    } catch (_) {
+      return url;
+    }
   }
 
   Color _scopeChipColor(bool isNostr) {
     if (isNostr) return KabukTheme.purpleAccent;
     if (selectedFeedType == 'reddit') return KabukTheme.redditOrange;
+    if (selectedFeedType == 'usenet') return KabukTheme.warmAccent;
     return KabukTheme.blueAccent;
   }
 
   IconData _scopeChipIcon(bool isNostr) {
     if (isNostr) return Icons.bolt_rounded;
     if (selectedFeedType == 'reddit') return Icons.reddit;
+    if (selectedFeedType == 'usenet') return Icons.cloud_download_rounded;
     return Icons.rss_feed_rounded;
   }
 }
@@ -304,7 +452,8 @@ class OmniBarSearchPage extends ConsumerStatefulWidget {
 class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
   final _controller = TextEditingController();
   Timer? _nostrDebounce;
-  Timer? _browseDebounce;
+  Timer? _usenetDebounce;
+  Timer? _mediaDebounce;
   String _query = '';
 
   // Local (in-memory) search results.
@@ -314,6 +463,15 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
   List<NostrEvent> _nostrResults = [];
   List<NostrProfile> _nostrProfiles = [];
   bool _nostrSearching = false;
+
+  // Usenet indexer search results.
+  List<UsenetRelease> _usenetResults = [];
+  bool _usenetSearching = false;
+  String? _usenetError;
+
+  // TMDB media search results.
+  List<MediaSearchResult> _mediaResults = [];
+  bool _mediaSearching = false;
 
   // Scope state — which feed are we searching in.
   String? _scope;
@@ -330,7 +488,8 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
   void dispose() {
     _controller.dispose();
     _nostrDebounce?.cancel();
-    _browseDebounce?.cancel();
+    _usenetDebounce?.cancel();
+    _mediaDebounce?.cancel();
     super.dispose();
   }
 
@@ -340,18 +499,9 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
 
   void _onQueryChanged(String value) {
     final q = value.trim();
+    debugPrint('[Omnibar] _onQueryChanged: "$q" isUrl=${_isUrlQuery(q)}');
     setState(() => _query = q);
     _searchLocal(q);
-
-    // For browseable patterns, start the session after a debounce and pop
-    // back to the explore view so the user sees the content.
-    _browseDebounce?.cancel();
-    if (q.isNotEmpty && _isBrowseableQuery(q)) {
-      _browseDebounce = Timer(
-        const Duration(milliseconds: 700),
-        () => _navigateToBrowse(q),
-      );
-    }
 
     // Nostr free-text search — skip for structured patterns.
     _nostrDebounce?.cancel();
@@ -365,6 +515,39 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
         _nostrResults = [];
         _nostrProfiles = [];
         _nostrSearching = false;
+      });
+    }
+
+    // Usenet indexer search — skip for structured patterns and URLs.
+    _usenetDebounce?.cancel();
+    if (q.isNotEmpty && !_isBrowseableQuery(q) && !_isUrlQuery(q)) {
+      _usenetDebounce = Timer(
+        const Duration(milliseconds: 500),
+        () => _searchUsenet(q),
+      );
+    } else {
+      setState(() {
+        _usenetResults = [];
+        _usenetSearching = false;
+        _usenetError = null;
+      });
+    }
+
+    // TMDB media search — for default queries and `media:` prefix.
+    _mediaDebounce?.cancel();
+    final isMedia = _isMediaQuery(q);
+    if (q.isNotEmpty && (!_isBrowseableQuery(q) || isMedia) && !_isUrlQuery(q)) {
+      final mediaQuery = isMedia ? _parseMediaQuery(q) : q;
+      if (mediaQuery.isNotEmpty) {
+        _mediaDebounce = Timer(
+          const Duration(milliseconds: 500),
+          () => _searchMedia(mediaQuery),
+        );
+      }
+    } else {
+      setState(() {
+        _mediaResults = [];
+        _mediaSearching = false;
       });
     }
   }
@@ -406,6 +589,14 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
       url = '4chan://$board';
       displayName = '/$board/';
       sourceType = 'fourchan';
+    } else if (_isUsenetQuery(trimmed)) {
+      final parsed = _parseUsenetQuery(trimmed);
+      if (parsed.query.isEmpty) return;
+      url = _buildUsenetSearchUrl(parsed.query, category: parsed.category);
+      displayName = parsed.category != null
+          ? 'nzb:${parsed.category}:${parsed.query}'
+          : 'nzb:${parsed.query}';
+      sourceType = 'usenet';
     } else {
       return;
     }
@@ -482,6 +673,63 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
       }
     } on Object {
       if (mounted) setState(() => _nostrSearching = false);
+    }
+  }
+
+  Future<void> _searchUsenet(String query) async {
+    if (!mounted) return;
+    debugPrint('[Omnibar] _searchUsenet: "$query"');
+    setState(() {
+      _usenetSearching = true;
+      _usenetError = null;
+    });
+    try {
+      final usenet = ref.read(usenetServiceProvider);
+      final result = await usenet.search(query, limit: 10);
+      if (!mounted) return;
+      setState(() {
+        switch (result) {
+          case Success(:final value):
+            _usenetResults = value;
+            _usenetError = null;
+            debugPrint('[Omnibar] Usenet results: ${value.length}');
+          case Failure(:final error):
+            _usenetResults = [];
+            _usenetError = error.toString();
+            debugPrint('[Omnibar] Usenet search failed: $error');
+        }
+        _usenetSearching = false;
+      });
+    } on Object catch (e) {
+      debugPrint('[Omnibar] Usenet search exception: $e');
+      if (mounted) {
+        setState(() {
+          _usenetSearching = false;
+          _usenetError = 'Search failed: $e';
+        });
+      }
+    }
+  }
+
+  Future<void> _searchMedia(String query) async {
+    if (!mounted) return;
+    final service = ref.read(mediaMetadataServiceProvider);
+    if (service == null) return;
+    setState(() => _mediaSearching = true);
+    try {
+      final result = await service.search(query);
+      if (!mounted) return;
+      setState(() {
+        switch (result) {
+          case Success(:final value):
+            _mediaResults = value;
+          case Failure():
+            _mediaResults = [];
+        }
+        _mediaSearching = false;
+      });
+    } on Object {
+      if (mounted) setState(() => _mediaSearching = false);
     }
   }
 
@@ -576,11 +824,8 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
     if (q.isEmpty) return;
 
     if (_isUrlQuery(q)) {
-      // Browse the URL natively — no auto-subscribe.
       _browseUrl(q);
     } else if (_isBrowseableQuery(q)) {
-      // Cancel pending debounce and navigate immediately.
-      _browseDebounce?.cancel();
       _navigateToBrowse(q);
     }
     // For plain text queries the results list is already visible.
@@ -598,10 +843,23 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
   /// Parses a URL with AI, stores semantic objects in the knowledge base,
   /// and navigates to a native channel view showing the extracted content.
   /// Does NOT auto-subscribe — the user can follow from the channel view.
+  ///
+  /// When [preferClassicWebProvider] is enabled, HTTP/HTTPS URLs are opened
+  /// directly in Classic Web mode instead of the semantic pipeline.
   Future<void> _browseUrl(String url) async {
+    debugPrint('[Omnibar] _browseUrl called with: $url');
     var feedUrl = url.trim();
     if (!feedUrl.startsWith('http://') && !feedUrl.startsWith('https://')) {
       feedUrl = 'https://$feedUrl';
+    }
+
+    // Classic Web override — switch the active tab to a full WebView.
+    if (ref.read(preferClassicWebProvider)) {
+      ref.read(exploreTabsProvider.notifier)
+        ..setActiveMode(ExploreTabMode.classic)
+        ..updateActiveUrl(feedUrl);
+      if (mounted) Navigator.of(context).pop();
+      return;
     }
 
     if (!mounted) return;
@@ -612,7 +870,12 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
     try {
       // Process the page — articles are stored in knowledge base.
       final service = ref.read(readerModeServiceProvider);
-      final result = await service.processUrl(feedUrl);
+      final uri = Uri.tryParse(feedUrl);
+      final domain = uri?.host.replaceFirst('www.', '') ?? feedUrl;
+      final result = await service.processUrl(
+        feedUrl,
+        feedSource: 'web:$domain',
+      );
 
       ref.invalidate(articlesProvider);
 
@@ -674,7 +937,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
 
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: KabukTheme.surfaceElevated,
+      backgroundColor: context.kabukSurfaceElevated,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
           top: Radius.circular(KabukTheme.radiusLg),
@@ -710,10 +973,10 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
                       Expanded(
                         child: Text(
                           sub.name ?? sub.feedUrl ?? 'Feed',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
-                            color: KabukTheme.textPrimary,
+                            color: context.kabukTextPrimary,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -722,7 +985,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
                     ],
                   ),
                 ),
-                const Divider(height: 1, color: KabukTheme.divider),
+                Divider(height: 1, color: context.kabukDivider),
                 // Filter to this feed.
                 ListTile(
                   leading: const Icon(
@@ -745,11 +1008,11 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
                     'Unsubscribe',
                     style: TextStyle(color: KabukTheme.error),
                   ),
-                  subtitle: const Text(
+                  subtitle: Text(
                     'Remove feed and all its articles',
                     style: TextStyle(
                       fontSize: 12,
-                      color: KabukTheme.textTertiary,
+                      color: context.kabukTextTertiary,
                     ),
                   ),
                   onTap: () async {
@@ -798,10 +1061,10 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
     final hasSubs = (subsAsync.valueOrNull ?? []).isNotEmpty;
 
     return Scaffold(
-      backgroundColor: KabukTheme.background,
+      backgroundColor: context.kabukBackground,
       appBar: AppBar(
-        backgroundColor: KabukTheme.surface,
-        foregroundColor: KabukTheme.textPrimary,
+        backgroundColor: context.kabukSurface,
+        foregroundColor: context.kabukTextPrimary,
         elevation: 0,
         titleSpacing: 0,
         leading: IconButton(
@@ -826,36 +1089,13 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
             _buildTips(),
           ] else ...[
             // Active search — show results.
-            // Browseable patterns (r/x, u/x, npub1..., /g/) auto-navigate to
-            // explore view — show a hint while the debounce is pending.
             _buildSmartActions(),
-            if (_isBrowseableQuery(_query))
+            if (_localResults.isNotEmpty &&
+                _scope != 'nostr:global' &&
+                _scope != 'usenet:all')
+              _buildLocalResultsSection(),
+            if (_nostrSearching && _scope != 'usenet:all')
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                child: Row(
-                  children: [
-                    const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: KabukTheme.accentGreen,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      'Opening $_query in Explore...',
-                      style: const TextStyle(
-                        color: KabukTheme.textSecondary,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            if (_localResults.isNotEmpty) _buildLocalResultsSection(),
-            if (_nostrSearching)
-              const Padding(
                 padding: EdgeInsets.all(24),
                 child: Center(
                   child: Row(
@@ -873,7 +1113,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
                       Text(
                         'Searching Nostr relays...',
                         style: TextStyle(
-                          color: KabukTheme.textSecondary,
+                          color: context.kabukTextSecondary,
                           fontSize: 13,
                         ),
                       ),
@@ -881,14 +1121,91 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
                   ),
                 ),
               ),
-            if (_nostrResults.isNotEmpty) _buildNostrResultsSection(),
+            if (_nostrResults.isNotEmpty && _scope != 'usenet:all')
+              _buildNostrResultsSection(),
+            if (_usenetSearching && _scope != 'nostr:global')
+              Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: KabukTheme.warmAccent,
+                        ),
+                      ),
+                      SizedBox(width: 12),
+                      Text(
+                        'Searching Usenet indexers...',
+                        style: TextStyle(
+                          color: context.kabukTextSecondary,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            if (_usenetResults.isNotEmpty && _scope != 'nostr:global')
+              _buildUsenetResultsSection(),
+            if (_usenetError != null &&
+                !_usenetSearching &&
+                _scope != 'nostr:global')
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Text(
+                  _usenetError!,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            if (_mediaSearching)
+              Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: _mediaAccent,
+                        ),
+                      ),
+                      SizedBox(width: 12),
+                      Text(
+                        'Searching TV & Movies…',
+                        style: TextStyle(
+                          color: context.kabukTextSecondary,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            if (_mediaResults.isNotEmpty)
+              _buildMediaResultsSection(),
             if (!_nostrSearching &&
+                !_usenetSearching &&
+                !_mediaSearching &&
                 !_isBrowseableQuery(_query) &&
                 _localResults.isEmpty &&
                 _nostrResults.isEmpty &&
+                _usenetResults.isEmpty &&
+                _mediaResults.isEmpty &&
                 !_isUrlQuery(_query) &&
                 !_isHashtagQuery(_query))
-              const Padding(
+              Padding(
                 padding: EdgeInsets.all(32),
                 child: Center(
                   child: Text(
@@ -896,7 +1213,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
                     'or subscribe to more feeds.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: KabukTheme.textSecondary,
+                      color: context.kabukTextSecondary,
                       fontSize: 14,
                     ),
                   ),
@@ -913,15 +1230,58 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
   // ---------------------------------------------------------------------------
 
   Widget _buildSearchField() {
-    return KabukKeyboard(
-      simple: true,
+    final isUrl = _isUrlQuery(_query);
+    final isBrowseable = _isBrowseableQuery(_query);
+    final isUsenet = _isUsenetQuery(_query);
+    final showGoArrow = isUrl || isBrowseable;
+    return TextField(
       controller: _controller,
       autofocus: true,
       onChanged: _onQueryChanged,
       onSubmitted: _onSubmitted,
-      hintText: _scope != null
-          ? 'Search in ${_scopeName ?? "feed"}...'
-          : 'Search or enter URL…',
+      textInputAction: showGoArrow ? TextInputAction.go : TextInputAction.search,
+      maxLines: 1,
+      minLines: 1,
+      style: TextStyle(color: context.kabukTextPrimary, fontSize: 14),
+      decoration: InputDecoration(
+        hintText: _scope != null
+            ? 'Search in ${_scopeName ?? "feed"}...'
+            : 'Search or enter URL\u2026',
+        hintStyle: TextStyle(
+          color: context.kabukTextSecondary,
+          fontSize: 14,
+        ),
+        filled: true,
+        fillColor: context.kabukSurfaceVariant,
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
+        suffixIcon: showGoArrow
+            ? IconButton(
+                icon: Icon(
+                  Icons.arrow_forward_rounded,
+                  color: isUsenet
+                      ? KabukTheme.warmAccent
+                      : isBrowseable && !isUrl
+                          ? KabukTheme.purpleAccent
+                          : KabukTheme.blueAccent,
+                  size: 20,
+                ),
+                onPressed: () => _onSubmitted(_controller.text),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              )
+            : null,
+        suffixIconConstraints: showGoArrow
+            ? const BoxConstraints(minWidth: 36, minHeight: 36)
+            : null,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(20),
+          borderSide: BorderSide.none,
+        ),
+      ),
     );
   }
 
@@ -949,6 +1309,15 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
               color: KabukTheme.purpleAccent,
               isSelected: _scope == 'nostr:global',
               onTap: () => _setScope('nostr:global', 'Nostr'),
+            ),
+            const SizedBox(width: 6),
+            // "Usenet" chip.
+            _scopeChip(
+              label: 'Usenet',
+              icon: Icons.cloud_download_rounded,
+              color: KabukTheme.warmAccent,
+              isSelected: _scope == 'usenet:all',
+              onTap: () => _setScope('usenet:all', 'Usenet'),
             ),
             // Per-subscription chips (if any).
             ...ref
@@ -997,7 +1366,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
           color: isSelected ? color.withAlpha(30) : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: isSelected ? color.withAlpha(80) : KabukTheme.divider,
+            color: isSelected ? color.withAlpha(80) : context.kabukDivider,
           ),
         ),
         child: Row(
@@ -1006,7 +1375,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
             Icon(
               icon,
               size: 14,
-              color: isSelected ? color : KabukTheme.textTertiary,
+              color: isSelected ? color : context.kabukTextTertiary,
             ),
             const SizedBox(width: 5),
             Text(
@@ -1014,7 +1383,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                color: isSelected ? color : KabukTheme.textSecondary,
+                color: isSelected ? color : context.kabukTextSecondary,
               ),
             ),
           ],
@@ -1054,22 +1423,22 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
                 color: KabukTheme.accentGreen.withAlpha(200),
               ),
               const SizedBox(width: 10),
-              const Text(
+              Text(
                 'Welcome to Explore',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
-                  color: KabukTheme.textPrimary,
+                  color: context.kabukTextPrimary,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          const Text(
+          Text(
             'Build your personal feed by subscribing to content sources. '
             'Type what you want right here:',
             style: TextStyle(
-              color: KabukTheme.textSecondary,
+              color: context.kabukTextSecondary,
               fontSize: 14,
               height: 1.5,
             ),
@@ -1224,9 +1593,9 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
                     width: 110,
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: KabukTheme.cardColor,
+                      color: context.kabukCardColor,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: KabukTheme.divider),
+                      border: Border.all(color: context.kabukDivider),
                     ),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -1239,10 +1608,10 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
                         const SizedBox(height: 6),
                         Text(
                           sub.name ?? 'Feed',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w500,
-                            color: KabukTheme.textPrimary,
+                            color: context.kabukTextPrimary,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -1366,7 +1735,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: KabukTheme.surfaceVariant,
+                      color: context.kabukSurfaceVariant,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(
@@ -1375,14 +1744,14 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
                         Icon(
                           isNostr ? Icons.bolt_rounded : Icons.search_rounded,
                           size: 14,
-                          color: KabukTheme.textTertiary,
+                          color: context.kabukTextTertiary,
                         ),
                         const SizedBox(width: 6),
                         Text(
                           s.name ?? s.query ?? 'Search',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 13,
-                            color: KabukTheme.textSecondary,
+                            color: context.kabukTextSecondary,
                           ),
                         ),
                       ],
@@ -1408,7 +1777,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: KabukTheme.surface,
+        color: context.kabukSurface,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -1422,12 +1791,12 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
                 color: KabukTheme.warmAccent.withAlpha(180),
               ),
               const SizedBox(width: 8),
-              const Text(
+              Text(
                 'Quick tips',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                 ),
               ),
             ],
@@ -1452,6 +1821,20 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
             'Browse page natively',
             Icons.link_rounded,
             KabukTheme.blueAccent,
+          ),
+          const SizedBox(height: 8),
+          _tipRow(
+            'nzb:query',
+            'Search Usenet indexers',
+            Icons.cloud_download_rounded,
+            KabukTheme.warmAccent,
+          ),
+          const SizedBox(height: 8),
+          _tipRow(
+            'media:query',
+            'Search TV shows & movies',
+            Icons.movie_outlined,
+            _mediaAccent,
           ),
           const SizedBox(height: 8),
           _tipRow(
@@ -1482,9 +1865,9 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
         Expanded(
           child: Text(
             desc,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
-              color: KabukTheme.textTertiary,
+              color: context.kabukTextTertiary,
             ),
           ),
         ),
@@ -1502,6 +1885,16 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
 
     if (_isSubredditQuery(_query)) {
       final name = 'r/${_subredditName(_query)}';
+      // Always show browse action first.
+      actions.add(
+        _actionTile(
+          icon: Icons.explore_outlined,
+          iconColor: KabukTheme.redditOrange,
+          title: 'Browse $name',
+          subtitle: 'View posts without subscribing',
+          onTap: () => _navigateToBrowse(_query),
+        ),
+      );
       final alreadySubscribed = subs.any(
         (s) =>
             s.name?.toLowerCase() == name.toLowerCase() ||
@@ -1515,6 +1908,34 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
             title: 'Subscribe to $name',
             subtitle: 'Add this subreddit to your feed',
             onTap: () => _subscribeToSubreddit(name),
+          ),
+        );
+      }
+    }
+
+    if (_isRedditUserQuery(_query)) {
+      final user = _query.trim();
+      actions.add(
+        _actionTile(
+          icon: Icons.person_outline_rounded,
+          iconColor: KabukTheme.blueAccent,
+          title: 'View $user posts',
+          subtitle: 'Browse this user\'s submissions',
+          onTap: () => _navigateToBrowse(_query),
+        ),
+      );
+    }
+
+    if (_isFourchanBoardQuery(_query)) {
+      final board = _extractFourchanBoard(_query.trim());
+      if (board != null) {
+        actions.add(
+          _actionTile(
+            icon: Icons.explore_outlined,
+            iconColor: KabukTheme.accentGreen,
+            title: 'Browse /$board/',
+            subtitle: 'View threads on this board',
+            onTap: () => _navigateToBrowse(_query),
           ),
         );
       }
@@ -1556,6 +1977,15 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
     if (_isNostrEntityQuery(_query)) {
       actions.add(
         _actionTile(
+          icon: Icons.explore_outlined,
+          iconColor: KabukTheme.purpleAccent,
+          title: 'View Nostr profile',
+          subtitle: 'Browse this Nostr entity',
+          onTap: () => _navigateToBrowse(_query),
+        ),
+      );
+      actions.add(
+        _actionTile(
           icon: Icons.bolt_rounded,
           iconColor: KabukTheme.purpleAccent,
           title: 'View on njump.me',
@@ -1563,6 +1993,39 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
           onTap: () => _openExternal('https://njump.me/${_query.trim()}'),
         ),
       );
+    }
+
+    if (_isUsenetQuery(_query)) {
+      final parsed = _parseUsenetQuery(_query);
+      final label = parsed.category != null
+          ? '${parsed.category}:${parsed.query}'
+          : parsed.query;
+      actions.add(
+        _actionTile(
+          icon: Icons.cloud_download_rounded,
+          iconColor: KabukTheme.warmAccent,
+          title: 'Search Usenet for "$label"',
+          subtitle: parsed.category != null
+              ? 'Browse ${parsed.category} on all indexers'
+              : 'Search across all Usenet indexers',
+          onTap: () => _navigateToBrowse(_query),
+        ),
+      );
+    }
+
+    if (_isMediaQuery(_query)) {
+      final parsed = _parseMediaQuery(_query);
+      if (parsed.isNotEmpty) {
+        actions.add(
+          _actionTile(
+            icon: Icons.movie_outlined,
+            iconColor: _mediaAccent,
+            title: 'Search TMDB for "$parsed"',
+            subtitle: 'Find movies and TV shows',
+            onTap: () {}, // Results are shown inline.
+          ),
+        );
+      }
     }
 
     if (actions.isEmpty) return const SizedBox.shrink();
@@ -1582,15 +2045,21 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: iconColor.withAlpha(10),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: iconColor.withAlpha(30)),
+      child: Semantics(
+        button: true,
+        label: title,
+        child: TextButton(
+          onPressed: () {
+            debugPrint('[Omnibar] Action tile tapped: $title');
+            onTap();
+          },
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.all(14),
+            backgroundColor: iconColor.withAlpha(10),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: iconColor.withAlpha(30)),
+            ),
           ),
           child: Row(
             children: [
@@ -1618,9 +2087,9 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
                     ),
                     Text(
                       subtitle,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: KabukTheme.textTertiary,
+                        color: context.kabukTextTertiary,
                       ),
                     ),
                   ],
@@ -1656,7 +2125,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: KabukTheme.surfaceVariant,
+                color: context.kabukSurfaceVariant,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
@@ -1664,7 +2133,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
                     ? Icons.reddit
                     : Icons.article_outlined,
                 size: 18,
-                color: KabukTheme.textTertiary,
+                color: context.kabukTextTertiary,
               ),
             ),
             title: Text(
@@ -1676,9 +2145,9 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
             subtitle: article.author != null
                 ? Text(
                     article.author!,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: KabukTheme.textTertiary,
+                      color: context.kabukTextTertiary,
                     ),
                   )
                 : null,
@@ -1752,18 +2221,18 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
                   : (profile.about != null && profile.about!.isNotEmpty
                         ? Text(
                             profile.about!,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 11,
-                              color: KabukTheme.textTertiary,
+                              color: context.kabukTextTertiary,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           )
                         : null),
-              trailing: const Icon(
+              trailing: Icon(
                 Icons.chevron_right_rounded,
                 size: 16,
-                color: KabukTheme.textTertiary,
+                color: context.kabukTextTertiary,
               ),
               onTap: () {
                 Navigator.of(context).pop();
@@ -1813,14 +2282,250 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
               ),
               subtitle: Text(
                 author,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
-                  color: KabukTheme.textTertiary,
+                  color: context.kabukTextTertiary,
                 ),
               ),
             );
           }),
         ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Usenet search results
+  // ---------------------------------------------------------------------------
+
+  Widget _buildUsenetResultsSection() {
+    return _section(
+      label: 'Usenet (${_usenetResults.length})',
+      icon: Icons.cloud_download_rounded,
+      iconColor: KabukTheme.warmAccent,
+      child: Column(
+        children: _usenetResults.take(10).map((release) {
+          final sizeText =
+              release.sizeBytes > 0 ? _formatBytesCompact(release.sizeBytes) : null;
+          final categoryLabel = release.category.name;
+          return ListTile(
+            dense: true,
+            leading: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: KabukTheme.warmAccent.withAlpha(20),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.cloud_download_rounded,
+                size: 18,
+                color: KabukTheme.warmAccent,
+              ),
+            ),
+            title: Text(
+              release.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13),
+            ),
+            subtitle: Row(
+              children: [
+                if (sizeText != null) ...[
+                  Text(
+                    sizeText,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: context.kabukTextTertiary,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: KabukTheme.warmAccent.withAlpha(20),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    categoryLabel,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: KabukTheme.warmAccent,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            trailing: Icon(
+              Icons.chevron_right_rounded,
+              size: 16,
+              color: context.kabukTextTertiary,
+            ),
+            onTap: () {
+              final data = UsenetReleaseData(
+                uri: 'usenet:release:${release.id}',
+                title: release.title,
+                indexerRef: release.indexerId,
+                nzbUrl: release.nzbUrl,
+                sizeBytes: release.sizeBytes,
+                publishedAt: release.publishedAt,
+                category: release.category.name,
+                group: release.group,
+                poster: release.poster,
+                description: release.description,
+                imdbId: release.imdbId,
+                tvdbId: release.tvdbId,
+              );
+              pushUsenetDetail(context, release: data);
+            },
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  /// Formats a byte count into a compact human-readable string.
+  static String _formatBytesCompact(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
+  // ---------------------------------------------------------------------------
+  // TMDB media search results
+  // ---------------------------------------------------------------------------
+
+  Widget _buildMediaResultsSection() {
+    return _section(
+      label: 'TV & Movies (${_mediaResults.length})',
+      icon: Icons.movie_outlined,
+      iconColor: _mediaAccent,
+      child: Column(
+        children: _mediaResults.take(10).map((result) {
+          final posterUrl = TmdbImageHelper.url(
+            result.posterPath,
+            size: MediaImageSize.small,
+          );
+          final yearText = result.releaseYear != null
+              ? '${result.releaseYear}'
+              : null;
+          final typeName = switch (result.mediaType) {
+            MediaType.movie => 'Movie',
+            MediaType.tvSeries => 'TV',
+          };
+          final voteText = result.voteAverage != null && result.voteAverage! > 0
+              ? result.voteAverage!.toStringAsFixed(1)
+              : null;
+
+          return ListTile(
+            dense: true,
+            leading: SizedBox(
+              width: 46,
+              height: 68,
+              child: posterUrl != null
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: Image.network(
+                        posterUrl,
+                        width: 46,
+                        height: 68,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, e, st) => _mediaPosterFallback(),
+                      ),
+                    )
+                  : _mediaPosterFallback(),
+            ),
+            title: Text(
+              result.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13),
+            ),
+            subtitle: Row(
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: _mediaAccent.withAlpha(25),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    typeName,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: _mediaAccent,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (yearText != null) ...[
+                  const SizedBox(width: 6),
+                  Text(
+                    yearText,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: context.kabukTextTertiary,
+                    ),
+                  ),
+                ],
+                if (voteText != null) ...[
+                  const SizedBox(width: 6),
+                  Icon(
+                    Icons.star_rounded,
+                    size: 12,
+                    color: KabukTheme.warmAccent.withAlpha(180),
+                  ),
+                  const SizedBox(width: 2),
+                  Text(
+                    voteText,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: context.kabukTextTertiary,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            trailing: Icon(
+              Icons.chevron_right_rounded,
+              size: 16,
+              color: context.kabukTextTertiary,
+            ),
+            onTap: () {
+              Navigator.of(context).pop();
+              pushMediaDetail(
+                context,
+                tmdbId: result.id,
+                mediaType: result.mediaType,
+                title: result.title,
+                posterPath: result.posterPath,
+              );
+            },
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _mediaPosterFallback() {
+    return Container(
+      width: 46,
+      height: 68,
+      decoration: BoxDecoration(
+        color: _mediaAccent.withAlpha(20),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: const Icon(
+        Icons.movie_outlined,
+        size: 20,
+        color: _mediaAccent,
       ),
     );
   }
@@ -1848,13 +2553,13 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
                 Icon(
                   icon,
                   size: 16,
-                  color: iconColor ?? KabukTheme.textSecondary,
+                  color: iconColor ?? context.kabukTextSecondary,
                 ),
                 const SizedBox(width: 8),
                 Text(
                   label,
-                  style: const TextStyle(
-                    color: KabukTheme.textSecondary,
+                  style: TextStyle(
+                    color: context.kabukTextSecondary,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),

@@ -8,7 +8,6 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kabuk/knowledge/database.dart';
-import 'package:kabuk/ui/shared/kabuk_keyboard.dart';
 import 'package:kabuk/ui/theme.dart';
 
 /// A text input bar for sending chat messages with markdown formatting.
@@ -120,9 +119,9 @@ class _ChatInputState extends ConsumerState<ChatInput> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        color: KabukTheme.surface,
-        border: Border(top: BorderSide(color: KabukTheme.divider, width: 0.5)),
+      decoration: BoxDecoration(
+        color: context.kabukSurface,
+        border: Border(top: BorderSide(color: context.kabukDivider, width: 0.5)),
       ),
       child: SafeArea(
         top: false,
@@ -133,15 +132,42 @@ class _ChatInputState extends ConsumerState<ChatInput> {
             // Reply-to banner.
             if (widget.replyToMessage != null) _buildReplyBanner(),
             // Keyboard with embedded input field, formatting, and modes.
-            KabukKeyboard(
-              controller: _controller,
-              focusNode: _focusNode,
-              onMediaSelected: widget.onMediaSelected,
-              onVoiceRecorded: widget.onVoiceRecorded,
-              onSend: _submit,
-              onAttachment: widget.onAttachment,
-              hintText: widget.hintText,
-              enabled: widget.enabled,
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: KabukTheme.spacingSm,
+                vertical: KabukTheme.spacingXs,
+              ),
+              child: TextField(
+                controller: _controller,
+                focusNode: _focusNode,
+                enabled: widget.enabled,
+                maxLines: 5,
+                minLines: 1,
+                onSubmitted: (_) => _submit(),
+                textInputAction: TextInputAction.newline,
+                style: TextStyle(
+                  color: context.kabukTextPrimary,
+                  fontSize: 14,
+                ),
+                decoration: InputDecoration(
+                  hintText: widget.hintText,
+                  hintStyle: TextStyle(
+                    color: context.kabukTextSecondary,
+                    fontSize: 14,
+                  ),
+                  filled: true,
+                  fillColor: context.kabukSurfaceVariant,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
             ),
           ],
         ),
@@ -158,8 +184,8 @@ class _ChatInputState extends ConsumerState<ChatInput> {
 
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
-      decoration: const BoxDecoration(
-        color: KabukTheme.surfaceVariant,
+      decoration: BoxDecoration(
+        color: context.kabukSurfaceVariant,
         border: Border(
           left: BorderSide(color: KabukTheme.accentGreen, width: 3),
         ),
@@ -183,9 +209,9 @@ class _ChatInputState extends ConsumerState<ChatInput> {
                   preview,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
-                    color: KabukTheme.textSecondary,
+                    color: context.kabukTextSecondary,
                   ),
                 ),
               ],
@@ -194,7 +220,7 @@ class _ChatInputState extends ConsumerState<ChatInput> {
           IconButton(
             onPressed: widget.onCancelReply,
             icon: const Icon(Icons.close, size: 16),
-            color: KabukTheme.textSecondary,
+            color: context.kabukTextSecondary,
             padding: EdgeInsets.zero,
             visualDensity: VisualDensity.compact,
             tooltip: 'Cancel reply',
