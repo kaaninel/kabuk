@@ -1,11 +1,8 @@
-/// Usenet Settings Page — manage indexers, providers, and cache.
+/// Usenet Settings Bottom Sheet — manage indexers, providers, and cache.
 ///
-/// Provides a full settings page for Usenet configuration, including
+/// Provides a tabbed management UI for Usenet configuration, including
 /// Newznab indexer setup, NNTP provider management with drag-to-reorder
 /// priority, and cache statistics/controls.
-///
-/// Reuses the providers and data types from
-/// [UsenetSettingsSheet](../../explore/usenet_settings_sheet.dart).
 library;
 
 import 'dart:convert';
@@ -18,62 +15,169 @@ import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/config/result.dart';
 import 'package:kabuk/knowledge/types/usenet.dart';
 import 'package:kabuk/services/usenet.dart';
-import 'package:kabuk/ui/explore/usenet_settings_sheet.dart';
 import 'package:kabuk/ui/theme.dart';
 
-/// Full-page settings view for managing Usenet indexers, NNTP providers,
-/// and cache.
+// =============================================================================
+// Providers
+// =============================================================================
+
+/// Loads all configured Usenet indexers from the knowledge store.
+final usenetIndexersProvider = FutureProvider<List<UsenetIndexerData>>((
+  ref,
+) async {
+  final store = ref.watch(knowledgeStoreProvider);
+  return store.queryUsenetIndexers();
+});
+
+/// Loads all configured Usenet NNTP providers from the knowledge store.
+final usenetProvidersProvider = FutureProvider<List<UsenetProviderData>>((
+  ref,
+) async {
+  final store = ref.watch(knowledgeStoreProvider);
+  return store.queryUsenetProviders();
+});
+
+/// Loads the current cache size in bytes.
+final usenetCacheSizeProvider = FutureProvider<int>((ref) async {
+  final usenet = ref.watch(usenetServiceProvider);
+  return usenet.getCacheSize();
+});
+
+/// Loads active streaming sessions.
+final usenetActiveStreamsProvider = FutureProvider<List<StreamSession>>((
+  ref,
+) async {
+  final usenet = ref.watch(usenetServiceProvider);
+  return usenet.getActiveStreams();
+});
+
+// =============================================================================
+// UsenetSettingsSheet
+// =============================================================================
+
+/// Modal bottom sheet for managing Usenet indexers, NNTP providers, and cache.
 ///
 /// Presents three tabs: Indexers, Providers, and Cache. Supports add, edit,
 /// delete, and test-connection operations for indexers and providers, plus
 /// cache size control and clearing.
-class UsenetSettingsPage extends ConsumerStatefulWidget {
-  /// Creates a [UsenetSettingsPage].
-  const UsenetSettingsPage({super.key});
+class UsenetSettingsSheet extends ConsumerStatefulWidget {
+  /// Creates a [UsenetSettingsSheet].
+  const UsenetSettingsSheet({super.key});
+
+  /// Shows the Usenet settings sheet as a modal bottom sheet.
+  static Future<void> show(BuildContext context) {
+    return showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const UsenetSettingsSheet(),
+    );
+  }
 
   @override
-  ConsumerState<UsenetSettingsPage> createState() => _UsenetSettingsPageState();
+  ConsumerState<UsenetSettingsSheet> createState() =>
+      _UsenetSettingsSheetState();
 }
 
-class _UsenetSettingsPageState extends ConsumerState<UsenetSettingsPage> {
+class _UsenetSettingsSheetState extends ConsumerState<UsenetSettingsSheet> {
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Usenet Settings'),
-          bottom: TabBar(
-            indicatorColor: KabukTheme.blueAccent,
-            labelColor: KabukTheme.blueAccent,
-            unselectedLabelColor: context.kabukTextSecondary,
-            indicatorSize: TabBarIndicatorSize.label,
-            dividerColor: context.kabukDivider,
-            tabs: const [
-              Tab(text: 'Indexers'),
-              Tab(text: 'Providers'),
-              Tab(text: 'Cache'),
-            ],
+    return DraggableScrollableSheet(
+      initialChildSize: 0.75,
+      minChildSize: 0.4,
+      maxChildSize: 0.95,
+      builder: (context, scrollController) {
+        return DefaultTabController(
+          length: 3,
+          child: Container(
+            decoration: BoxDecoration(
+              color: context.kabukSurfaceElevated,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(KabukTheme.radiusXl),
+              ),
+            ),
+            child: Column(
+              children: [
+                // Drag handle.
+                Container(
+                  margin: const EdgeInsets.only(top: 12, bottom: 8),
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: context.kabukDivider,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                // Header.
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.dns_rounded,
+                        color: KabukTheme.blueAccent,
+                        size: 22,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Usenet Settings',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: context.kabukTextPrimary,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        color: context.kabukTextTertiary,
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                    ],
+                  ),
+                ),
+                // Tab bar.
+                TabBar(
+                  indicatorColor: KabukTheme.blueAccent,
+                  labelColor: KabukTheme.blueAccent,
+                  unselectedLabelColor: context.kabukTextSecondary,
+                  indicatorSize: TabBarIndicatorSize.label,
+                  dividerColor: context.kabukDivider,
+                  tabs: const [
+                    Tab(text: 'Indexers'),
+                    Tab(text: 'Providers'),
+                    Tab(text: 'Cache'),
+                  ],
+                ),
+                // Tab views.
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      _IndexersTab(scrollController: scrollController),
+                      _ProvidersTab(scrollController: scrollController),
+                      _CacheTab(scrollController: scrollController),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-        body: const TabBarView(
-          children: [
-            _IndexersSection(),
-            _ProvidersSection(),
-            _CacheSection(),
-          ],
-        ),
-      ),
+        );
+      },
     );
   }
 }
 
 // =============================================================================
-// Indexers Section
+// Indexers Tab
 // =============================================================================
 
-class _IndexersSection extends ConsumerWidget {
-  const _IndexersSection();
+class _IndexersTab extends ConsumerWidget {
+  const _IndexersTab({required this.scrollController});
+
+  final ScrollController scrollController;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -112,6 +216,7 @@ class _IndexersSection extends ConsumerWidget {
                 );
               }
               return ListView.separated(
+                controller: scrollController,
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 itemCount: indexers.length,
                 separatorBuilder: (_, _) => Divider(
@@ -179,11 +284,8 @@ class _IndexerTile extends ConsumerWidget {
         child: Stack(
           alignment: Alignment.center,
           children: [
-            const Icon(
-              Icons.search_rounded,
-              color: KabukTheme.blueAccent,
-              size: 22,
-            ),
+            const Icon(Icons.search_rounded, color: KabukTheme.blueAccent, size: 22),
+            // Status dot.
             Positioned(
               right: 4,
               bottom: 4,
@@ -252,11 +354,7 @@ class _IndexerTile extends ConsumerWidget {
                 value: _IndexerAction.edit,
                 child: Row(
                   children: [
-                    Icon(
-                      Icons.edit_rounded,
-                      size: 18,
-                      color: KabukTheme.blueAccent,
-                    ),
+                    Icon(Icons.edit_rounded, size: 18, color: KabukTheme.blueAccent),
                     SizedBox(width: 10),
                     Text('Edit'),
                   ],
@@ -266,11 +364,7 @@ class _IndexerTile extends ConsumerWidget {
                 value: _IndexerAction.delete,
                 child: Row(
                   children: [
-                    Icon(
-                      Icons.delete_outline_rounded,
-                      size: 18,
-                      color: KabukTheme.error,
-                    ),
+                    Icon(Icons.delete_outline_rounded, size: 18, color: KabukTheme.error),
                     SizedBox(width: 10),
                     Text('Delete', style: TextStyle(color: KabukTheme.error)),
                   ],
@@ -426,13 +520,9 @@ class _IndexerFormDialogState extends ConsumerState<_IndexerFormDialog> {
                       onPressed: _showPresetPicker,
                       style: OutlinedButton.styleFrom(
                         foregroundColor: KabukTheme.blueAccent,
-                        side: const BorderSide(
-                          color: KabukTheme.blueAccent,
-                        ),
+                        side: const BorderSide(color: KabukTheme.blueAccent),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(
-                            KabukTheme.radiusSm,
-                          ),
+                          borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
                         ),
                       ),
                     ),
@@ -443,28 +533,18 @@ class _IndexerFormDialogState extends ConsumerState<_IndexerFormDialog> {
                 const SizedBox(height: 6),
                 TextFormField(
                   controller: _nameCtrl,
-                  style: TextStyle(
-                    color: context.kabukTextPrimary,
-                    fontSize: 15,
-                  ),
+                  style: TextStyle(color: context.kabukTextPrimary, fontSize: 15),
                   decoration: _inputDecoration(context, 'My Indexer'),
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'Name is required'
-                      : null,
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Name is required' : null,
                 ),
                 const SizedBox(height: 16),
                 _buildLabel('Base URL'),
                 const SizedBox(height: 6),
                 TextFormField(
                   controller: _urlCtrl,
-                  style: TextStyle(
-                    color: context.kabukTextPrimary,
-                    fontSize: 15,
-                  ),
-                  decoration: _inputDecoration(
-                    context,
-                    'https://indexer.example/api',
-                  ),
+                  style: TextStyle(color: context.kabukTextPrimary, fontSize: 15),
+                  decoration: _inputDecoration(context, 'https://indexer.example/api'),
                   keyboardType: TextInputType.url,
                   validator: (v) {
                     if (v == null || v.trim().isEmpty) return 'URL is required';
@@ -476,16 +556,11 @@ class _IndexerFormDialogState extends ConsumerState<_IndexerFormDialog> {
                   },
                 ),
                 const SizedBox(height: 16),
-                _buildLabel(
-                  _isEditing ? 'API Key (leave blank to keep)' : 'API Key',
-                ),
+                _buildLabel(_isEditing ? 'API Key (leave blank to keep)' : 'API Key'),
                 const SizedBox(height: 6),
                 TextFormField(
                   controller: _apiKeyCtrl,
-                  style: TextStyle(
-                    color: context.kabukTextPrimary,
-                    fontSize: 15,
-                  ),
+                  style: TextStyle(color: context.kabukTextPrimary, fontSize: 15),
                   decoration: _inputDecoration(context, '••••••••••'),
                   obscureText: true,
                   validator: (v) {
@@ -504,21 +579,15 @@ class _IndexerFormDialogState extends ConsumerState<_IndexerFormDialog> {
                         ? const SizedBox(
                             width: 16,
                             height: 16,
-                            child:
-                                CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(
-                            Icons.wifi_tethering_rounded,
-                            size: 18,
-                          ),
+                        : const Icon(Icons.wifi_tethering_rounded, size: 18),
                     label: const Text('Test Connection'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: KabukTheme.blueAccent,
                       side: const BorderSide(color: KabukTheme.blueAccent),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(
-                          KabukTheme.radiusSm,
-                        ),
+                        borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
                       ),
                     ),
                   ),
@@ -735,17 +804,19 @@ class _IndexerFormDialogState extends ConsumerState<_IndexerFormDialog> {
 }
 
 // =============================================================================
-// Providers Section
+// Providers Tab
 // =============================================================================
 
-class _ProvidersSection extends ConsumerStatefulWidget {
-  const _ProvidersSection();
+class _ProvidersTab extends ConsumerStatefulWidget {
+  const _ProvidersTab({required this.scrollController});
+
+  final ScrollController scrollController;
 
   @override
-  ConsumerState<_ProvidersSection> createState() => _ProvidersSectionState();
+  ConsumerState<_ProvidersTab> createState() => _ProvidersTabState();
 }
 
-class _ProvidersSectionState extends ConsumerState<_ProvidersSection> {
+class _ProvidersTabState extends ConsumerState<_ProvidersTab> {
   @override
   Widget build(BuildContext context) {
     final providersAsync = ref.watch(usenetProvidersProvider);
@@ -785,6 +856,7 @@ class _ProvidersSectionState extends ConsumerState<_ProvidersSection> {
               final sorted = List.of(providers)
                 ..sort((a, b) => a.priority.compareTo(b.priority));
               return ReorderableListView.builder(
+                scrollController: widget.scrollController,
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 itemCount: sorted.length,
                 onReorder: (oldIdx, newIdx) =>
@@ -934,9 +1006,7 @@ class _ProviderTile extends ConsumerWidget {
           Icon(
             provider.ssl ? Icons.lock_rounded : Icons.lock_open_rounded,
             size: 12,
-            color: provider.ssl
-                ? KabukTheme.success
-                : context.kabukTextTertiary,
+            color: provider.ssl ? KabukTheme.success : context.kabukTextTertiary,
           ),
           const SizedBox(width: 4),
           Text(
@@ -985,11 +1055,7 @@ class _ProviderTile extends ConsumerWidget {
                 value: _ProviderAction.edit,
                 child: Row(
                   children: [
-                    Icon(
-                      Icons.edit_rounded,
-                      size: 18,
-                      color: KabukTheme.blueAccent,
-                    ),
+                    Icon(Icons.edit_rounded, size: 18, color: KabukTheme.blueAccent),
                     SizedBox(width: 10),
                     Text('Edit'),
                   ],
@@ -999,11 +1065,7 @@ class _ProviderTile extends ConsumerWidget {
                 value: _ProviderAction.delete,
                 child: Row(
                   children: [
-                    Icon(
-                      Icons.delete_outline_rounded,
-                      size: 18,
-                      color: KabukTheme.error,
-                    ),
+                    Icon(Icons.delete_outline_rounded, size: 18, color: KabukTheme.error),
                     SizedBox(width: 10),
                     Text('Delete', style: TextStyle(color: KabukTheme.error)),
                   ],
@@ -1030,8 +1092,7 @@ class _ProviderTile extends ConsumerWidget {
         ),
         title: const Text('Delete Provider'),
         content: Text(
-          'Remove "${provider.name ?? "this provider"}"? '
-          'This cannot be undone.',
+          'Remove "${provider.name ?? "this provider"}"? This cannot be undone.',
         ),
         actions: [
           TextButton(
@@ -1155,28 +1216,20 @@ class _ProviderFormDialogState extends ConsumerState<_ProviderFormDialog> {
                 const SizedBox(height: 6),
                 TextFormField(
                   controller: _nameCtrl,
-                  style: TextStyle(
-                    color: context.kabukTextPrimary,
-                    fontSize: 15,
-                  ),
+                  style: TextStyle(color: context.kabukTextPrimary, fontSize: 15),
                   decoration: _inputDecoration(context, 'My Provider'),
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'Name is required'
-                      : null,
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Name is required' : null,
                 ),
                 const SizedBox(height: 16),
                 _buildLabel('Host'),
                 const SizedBox(height: 6),
                 TextFormField(
                   controller: _hostCtrl,
-                  style: TextStyle(
-                    color: context.kabukTextPrimary,
-                    fontSize: 15,
-                  ),
+                  style: TextStyle(color: context.kabukTextPrimary, fontSize: 15),
                   decoration: _inputDecoration(context, 'news.example.com'),
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'Host is required'
-                      : null,
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Host is required' : null,
                 ),
                 const SizedBox(height: 16),
                 Row(
@@ -1232,8 +1285,7 @@ class _ProviderFormDialogState extends ConsumerState<_ProviderFormDialog> {
                                 Switch.adaptive(
                                   value: _ssl,
                                   activeTrackColor: KabukTheme.accentGreen,
-                                  onChanged: (v) =>
-                                      setState(() => _ssl = v),
+                                  onChanged: (v) => setState(() => _ssl = v),
                                 ),
                               ],
                             ),
@@ -1248,28 +1300,19 @@ class _ProviderFormDialogState extends ConsumerState<_ProviderFormDialog> {
                 const SizedBox(height: 6),
                 TextFormField(
                   controller: _usernameCtrl,
-                  style: TextStyle(
-                    color: context.kabukTextPrimary,
-                    fontSize: 15,
-                  ),
+                  style: TextStyle(color: context.kabukTextPrimary, fontSize: 15),
                   decoration: _inputDecoration(context, 'username'),
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'Username is required'
-                      : null,
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Username is required' : null,
                 ),
                 const SizedBox(height: 16),
                 _buildLabel(
-                  _isEditing
-                      ? 'Password (leave blank to keep)'
-                      : 'Password',
+                  _isEditing ? 'Password (leave blank to keep)' : 'Password',
                 ),
                 const SizedBox(height: 6),
                 TextFormField(
                   controller: _passwordCtrl,
-                  style: TextStyle(
-                    color: context.kabukTextPrimary,
-                    fontSize: 15,
-                  ),
+                  style: TextStyle(color: context.kabukTextPrimary, fontSize: 15),
                   decoration: _inputDecoration(context, '••••••••••'),
                   obscureText: true,
                   validator: (v) {
@@ -1303,17 +1346,12 @@ class _ProviderFormDialogState extends ConsumerState<_ProviderFormDialog> {
                 const SizedBox(height: 6),
                 TextFormField(
                   controller: _retentionCtrl,
-                  style: TextStyle(
-                    color: context.kabukTextPrimary,
-                    fontSize: 15,
-                  ),
+                  style: TextStyle(color: context.kabukTextPrimary, fontSize: 15),
                   decoration: _inputDecoration(context, 'e.g. 3600'),
                   keyboardType: TextInputType.number,
                   validator: (v) {
                     if (v != null && v.trim().isNotEmpty) {
-                      if (int.tryParse(v.trim()) == null) {
-                        return 'Invalid number';
-                      }
+                      if (int.tryParse(v.trim()) == null) return 'Invalid number';
                     }
                     return null;
                   },
@@ -1327,24 +1365,16 @@ class _ProviderFormDialogState extends ConsumerState<_ProviderFormDialog> {
                         ? const SizedBox(
                             width: 16,
                             height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                            ),
+                            child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(
-                            Icons.wifi_tethering_rounded,
-                            size: 18,
-                          ),
+                        : const Icon(Icons.wifi_tethering_rounded, size: 18),
                     label: const Text('Test Connection'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: KabukTheme.primaryGreen,
-                      side: const BorderSide(
-                        color: KabukTheme.primaryGreen,
-                      ),
+                      side: const BorderSide(color: KabukTheme.primaryGreen),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(
-                          KabukTheme.radiusSm,
-                        ),
+                        borderRadius:
+                            BorderRadius.circular(KabukTheme.radiusSm),
                       ),
                     ),
                   ),
@@ -1554,17 +1584,19 @@ class _ProviderFormDialogState extends ConsumerState<_ProviderFormDialog> {
 }
 
 // =============================================================================
-// Cache Section
+// Cache Tab
 // =============================================================================
 
-class _CacheSection extends ConsumerStatefulWidget {
-  const _CacheSection();
+class _CacheTab extends ConsumerStatefulWidget {
+  const _CacheTab({required this.scrollController});
+
+  final ScrollController scrollController;
 
   @override
-  ConsumerState<_CacheSection> createState() => _CacheSectionState();
+  ConsumerState<_CacheTab> createState() => _CacheTabState();
 }
 
-class _CacheSectionState extends ConsumerState<_CacheSection> {
+class _CacheTabState extends ConsumerState<_CacheTab> {
   /// Maximum cache size in bytes. Default 2 GB.
   double _maxCacheBytes = 2.0 * 1024 * 1024 * 1024;
   bool _clearing = false;
@@ -1575,6 +1607,7 @@ class _CacheSectionState extends ConsumerState<_CacheSection> {
     final streamsAsync = ref.watch(usenetActiveStreamsProvider);
 
     return ListView(
+      controller: widget.scrollController,
       padding: const EdgeInsets.all(20),
       children: [
         // Cache size section.
@@ -1730,9 +1763,8 @@ class _CacheSectionState extends ConsumerState<_CacheSection> {
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: context.kabukSurface,
-                    borderRadius: BorderRadius.circular(
-                      KabukTheme.radiusSm,
-                    ),
+                    borderRadius:
+                        BorderRadius.circular(KabukTheme.radiusSm),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1750,7 +1782,7 @@ class _CacheSectionState extends ConsumerState<_CacheSection> {
                       const SizedBox(height: 6),
                       Row(
                         children: [
-                          _streamStateChip(context, s.state),
+                          _streamStateChip(s.state),
                           const SizedBox(width: 8),
                           Expanded(
                             child: ClipRRect(
@@ -1819,7 +1851,7 @@ class _CacheSectionState extends ConsumerState<_CacheSection> {
     );
   }
 
-  Widget _streamStateChip(BuildContext context, StreamState state) {
+  Widget _streamStateChip(StreamState state) {
     final (label, color) = switch (state) {
       StreamState.buffering => ('Buffering', KabukTheme.warmAccent),
       StreamState.playing => ('Playing', KabukTheme.success),
