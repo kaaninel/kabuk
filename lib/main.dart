@@ -18,10 +18,14 @@ import 'package:kabuk/agents/domains/system_agent.dart';
 import 'package:kabuk/app.dart';
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/types/article.dart';
+import 'package:kabuk/knowledge/types/webpage.dart';
 import 'package:kabuk/platform/shared/background_refresh_impl.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:path_provider/path_provider.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  MediaKit.ensureInitialized();
 
   // Enable fullscreen kiosk mode — hide system navigation bar.
   // On iOS, KabukViewController handles home-indicator auto-hide and
@@ -41,6 +45,19 @@ void main() {
 
   final container = ProviderContainer();
 
+  // Resolve the platform cache directory so services that write ephemeral data
+  // (e.g. UsenetService stream cache) use an absolute, writable path.
+  try {
+    final tempDir = await getTemporaryDirectory();
+    container.read(cacheDirectoryProvider.notifier).state = tempDir.path;
+  } on Object catch (e) {
+    dev.log(
+      'Failed to resolve temporary directory: $e',
+      name: 'Main',
+      error: e,
+    );
+  }
+
   // Register all agents on startup.
   final runtime = container.read(agentRuntimeProvider);
   runtime.register(SystemAgent());
@@ -54,6 +71,10 @@ void main() {
   runtime.register(FeedAgent());
   runtime.register(DiscoveryAgent());
   runtime.register(RouterAgent());
+
+  // Initialize Usenet service (lazy — the provider handles creation).
+  // Reading the provider ensures it's created and available for agents.
+  container.read(usenetServiceProvider);
 
   // Register OS-level periodic feed refresh (Android: WorkManager, iOS: BGTask).
   // This ensures content stays fresh even when the app is fully closed.
@@ -83,15 +104,30 @@ void main() {
   // Prune expired articles from the knowledge store on startup.
   // Image cache eviction is handled automatically by KabukCacheManager's
   // stalePeriod + maxNrOfCacheObjects config — no explicit flush needed.
-  container
-      .read(knowledgeStoreProvider)
-      .pruneStaleArticles()
-      .then(
-        (_) {},
-        onError: (Object e) {
-          dev.log('Failed to prune stale articles: $e', name: 'Main', error: e);
-        },
+  final store = container.read(knowledgeStoreProvider);
+  store.pruneStaleArticles().then(
+    (_) {},
+    onError: (Object e) {
+      dev.log('Failed to prune stale articles: $e', name: 'Main', error: e);
+    },
+  );
+
+  // Prune stale web pages (30 days) and orphaned semantic entities.
+  store.pruneStaleWebPages(const Duration(days: 30)).then(
+    (_) => store.pruneOrphanedEntities(),
+    onError: (Object e) {
+      dev.log('Failed to prune stale web pages: $e', name: 'Main', error: e);
+    },
+  ).then(
+    (_) {},
+    onError: (Object e) {
+      dev.log(
+        'Failed to prune orphaned entities: $e',
+        name: 'Main',
+        error: e,
       );
+    },
+  );
 
   runApp(
     UncontrolledProviderScope(container: container, child: const KabukApp()),
