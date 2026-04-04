@@ -559,6 +559,36 @@ abstract interface class UsenetService {
     int? limit,
   });
 
+  /// Searches configured indexers for TV episodes using the Newznab
+  /// `tvsearch` API.
+  ///
+  /// When [tvdbId] is provided the indexer can match by database ID,
+  /// which is far more accurate than a text query. [season] and [episode]
+  /// further narrow results. Falls back to [query] text search when the
+  /// indexer does not support TV-specific search.
+  ///
+  /// Results are aggregated and deduplicated identically to [search].
+  Future<Result<List<UsenetRelease>>> searchTv({
+    int? tvdbId,
+    int? season,
+    int? episode,
+    String? query,
+    int? limit,
+  });
+
+  /// Searches configured indexers for movies using the Newznab `movie`
+  /// API.
+  ///
+  /// When [imdbId] is provided (e.g. `"tt1234567"`) the indexer matches
+  /// by IMDB database ID. Falls back to [query] text search otherwise.
+  ///
+  /// Results are aggregated and deduplicated identically to [search].
+  Future<Result<List<UsenetRelease>>> searchMovie({
+    String? imdbId,
+    String? query,
+    int? limit,
+  });
+
   // -------------------------------------------------------------------------
   // NZB operations
   // -------------------------------------------------------------------------

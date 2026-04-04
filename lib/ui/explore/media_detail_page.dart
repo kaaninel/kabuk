@@ -16,8 +16,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/config/result.dart';
 import 'package:kabuk/knowledge/types/tv_movie.dart';
+import 'package:kabuk/knowledge/types/usenet.dart';
 import 'package:kabuk/platform/shared/tmdb_client.dart';
 import 'package:kabuk/services/media_metadata.dart';
+import 'package:kabuk/services/usenet.dart';
+import 'package:kabuk/ui/explore/usenet_detail_page.dart';
 import 'package:kabuk/ui/theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -339,7 +342,11 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
                   )
                 else if (_seasonDetail != null)
                   ..._seasonDetail!.episodes
-                      .map((ep) => _EpisodeCard(episode: ep)),
+                      .map((ep) => _EpisodeCard(
+                            episode: ep,
+                            seriesName: series.name,
+                            tvdbId: series.externalIds?.tvdbId,
+                          )),
               ],
 
               const SizedBox(height: KabukTheme.spacingXl),
@@ -488,7 +495,7 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
 
               // Find on Usenet placeholder.
               const SizedBox(height: KabukTheme.spacingSm),
-              _UsenetButton(title: movie.title),
+              _UsenetMovieButton(movie: movie),
               const SizedBox(height: KabukTheme.spacingLg),
 
               // External links.
@@ -935,9 +942,15 @@ class _SeasonSelector extends StatelessWidget {
 // ── Episode card ─────────────────────────────────────────────────────────────
 
 class _EpisodeCard extends StatelessWidget {
-  const _EpisodeCard({required this.episode});
+  const _EpisodeCard({
+    required this.episode,
+    required this.seriesName,
+    this.tvdbId,
+  });
 
   final TvEpisode episode;
+  final String seriesName;
+  final int? tvdbId;
 
   @override
   Widget build(BuildContext context) {
@@ -1026,7 +1039,7 @@ class _EpisodeCard extends StatelessWidget {
                 ),
               ),
 
-              // Usenet download placeholder.
+              // Usenet download button.
               Padding(
                 padding: const EdgeInsets.only(
                   right: KabukTheme.spacingXs,
@@ -1037,7 +1050,15 @@ class _EpisodeCard extends StatelessWidget {
                   color: context.kabukTextSecondary,
                   tooltip: 'Find on Usenet',
                   onPressed: () {
-                    // TODO: Wire up Usenet search for this episode.
+                    _showUsenetSearchSheet(
+                      context,
+                      title: '$seriesName ${episode.episodeCode}',
+                      tvdbId: tvdbId,
+                      season: episode.seasonNumber,
+                      episode: episode.episodeNumber,
+                      fallbackQuery:
+                          '"$seriesName" ${episode.episodeCode}',
+                    );
                   },
                 ),
               ),
@@ -1121,12 +1142,38 @@ class _ExternalLink {
   final String url;
 }
 
-// ── Usenet button (placeholder) ──────────────────────────────────────────────
+// ── Usenet search helpers ─────────────────────────────────────────────────────
 
-class _UsenetButton extends StatelessWidget {
-  const _UsenetButton({required this.title});
+/// Shows the Usenet search results bottom sheet for a TV episode.
+void _showUsenetSearchSheet(
+  BuildContext context, {
+  required String title,
+  int? tvdbId,
+  int? season,
+  int? episode,
+  String? imdbId,
+  String? fallbackQuery,
+}) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _UsenetSearchSheet(
+      title: title,
+      tvdbId: tvdbId,
+      season: season,
+      episode: episode,
+      imdbId: imdbId,
+      fallbackQuery: fallbackQuery,
+    ),
+  );
+}
 
-  final String title;
+/// Full-width movie button that triggers a Usenet movie search.
+class _UsenetMovieButton extends StatelessWidget {
+  const _UsenetMovieButton({required this.movie});
+
+  final MovieDetail movie;
 
   @override
   Widget build(BuildContext context) {
@@ -1134,7 +1181,17 @@ class _UsenetButton extends StatelessWidget {
       width: double.infinity,
       child: OutlinedButton.icon(
         onPressed: () {
-          // TODO: Wire up Usenet search for this movie.
+          final year = movie.releaseDate?.year;
+          final fallback = year != null
+              ? '"${movie.title}" $year'
+              : '"${movie.title}"';
+
+          _showUsenetSearchSheet(
+            context,
+            title: movie.title,
+            imdbId: movie.externalIds?.imdbId,
+            fallbackQuery: fallback,
+          );
         },
         icon: const Icon(Icons.download_rounded),
         label: const Text('Find on Usenet'),
@@ -1150,6 +1207,361 @@ class _UsenetButton extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+// ── Usenet search results bottom sheet ───────────────────────────────────────
+
+class _UsenetSearchSheet extends ConsumerStatefulWidget {
+  const _UsenetSearchSheet({
+    required this.title,
+    this.tvdbId,
+    this.season,
+    this.episode,
+    this.imdbId,
+    this.fallbackQuery,
+  });
+
+  final String title;
+  final int? tvdbId;
+  final int? season;
+  final int? episode;
+  final String? imdbId;
+  final String? fallbackQuery;
+
+  @override
+  ConsumerState<_UsenetSearchSheet> createState() =>
+      _UsenetSearchSheetState();
+}
+
+class _UsenetSearchSheetState extends ConsumerState<_UsenetSearchSheet> {
+  List<UsenetRelease>? _results;
+  bool _loading = true;
+  String? _error;
+
+  bool get _isTvSearch => widget.season != null || widget.tvdbId != null;
+
+  @override
+  void initState() {
+    super.initState();
+    _performSearch();
+  }
+
+  Future<void> _performSearch() async {
+    final service = ref.read(usenetServiceProvider);
+
+    final Result<List<UsenetRelease>> result;
+    if (_isTvSearch) {
+      result = await service.searchTv(
+        tvdbId: widget.tvdbId,
+        season: widget.season,
+        episode: widget.episode,
+        query: widget.tvdbId == null ? widget.fallbackQuery : null,
+        limit: 50,
+      );
+    } else if (widget.imdbId != null) {
+      result = await service.searchMovie(
+        imdbId: widget.imdbId,
+        query: widget.imdbId == null ? widget.fallbackQuery : null,
+        limit: 50,
+      );
+    } else {
+      // Pure text fallback.
+      result = await service.search(
+        widget.fallbackQuery ?? widget.title,
+        limit: 50,
+      );
+    }
+
+    if (!mounted) return;
+
+    switch (result) {
+      case Success(:final value):
+        setState(() {
+          _results = value;
+          _loading = false;
+        });
+      case Failure(:final error):
+        setState(() {
+          _error = '$error';
+          _loading = false;
+        });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final maxHeight = MediaQuery.of(context).size.height * 0.75;
+
+    return Container(
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      decoration: BoxDecoration(
+        color: context.kabukSurfaceElevated,
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(KabukTheme.radiusLg),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Drag handle.
+          Padding(
+            padding: const EdgeInsets.only(top: KabukTheme.spacingSm),
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: context.kabukTextTertiary,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+
+          // Title bar.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              KabukTheme.spacingMd,
+              KabukTheme.spacingSm,
+              KabukTheme.spacingMd,
+              KabukTheme.spacingXs,
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.download_rounded,
+                  color: KabukTheme.accentGreen,
+                  size: 20,
+                ),
+                const SizedBox(width: KabukTheme.spacingSm),
+                Expanded(
+                  child: Text(
+                    widget.title,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: context.kabukTextPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const Divider(height: 1),
+
+          // Content.
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: KabukTheme.spacingXl),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: KabukTheme.spacingMd),
+                  Text('Searching Usenet…'),
+                ],
+              ),
+            )
+          else if (_error != null)
+            Padding(
+              padding: const EdgeInsets.all(KabukTheme.spacingLg),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.error_outline_rounded,
+                    color: KabukTheme.error,
+                    size: 40,
+                  ),
+                  const SizedBox(height: KabukTheme.spacingSm),
+                  Text(
+                    _error!,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: context.kabukTextSecondary,
+                        ),
+                  ),
+                ],
+              ),
+            )
+          else if (_results != null && _results!.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(KabukTheme.spacingLg),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.search_off_rounded,
+                    color: context.kabukTextTertiary,
+                    size: 40,
+                  ),
+                  const SizedBox(height: KabukTheme.spacingSm),
+                  Text(
+                    'No results found',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: context.kabukTextSecondary,
+                        ),
+                  ),
+                ],
+              ),
+            )
+          else
+            Flexible(
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(
+                  vertical: KabukTheme.spacingSm,
+                ),
+                shrinkWrap: true,
+                itemCount: _results!.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final release = _results![index];
+                  return _UsenetResultTile(
+                    release: release,
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      pushUsenetDetail(
+                        context,
+                        release: UsenetReleaseData(
+                          uri: release.id,
+                          title: release.title,
+                          indexerRef: release.indexerId,
+                          nzbUrl: release.nzbUrl,
+                          sizeBytes: release.sizeBytes,
+                          publishedAt: release.publishedAt,
+                          category: release.category.name,
+                          group: release.group,
+                          poster: release.poster,
+                          description: release.description,
+                          imdbId: release.imdbId,
+                          tvdbId: release.tvdbId,
+                          attributes: release.attributes.entries
+                              .map((e) => '${e.key}=${e.value}')
+                              .toList(),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Compact result tile for the search sheet ─────────────────────────────────
+
+class _UsenetResultTile extends StatelessWidget {
+  const _UsenetResultTile({required this.release, this.onTap});
+
+  final UsenetRelease release;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final quality = _extractQuality(release.title);
+    final sizeStr = _formatBytes(release.sizeBytes);
+    final age = _formatAge(release.publishedAt);
+
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: KabukTheme.spacingMd,
+          vertical: KabukTheme.spacingSm,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _cleanTitle(release.title),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: context.kabukTextPrimary,
+                    fontWeight: FontWeight.w500,
+                  ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: KabukTheme.spacingXs),
+            Row(
+              children: [
+                _chip(context, sizeStr, KabukTheme.blueAccent),
+                if (age != null) ...[
+                  const SizedBox(width: KabukTheme.spacingXs),
+                  _chip(context, age, context.kabukTextTertiary),
+                ],
+                if (quality != null) ...[
+                  const SizedBox(width: KabukTheme.spacingXs),
+                  _chip(context, quality, KabukTheme.warmAccent),
+                ],
+                const Spacer(),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 18,
+                  color: context.kabukTextTertiary,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _chip(BuildContext context, String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: color,
+              fontSize: 11,
+            ),
+      ),
+    );
+  }
+
+  static String _cleanTitle(String title) {
+    return title
+        .replaceAll('.', ' ')
+        .replaceAll('_', ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  static String? _extractQuality(String title) {
+    final patterns = ['2160p', '1080p', '720p', '480p', 'REMUX', 'WEB-DL',
+        'BluRay', 'BDRip', 'HDRip', 'WEBRip', 'HDTV'];
+    final upper = title.toUpperCase();
+    for (final p in patterns) {
+      if (upper.contains(p.toUpperCase())) return p;
+    }
+    return null;
+  }
+
+  static String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(0)} KB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
+  static String? _formatAge(DateTime published) {
+    final diff = DateTime.now().difference(published);
+    if (diff.inDays > 365) return '${diff.inDays ~/ 365}y';
+    if (diff.inDays > 30) return '${diff.inDays ~/ 30}mo';
+    if (diff.inDays > 0) return '${diff.inDays}d';
+    if (diff.inHours > 0) return '${diff.inHours}h';
+    return null;
   }
 }
 

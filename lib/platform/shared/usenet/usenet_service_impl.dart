@@ -432,6 +432,110 @@ class UsenetServiceImpl implements UsenetService {
     }
   }
 
+  @override
+  Future<Result<List<UsenetRelease>>> searchTv({
+    int? tvdbId,
+    int? season,
+    int? episode,
+    String? query,
+    int? limit,
+  }) async {
+    try {
+      final allIndexers = await _store.queryUsenetIndexers();
+      final indexers = allIndexers.where((i) => i.enabled).toList();
+
+      if (indexers.isEmpty) {
+        return const Result.failure(
+          UsenetConnectionFailed(
+            'No enabled indexers configured. Add indexers in Settings.',
+          ),
+        );
+      }
+
+      final futures = indexers.map(
+        (indexer) => _tvSearchSingleIndexer(
+          indexer,
+          tvdbId: tvdbId,
+          season: season,
+          episode: episode,
+          query: query,
+          limit: limit,
+        ),
+      );
+      final batches = await Future.wait(futures);
+
+      final results = batches.expand((list) => list).toList();
+
+      // Deduplicate by normalised title.
+      final seen = <String>{};
+      final deduped = <UsenetRelease>[];
+      for (final release in results) {
+        if (seen.add(release.title.toLowerCase())) {
+          deduped.add(release);
+        }
+      }
+
+      final output = limit != null && deduped.length > limit
+          ? deduped.sublist(0, limit)
+          : deduped;
+
+      return Result.success(output);
+    } catch (e, st) {
+      dev.log('searchTv failed', error: e, stackTrace: st);
+      return Result.failure(UsenetConnectionFailed('TV search failed: $e'));
+    }
+  }
+
+  @override
+  Future<Result<List<UsenetRelease>>> searchMovie({
+    String? imdbId,
+    String? query,
+    int? limit,
+  }) async {
+    try {
+      final allIndexers = await _store.queryUsenetIndexers();
+      final indexers = allIndexers.where((i) => i.enabled).toList();
+
+      if (indexers.isEmpty) {
+        return const Result.failure(
+          UsenetConnectionFailed(
+            'No enabled indexers configured. Add indexers in Settings.',
+          ),
+        );
+      }
+
+      final futures = indexers.map(
+        (indexer) => _movieSearchSingleIndexer(
+          indexer,
+          imdbId: imdbId,
+          query: query,
+          limit: limit,
+        ),
+      );
+      final batches = await Future.wait(futures);
+
+      final results = batches.expand((list) => list).toList();
+
+      // Deduplicate by normalised title.
+      final seen = <String>{};
+      final deduped = <UsenetRelease>[];
+      for (final release in results) {
+        if (seen.add(release.title.toLowerCase())) {
+          deduped.add(release);
+        }
+      }
+
+      final output = limit != null && deduped.length > limit
+          ? deduped.sublist(0, limit)
+          : deduped;
+
+      return Result.success(output);
+    } catch (e, st) {
+      dev.log('searchMovie failed', error: e, stackTrace: st);
+      return Result.failure(UsenetConnectionFailed('Movie search failed: $e'));
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // NZB operations
   // ---------------------------------------------------------------------------
@@ -793,6 +897,92 @@ class UsenetServiceImpl implements UsenetService {
       return const [];
     } catch (e) {
       dev.log('Search on ${indexer.uri} failed: $e');
+      return const [];
+    }
+  }
+
+  /// Queries a single indexer using the Newznab `tvsearch` API.
+  Future<List<UsenetRelease>> _tvSearchSingleIndexer(
+    UsenetIndexerData indexer, {
+    int? tvdbId,
+    int? season,
+    int? episode,
+    String? query,
+    int? limit,
+  }) async {
+    try {
+      final apiKey = await _resolveVaultSecret(indexer.apiKeyRef);
+      if (apiKey == null) {
+        dev.log(
+          'API key not found in vault for indexer ${indexer.uri} '
+          '(ref: ${indexer.apiKeyRef})',
+        );
+        return const [];
+      }
+
+      final client = NewznabClient(
+        baseUrl: indexer.baseUrl ?? '',
+        apiKey: apiKey,
+      );
+
+      final result = await client.tvSearch(
+        tvdbId: tvdbId,
+        season: season,
+        episode: episode,
+        query: query,
+        categories: [NewznabCategoryId.tv],
+        limit: limit ?? 100,
+      );
+
+      return result.items
+          .map((item) => _releaseFromNewznabItem(item, indexer.uri))
+          .toList();
+    } on NewznabException catch (e) {
+      dev.log('TV search on ${indexer.uri} failed: ${e.message}');
+      return const [];
+    } catch (e) {
+      dev.log('TV search on ${indexer.uri} failed: $e');
+      return const [];
+    }
+  }
+
+  /// Queries a single indexer using the Newznab `movie` API.
+  Future<List<UsenetRelease>> _movieSearchSingleIndexer(
+    UsenetIndexerData indexer, {
+    String? imdbId,
+    String? query,
+    int? limit,
+  }) async {
+    try {
+      final apiKey = await _resolveVaultSecret(indexer.apiKeyRef);
+      if (apiKey == null) {
+        dev.log(
+          'API key not found in vault for indexer ${indexer.uri} '
+          '(ref: ${indexer.apiKeyRef})',
+        );
+        return const [];
+      }
+
+      final client = NewznabClient(
+        baseUrl: indexer.baseUrl ?? '',
+        apiKey: apiKey,
+      );
+
+      final result = await client.movieSearch(
+        imdbId: imdbId,
+        query: query,
+        categories: [NewznabCategoryId.movies],
+        limit: limit ?? 100,
+      );
+
+      return result.items
+          .map((item) => _releaseFromNewznabItem(item, indexer.uri))
+          .toList();
+    } on NewznabException catch (e) {
+      dev.log('Movie search on ${indexer.uri} failed: ${e.message}');
+      return const [];
+    } catch (e) {
+      dev.log('Movie search on ${indexer.uri} failed: $e');
       return const [];
     }
   }
