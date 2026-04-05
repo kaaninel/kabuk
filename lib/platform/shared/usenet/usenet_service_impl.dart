@@ -577,8 +577,20 @@ class UsenetServiceImpl implements UsenetService {
   @override
   Future<Result<StreamSession>> startStream(NzbFile nzb) async {
     try {
+      dev.log(
+        'startStream: loading providers…',
+        name: 'UsenetService',
+      );
       await _ensureProvidersInPool();
+      dev.log(
+        'startStream: providers loaded, initialising cache…',
+        name: 'UsenetService',
+      );
       await _initCacheOnce();
+      dev.log(
+        'startStream: cache ready, building pipeline…',
+        name: 'UsenetService',
+      );
 
       // Convert to parser-layer types for the pipeline.
       final doc = _documentFromNzbFile(nzb);
@@ -589,6 +601,18 @@ class UsenetServiceImpl implements UsenetService {
       );
 
       await pipeline.start(doc);
+
+      if (!pipeline.isReady) {
+        return const Result.failure(
+          UsenetStreamError('', 'Pipeline failed to become ready'),
+        );
+      }
+
+      dev.log(
+        'startStream: pipeline ready — ${pipeline.totalBytes} bytes, '
+        'mime=${pipeline.mimeType}',
+        name: 'UsenetService',
+      );
 
       final sessionId = 'stream_${DateTime.now().millisecondsSinceEpoch}';
 
@@ -794,13 +818,27 @@ class UsenetServiceImpl implements UsenetService {
 
   /// Registers all enabled providers in the [NntpConnectionPool] that are
   /// not already present.
+  ///
+  /// Throws [StateError] if no providers could be loaded into the pool.
   Future<void> _ensureProvidersInPool() async {
     final allProviders = await _store.queryUsenetProviders();
     final providers = allProviders.where((p) => p.enabled).toList();
+    if (providers.isEmpty) {
+      throw StateError('No enabled Usenet providers configured');
+    }
+
+    var loaded = 0;
     for (final p in providers) {
       try {
         final password = await _resolveVaultSecret(p.passwordRef);
-        if (password == null) continue;
+        if (password == null) {
+          dev.log(
+            'Provider ${p.name}: vault secret missing or unresolvable '
+            '(ref: ${p.passwordRef})',
+            name: 'UsenetService',
+          );
+          continue;
+        }
 
         await _ensurePool.addProvider(ProviderConfig(
           id: p.uri,
@@ -814,11 +852,27 @@ class UsenetServiceImpl implements UsenetService {
           ssl: p.ssl,
           retentionDays: p.retentionDays ?? 0,
         ));
+        loaded++;
+        dev.log(
+          'Provider ${p.name} loaded into pool (${p.host}:${p.port})',
+          name: 'UsenetService',
+        );
       } on StateError {
-        // Already registered — skip.
+        // Already registered — counts as loaded.
+        loaded++;
       } catch (e) {
-        dev.log('Failed to load provider ${p.uri} into pool: $e');
+        dev.log(
+          'Failed to load provider ${p.uri} into pool: $e',
+          name: 'UsenetService',
+        );
       }
+    }
+
+    if (loaded == 0) {
+      throw StateError(
+        'All ${providers.length} providers failed to load — '
+        'check vault secrets and provider configuration',
+      );
     }
   }
 

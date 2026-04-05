@@ -156,6 +156,8 @@ class KabukKeyboard extends ConsumerStatefulWidget {
     this.simple = false,
     this.maxLines,
     this.autofocus = false,
+    this.textInputAction,
+    this.suffixIcon,
     super.key,
   });
 
@@ -203,6 +205,12 @@ class KabukKeyboard extends ConsumerStatefulWidget {
 
   /// Whether the text field should be focused on build.
   final bool autofocus;
+
+  /// The keyboard action button type (e.g. [TextInputAction.go]).
+  final TextInputAction? textInputAction;
+
+  /// Optional suffix icon widget for the text field.
+  final Widget? suffixIcon;
 
   @override
   ConsumerState<KabukKeyboard> createState() => _KabukKeyboardState();
@@ -314,20 +322,25 @@ class _KabukKeyboardState extends ConsumerState<KabukKeyboard> {
       minLines: 1,
       onChanged: widget.onChanged,
       onSubmitted: widget.onSubmitted,
-      style: const TextStyle(color: KabukTheme.textPrimary, fontSize: 14),
+      textInputAction: widget.textInputAction ?? TextInputAction.done,
+      style: TextStyle(color: context.kabukTextPrimary, fontSize: 14),
       decoration: InputDecoration(
         hintText: widget.hintText,
-        hintStyle: const TextStyle(
-          color: KabukTheme.textSecondary,
+        hintStyle: TextStyle(
+          color: context.kabukTextSecondary,
           fontSize: 14,
         ),
         filled: true,
-        fillColor: KabukTheme.surfaceVariant,
+        fillColor: context.kabukSurfaceVariant,
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 12,
           vertical: 10,
         ),
+        suffixIcon: widget.suffixIcon,
+        suffixIconConstraints: widget.suffixIcon != null
+            ? const BoxConstraints(minWidth: 36, minHeight: 36)
+            : null,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(20),
           borderSide: BorderSide.none,
@@ -362,15 +375,15 @@ class _KabukKeyboardState extends ConsumerState<KabukKeyboard> {
               ref.read(keyboardModeProvider.notifier).state = KeyboardMode.text;
             }
           },
-          style: const TextStyle(color: KabukTheme.textPrimary, fontSize: 14),
+          style: TextStyle(color: context.kabukTextPrimary, fontSize: 14),
           decoration: InputDecoration(
             hintText: widget.hintText,
-            hintStyle: const TextStyle(
-              color: KabukTheme.textSecondary,
+            hintStyle: TextStyle(
+              color: context.kabukTextSecondary,
               fontSize: 14,
             ),
             filled: true,
-            fillColor: KabukTheme.surfaceVariant,
+            fillColor: context.kabukSurfaceVariant,
             isDense: true,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 12,
@@ -394,7 +407,7 @@ class _KabukKeyboardState extends ConsumerState<KabukKeyboard> {
                     size: 20,
                     color: _showToolbar
                         ? KabukTheme.accentGreen
-                        : KabukTheme.textSecondary,
+                        : context.kabukTextSecondary,
                   ),
                 ),
               ),
@@ -553,7 +566,7 @@ class _ModeButton extends StatelessWidget {
               size: 22,
               color: isActive
                   ? KabukTheme.accentGreen
-                  : KabukTheme.textSecondary,
+                  : context.kabukTextSecondary,
             ),
           ),
         ),
@@ -747,9 +760,9 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
     final isRtl = lang == KeyboardLanguage.ar;
 
     return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF1C1C1E),
-        border: Border(top: BorderSide(color: Colors.white10, width: 0.5)),
+      decoration: BoxDecoration(
+        color: context.kabukSurface,
+        border: Border(top: BorderSide(color: context.kabukDivider, width: 0.5)),
       ),
       child: Directionality(
         textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
@@ -1008,7 +1021,7 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
         widget.controller.selection.start != widget.controller.selection.end;
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: KabukTheme.surfaceElevated,
+      backgroundColor: context.kabukSurfaceElevated,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
           top: Radius.circular(KabukTheme.radiusMd),
@@ -1019,27 +1032,27 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Padding(
+            Padding(
               padding: EdgeInsets.all(KabukTheme.spacingMd),
               child: Text(
                 'Clipboard',
                 style: TextStyle(
-                  color: KabukTheme.textPrimary,
+                  color: context.kabukTextPrimary,
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                 ),
               ),
             ),
-            const Divider(height: 1, color: KabukTheme.divider),
+            Divider(height: 1, color: context.kabukDivider),
             ListTile(
-              leading: const Icon(
+              leading: Icon(
                 Icons.content_paste_rounded,
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
                 size: 20,
               ),
-              title: const Text(
+              title: Text(
                 'Paste',
-                style: TextStyle(color: KabukTheme.textPrimary, fontSize: 14),
+                style: TextStyle(color: context.kabukTextPrimary, fontSize: 14),
               ),
               onTap: () {
                 Navigator.of(ctx).pop();
@@ -1048,15 +1061,15 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
             ),
             if (hasSelection) ...[
               ListTile(
-                leading: const Icon(
+                leading: Icon(
                   Icons.content_copy_rounded,
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                   size: 20,
                 ),
-                title: const Text(
+                title: Text(
                   'Copy',
                   style:
-                      TextStyle(color: KabukTheme.textPrimary, fontSize: 14),
+                      TextStyle(color: context.kabukTextPrimary, fontSize: 14),
                 ),
                 onTap: () {
                   Navigator.of(ctx).pop();
@@ -1064,15 +1077,15 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
                 },
               ),
               ListTile(
-                leading: const Icon(
+                leading: Icon(
                   Icons.content_cut_rounded,
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                   size: 20,
                 ),
-                title: const Text(
+                title: Text(
                   'Cut',
                   style:
-                      TextStyle(color: KabukTheme.textPrimary, fontSize: 14),
+                      TextStyle(color: context.kabukTextPrimary, fontSize: 14),
                 ),
                 onTap: () {
                   Navigator.of(ctx).pop();
@@ -1081,14 +1094,14 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
               ),
             ],
             ListTile(
-              leading: const Icon(
+              leading: Icon(
                 Icons.select_all_rounded,
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
                 size: 20,
               ),
-              title: const Text(
+              title: Text(
                 'Select all',
-                style: TextStyle(color: KabukTheme.textPrimary, fontSize: 14),
+                style: TextStyle(color: context.kabukTextPrimary, fontSize: 14),
               ),
               onTap: () {
                 Navigator.of(ctx).pop();
@@ -1106,7 +1119,7 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
     final currentLang = ref.read(keyboardLanguageProvider);
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: KabukTheme.surfaceElevated,
+      backgroundColor: context.kabukSurfaceElevated,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
           top: Radius.circular(KabukTheme.radiusMd),
@@ -1117,18 +1130,18 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Padding(
+            Padding(
               padding: EdgeInsets.all(KabukTheme.spacingMd),
               child: Text(
                 'Keyboard Language',
                 style: TextStyle(
-                  color: KabukTheme.textPrimary,
+                  color: context.kabukTextPrimary,
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                 ),
               ),
             ),
-            const Divider(height: 1, color: KabukTheme.divider),
+            Divider(height: 1, color: context.kabukDivider),
             ...KeyboardLanguage.values.map(
               (lang) => ListTile(
                 leading: Text(
@@ -1136,7 +1149,7 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
                   style: TextStyle(
                     color: lang == currentLang
                         ? KabukTheme.accentGreen
-                        : KabukTheme.textSecondary,
+                        : context.kabukTextSecondary,
                     fontWeight: FontWeight.w600,
                     fontSize: 14,
                   ),
@@ -1146,7 +1159,7 @@ class _TextKeyboardPanelState extends ConsumerState<TextKeyboardPanel> {
                   style: TextStyle(
                     color: lang == currentLang
                         ? KabukTheme.accentGreen
-                        : KabukTheme.textPrimary,
+                        : context.kabukTextPrimary,
                   ),
                 ),
                 trailing: lang == currentLang
@@ -1199,12 +1212,12 @@ class _KeyButtonState extends State<_KeyButton> {
   @override
   Widget build(BuildContext context) {
     final bgColor = _pressed
-        ? const Color(0xFF5A5A5C)
+        ? context.kabukDivider
         : widget.isActive
             ? KabukTheme.accentGreen.withAlpha(40)
             : widget.isSpecial
-                ? const Color(0xFF2C2C2E)
-                : const Color(0xFF3A3A3C);
+                ? context.kabukSurfaceVariant
+                : context.kabukSurfaceElevated;
 
     return Padding(
       padding: const EdgeInsets.all(2.0),
@@ -1245,14 +1258,14 @@ class _KeyButtonState extends State<_KeyButton> {
                       size: 18,
                       color: widget.isActive
                           ? KabukTheme.accentGreen
-                          : KabukTheme.textPrimary,
+                          : context.kabukTextPrimary,
                     )
                   : Text(
                       widget.label!,
                       style: TextStyle(
                         color: widget.isActive
                             ? KabukTheme.accentGreen
-                            : KabukTheme.textPrimary,
+                            : context.kabukTextPrimary,
                         fontSize: widget.fontSize,
                         fontWeight: FontWeight.w400,
                       ),
@@ -1754,10 +1767,10 @@ class _EmojiPanelState extends State<_EmojiPanel> {
     final cat = _categories[_selectedCategory];
 
     return Container(
-      color: KabukTheme.surface,
+      color: context.kabukSurface,
       child: Column(
         children: [
-          const Divider(height: 1, color: KabukTheme.divider),
+          Divider(height: 1, color: context.kabukDivider),
           // Category tabs
           SizedBox(
             height: 40,
@@ -1792,7 +1805,7 @@ class _EmojiPanelState extends State<_EmojiPanel> {
                         size: 20,
                         color: isSelected
                             ? KabukTheme.accentGreen
-                            : KabukTheme.textSecondary,
+                            : context.kabukTextSecondary,
                       ),
                     ),
                   ),
@@ -1800,7 +1813,7 @@ class _EmojiPanelState extends State<_EmojiPanel> {
               },
             ),
           ),
-          const Divider(height: 1, color: KabukTheme.divider),
+          Divider(height: 1, color: context.kabukDivider),
           // Emoji grid
           Expanded(
             child: GridView.builder(
@@ -1857,10 +1870,10 @@ class _GalleryPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Container(
-      color: KabukTheme.surface,
+      color: context.kabukSurface,
       child: Column(
         children: [
-          const Divider(height: 1, color: KabukTheme.divider),
+          Divider(height: 1, color: context.kabukDivider),
           // Action buttons row
           Padding(
             padding: const EdgeInsets.symmetric(
@@ -1895,9 +1908,9 @@ class _GalleryPanel extends ConsumerWidget {
               ],
             ),
           ),
-          const Divider(height: 1, color: KabukTheme.divider),
+          Divider(height: 1, color: context.kabukDivider),
           // Placeholder for recent photos grid
-          const Expanded(
+          Expanded(
             child: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -1905,13 +1918,13 @@ class _GalleryPanel extends ConsumerWidget {
                   Icon(
                     Icons.photo_library_outlined,
                     size: 48,
-                    color: KabukTheme.textTertiary,
+                    color: context.kabukTextTertiary,
                   ),
                   SizedBox(height: KabukTheme.spacingSm),
                   Text(
                     'Tap an option above to select media',
                     style: TextStyle(
-                      color: KabukTheme.textSecondary,
+                      color: context.kabukTextSecondary,
                       fontSize: 13,
                     ),
                   ),
@@ -1972,7 +1985,7 @@ class _GalleryAction extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: KabukTheme.spacingSm),
           decoration: BoxDecoration(
-            color: KabukTheme.surfaceVariant,
+            color: context.kabukSurfaceVariant,
             borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
           ),
           child: Column(
@@ -1982,8 +1995,8 @@ class _GalleryAction extends StatelessWidget {
               const SizedBox(height: 4),
               Text(
                 label,
-                style: const TextStyle(
-                  color: KabukTheme.textSecondary,
+                style: TextStyle(
+                  color: context.kabukTextSecondary,
                   fontSize: 11,
                 ),
               ),
@@ -2072,10 +2085,10 @@ class _VoicePanelState extends ConsumerState<_VoicePanel> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: KabukTheme.surface,
+      color: context.kabukSurface,
       child: Column(
         children: [
-          const Divider(height: 1, color: KabukTheme.divider),
+          Divider(height: 1, color: context.kabukDivider),
           Expanded(
             child: Center(
               child: Column(
@@ -2091,7 +2104,7 @@ class _VoicePanelState extends ConsumerState<_VoicePanel> {
                     style: TextStyle(
                       color: _isRecording
                           ? KabukTheme.error
-                          : KabukTheme.textSecondary,
+                          : context.kabukTextSecondary,
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
                     ),
@@ -2106,7 +2119,7 @@ class _VoicePanelState extends ConsumerState<_VoicePanel> {
                         IconButton.filled(
                           onPressed: _discardRecording,
                           style: IconButton.styleFrom(
-                            backgroundColor: KabukTheme.surfaceVariant,
+                            backgroundColor: context.kabukSurfaceVariant,
                           ),
                           icon: const Icon(
                             Icons.delete_outline,

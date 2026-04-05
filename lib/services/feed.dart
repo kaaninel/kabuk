@@ -81,6 +81,9 @@ enum FeedSourceType {
 
   /// 4chan board (public JSON API).
   fourchan,
+
+  /// Usenet indexer search results (Newznab API).
+  usenet,
 }
 
 /// Abstract interface for a content feed source.

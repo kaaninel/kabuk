@@ -63,21 +63,21 @@ class _FeedSourcesPageState extends ConsumerState<FeedSourcesPage> {
                       ),
                     ),
                     const SizedBox(height: 20),
-                    const Text(
+                    Text(
                       'No feed sources yet',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
-                        color: KabukTheme.textPrimary,
+                        color: context.kabukTextPrimary,
                       ),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
+                    Text(
                       'Add subreddits, RSS feeds, or Nostr topics\n'
                       'to populate your Explore feed.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        color: KabukTheme.textSecondary,
+                        color: context.kabukTextSecondary,
                         fontSize: 14,
                         height: 1.5,
                       ),
@@ -120,7 +120,7 @@ class _FeedSourcesPageState extends ConsumerState<FeedSourcesPage> {
         error: (e, _) => Center(
           child: Text(
             'Error loading feeds: $e',
-            style: const TextStyle(color: KabukTheme.textSecondary),
+            style: TextStyle(color: context.kabukTextSecondary),
           ),
         ),
       ),
@@ -220,9 +220,9 @@ class _FeedSourceTile extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: KabukTheme.cardColor,
+        color: context.kabukCardColor,
         borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
-        border: Border.all(color: KabukTheme.divider, width: 0.5),
+        border: Border.all(color: context.kabukDivider, width: 0.5),
       ),
       child: Material(
         color: Colors.transparent,
@@ -249,10 +249,10 @@ class _FeedSourceTile extends StatelessWidget {
                     children: [
                       Text(
                         feed.name ?? feed.feedUrl ?? 'Feed',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
-                          color: KabukTheme.textPrimary,
+                          color: context.kabukTextPrimary,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -284,9 +284,9 @@ class _FeedSourceTile extends StatelessWidget {
                             Flexible(
                               child: Text(
                                 feed.category!,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 12,
-                                  color: KabukTheme.textTertiary,
+                                  color: context.kabukTextTertiary,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -299,10 +299,10 @@ class _FeedSourceTile extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.delete_outline_rounded,
                     size: 20,
-                    color: KabukTheme.textTertiary,
+                    color: context.kabukTextTertiary,
                   ),
                   tooltip: 'Remove',
                   onPressed: onDelete,
@@ -344,7 +344,7 @@ class _AddFeedDialogState extends ConsumerState<_AddFeedDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: KabukTheme.surfaceElevated,
+      backgroundColor: context.kabukSurfaceElevated,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(KabukTheme.radiusLg),
       ),
@@ -361,12 +361,12 @@ class _AddFeedDialogState extends ConsumerState<_AddFeedDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Type selector
-            const Text(
+            Text(
               'Source Type',
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
               ),
             ),
             const SizedBox(height: 8),
@@ -375,24 +375,24 @@ class _AddFeedDialogState extends ConsumerState<_AddFeedDialog> {
             // URL / identifier field
             Text(
               _urlLabel,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
               ),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: _urlController,
-              style: const TextStyle(
-                color: KabukTheme.textPrimary,
+              style: TextStyle(
+                color: context.kabukTextPrimary,
                 fontSize: 15,
               ),
               decoration: InputDecoration(
                 hintText: _urlHint,
-                hintStyle: const TextStyle(color: KabukTheme.textTertiary),
+                hintStyle: TextStyle(color: context.kabukTextTertiary),
                 filled: true,
-                fillColor: KabukTheme.surface,
+                fillColor: context.kabukSurface,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 14,
                   vertical: 12,
@@ -400,12 +400,12 @@ class _AddFeedDialogState extends ConsumerState<_AddFeedDialog> {
                 border: OutlineInputBorder(
                   borderRadius:
                       BorderRadius.circular(KabukTheme.radiusSm),
-                  borderSide: const BorderSide(color: KabukTheme.divider),
+                  borderSide: BorderSide(color: context.kabukDivider),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius:
                       BorderRadius.circular(KabukTheme.radiusSm),
-                  borderSide: const BorderSide(color: KabukTheme.divider),
+                  borderSide: BorderSide(color: context.kabukDivider),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius:
@@ -421,26 +421,26 @@ class _AddFeedDialogState extends ConsumerState<_AddFeedDialog> {
             ),
             const SizedBox(height: 16),
             // Display name field
-            const Text(
+            Text(
               'Display Name (optional)',
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
               ),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: _nameController,
-              style: const TextStyle(
-                color: KabukTheme.textPrimary,
+              style: TextStyle(
+                color: context.kabukTextPrimary,
                 fontSize: 15,
               ),
               decoration: InputDecoration(
                 hintText: 'Custom feed name',
-                hintStyle: const TextStyle(color: KabukTheme.textTertiary),
+                hintStyle: TextStyle(color: context.kabukTextTertiary),
                 filled: true,
-                fillColor: KabukTheme.surface,
+                fillColor: context.kabukSurface,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 14,
                   vertical: 12,
@@ -448,12 +448,12 @@ class _AddFeedDialogState extends ConsumerState<_AddFeedDialog> {
                 border: OutlineInputBorder(
                   borderRadius:
                       BorderRadius.circular(KabukTheme.radiusSm),
-                  borderSide: const BorderSide(color: KabukTheme.divider),
+                  borderSide: BorderSide(color: context.kabukDivider),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius:
                       BorderRadius.circular(KabukTheme.radiusSm),
-                  borderSide: const BorderSide(color: KabukTheme.divider),
+                  borderSide: BorderSide(color: context.kabukDivider),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius:
@@ -511,23 +511,23 @@ class _AddFeedDialogState extends ConsumerState<_AddFeedDialog> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: isSelected ? color.withAlpha(20) : KabukTheme.surface,
+              color: isSelected ? color.withAlpha(20) : context.kabukSurface,
               borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
               border: Border.all(
-                color: isSelected ? color.withAlpha(80) : KabukTheme.divider,
+                color: isSelected ? color.withAlpha(80) : context.kabukDivider,
               ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icon, size: 16, color: isSelected ? color : KabukTheme.textTertiary),
+                Icon(icon, size: 16, color: isSelected ? color : context.kabukTextTertiary),
                 const SizedBox(width: 6),
                 Text(
                   label,
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                    color: isSelected ? color : KabukTheme.textSecondary,
+                    color: isSelected ? color : context.kabukTextSecondary,
                   ),
                 ),
               ],
@@ -543,6 +543,7 @@ class _AddFeedDialogState extends ConsumerState<_AddFeedDialog> {
     FeedSourceType.rss || FeedSourceType.atom => 'Feed URL',
     FeedSourceType.nostr => 'Nostr Hashtag or npub',
     FeedSourceType.fourchan => 'Board Name',
+    FeedSourceType.usenet => 'Search Query or Category',
   };
 
   String get _urlHint => switch (_selectedType) {
@@ -550,6 +551,7 @@ class _AddFeedDialogState extends ConsumerState<_AddFeedDialog> {
     FeedSourceType.rss || FeedSourceType.atom => 'https://example.com/feed.xml',
     FeedSourceType.nostr => 'e.g. bitcoin, npub1...',
     FeedSourceType.fourchan => 'e.g. g, sci, wg',
+    FeedSourceType.usenet => 'e.g. usenet://search?q=linux or usenet://category/movies',
   };
 
   Future<void> _addFeed() async {
@@ -587,6 +589,12 @@ class _AddFeedDialogState extends ConsumerState<_AddFeedDialog> {
           _nameController.text.trim().isNotEmpty
               ? _nameController.text.trim()
               : Uri.tryParse(input)?.host ?? input,
+        ),
+        FeedSourceType.usenet => (
+          input.startsWith('usenet://') ? input : 'usenet://search?q=$input',
+          _nameController.text.trim().isNotEmpty
+              ? _nameController.text.trim()
+              : 'Usenet: $input',
         ),
       };
 

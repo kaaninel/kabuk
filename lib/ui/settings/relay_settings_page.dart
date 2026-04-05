@@ -236,13 +236,13 @@ class _RelaySettingsPageState extends ConsumerState<RelaySettingsPage> {
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              side: const BorderSide(color: KabukTheme.divider),
+              side: BorderSide(color: context.kabukDivider),
               avatar: Icon(
                 Icons.cell_tower_rounded,
                 size: 16,
                 color: connected.isNotEmpty
                     ? KabukTheme.success
-                    : KabukTheme.textSecondary,
+                    : context.kabukTextSecondary,
               ),
             ),
           ),
@@ -258,7 +258,7 @@ class _RelaySettingsPageState extends ConsumerState<RelaySettingsPage> {
               onAddAll: _adding ? null : () => _addAllDmRelays(configuredUrls),
             )
           else
-            _dmReadyBanner(),
+            _dmReadyBanner(context),
           const SizedBox(height: KabukTheme.spacingLg),
 
           // ─── DM / Inbox Relays ────────────────────────────────────────────
@@ -268,14 +268,14 @@ class _RelaySettingsPageState extends ConsumerState<RelaySettingsPage> {
             color: KabukTheme.nostrPurple,
           ),
           const SizedBox(height: KabukTheme.spacingXs),
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(bottom: KabukTheme.spacingSm),
             child: Text(
               'Required for encrypted DMs (NIP-17) to reach 0xchat and other '
               'clients. Gift-wrapped messages are sent directly to these relays.',
               style: TextStyle(
                 fontSize: 12,
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
                 height: 1.4,
               ),
             ),
@@ -353,20 +353,20 @@ class _RelaySettingsPageState extends ConsumerState<RelaySettingsPage> {
                 isConnected: connected.contains(relay.url),
                 label: relay.url.replaceFirst('wss://', ''),
                 note: 'Custom',
-                badgeColor: KabukTheme.textSecondary,
+                badgeColor: context.kabukTextSecondary,
                 onReconnect: () => _reconnectRelay(relay.url),
                 onRemove: () => _removeRelay(relay.url),
               ),
             ),
-            const SizedBox(height: KabukTheme.spacingLg),
+            SizedBox(height: KabukTheme.spacingLg),
           ],
 
           // ─── Suggested General Relays ─────────────────────────────────────
           if (unaddedGeneral.isNotEmpty) ...[
-            const _SectionHeader(
+            _SectionHeader(
               icon: Icons.add_circle_outline_rounded,
               label: 'Suggested General Relays',
-              color: KabukTheme.textSecondary,
+              color: context.kabukTextSecondary,
             ),
             const SizedBox(height: KabukTheme.spacingSm),
             Wrap(
@@ -390,22 +390,22 @@ class _RelaySettingsPageState extends ConsumerState<RelaySettingsPage> {
                 );
               }).toList(),
             ),
-            const SizedBox(height: KabukTheme.spacingLg),
+            SizedBox(height: KabukTheme.spacingLg),
           ],
 
           // ─── Add Custom Relay ─────────────────────────────────────────────
-          const _SectionHeader(
+          _SectionHeader(
             icon: Icons.add_link_rounded,
             label: 'Add Custom Relay',
-            color: KabukTheme.textSecondary,
+            color: context.kabukTextSecondary,
           ),
           const SizedBox(height: KabukTheme.spacingSm),
           Container(
             padding: const EdgeInsets.all(KabukTheme.spacingMd),
             decoration: BoxDecoration(
-              color: KabukTheme.cardColor,
+              color: context.kabukCardColor,
               borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
-              border: Border.all(color: KabukTheme.divider, width: 0.5),
+              border: Border.all(color: context.kabukDivider, width: 0.5),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -546,9 +546,9 @@ class _DmRelayBanner extends StatelessWidget {
                   '$missingCount inbox relay${missingCount > 1 ? 's' : ''} not '
                   'configured. Messages to 0xchat and other NIP-17 clients '
                   'may not be delivered.',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
-                    color: KabukTheme.textSecondary,
+                    color: context.kabukTextSecondary,
                     height: 1.4,
                   ),
                 ),
@@ -573,7 +573,7 @@ class _DmRelayBanner extends StatelessWidget {
   }
 }
 
-Widget _dmReadyBanner() => Container(
+Widget _dmReadyBanner(BuildContext context) => Container(
   padding: const EdgeInsets.symmetric(
     horizontal: KabukTheme.spacingMd,
     vertical: KabukTheme.spacingSm,
@@ -583,7 +583,7 @@ Widget _dmReadyBanner() => Container(
     borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
     border: Border.all(color: KabukTheme.success.withAlpha(60), width: 1),
   ),
-  child: const Row(
+  child: Row(
     children: [
       Icon(Icons.check_circle_rounded, color: KabukTheme.success, size: 16),
       SizedBox(width: KabukTheme.spacingSm),
@@ -593,7 +593,7 @@ Widget _dmReadyBanner() => Container(
           'other NIP-17 clients.',
           style: TextStyle(
             fontSize: 12,
-            color: KabukTheme.textSecondary,
+            color: context.kabukTextSecondary,
             height: 1.4,
           ),
         ),
@@ -663,12 +663,12 @@ class _RelayTile extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: KabukTheme.spacingSm),
       decoration: BoxDecoration(
-        color: KabukTheme.cardColor,
+        color: context.kabukCardColor,
         borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
         border: Border.all(
           color: isConnected
               ? KabukTheme.success.withAlpha(80)
-              : KabukTheme.divider,
+              : context.kabukDivider,
           width: 0.5,
         ),
       ),

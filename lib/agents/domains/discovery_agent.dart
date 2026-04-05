@@ -12,6 +12,7 @@ import 'package:kabuk/agents/llm.dart';
 import 'package:kabuk/agents/memory.dart';
 import 'package:kabuk/agents/messages.dart';
 import 'package:kabuk/config/namespaces.dart';
+import 'package:kabuk/config/result.dart';
 import 'package:kabuk/knowledge/triple.dart';
 import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/knowledge/types/bookmark.dart';
@@ -19,6 +20,7 @@ import 'package:kabuk/knowledge/types/saved_search.dart';
 import 'package:kabuk/services/feed.dart';
 import 'package:kabuk/services/nostr.dart';
 import 'package:kabuk/services/nostr_utils.dart';
+import 'package:kabuk/services/usenet.dart';
 
 /// Agent specialized in content discovery across all connected sources.
 ///
@@ -47,6 +49,10 @@ Capabilities:
 • Save searches as subscriptions — persistent queries that auto-refresh
 • Suggest content sources — recommend feeds based on interests
 • Bookmark content — save interesting articles/notes for later
+• Search Usenet via configured indexers — find movies, TV, music, software
+• Stream Usenet content — play video/audio directly without downloading
+• Browse Usenet categories — explore available content by type
+• Get release details — view file info, size, quality attributes
 
 Content Sources:
 • **Nostr** — decentralized social posts (kind 1 text notes) searchable by
@@ -72,6 +78,14 @@ Subscription Types:
 → use subscribe_topic which creates a Nostr feed subscription
 • **Saved search**: save a search query that refreshes periodically
 → use save_search
+
+Usenet Search:
+• If the user wants to find movies, TV shows, software, or downloadable content
+  → use search_usenet
+• If the user says "nzb:", "usenet:", or mentions Usenet → use search_usenet
+• Categories: movies, tvShows, music, games, software, books, audio, other
+• Results include title, size, quality attributes (resolution, codec)
+• After finding content, offer to stream or download it
 
 Usage Guidelines:
 • When the user asks to "find" or "search" content, determine whether they
@@ -277,6 +291,71 @@ want Nostr content, local content, or both
         'required': ['url'],
       },
       execute: _bookmarkContent,
+    ),
+    AgentTool(
+      name: 'search_usenet',
+      description:
+          'Search Usenet indexers for content '
+          '(movies, TV, music, software, etc.).',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'query': {'type': 'string', 'description': 'Search query'},
+          'category': {
+            'type': 'string',
+            'enum': [
+              'movies',
+              'tvShows',
+              'music',
+              'games',
+              'software',
+              'books',
+              'audio',
+              'other',
+            ],
+            'description': 'Content category filter (optional)',
+          },
+          'limit': {'type': 'integer', 'description': 'Max results (default 20)'},
+        },
+        'required': ['query'],
+      },
+      execute: _searchUsenet,
+    ),
+    AgentTool(
+      name: 'stream_usenet_content',
+      description:
+          'Start streaming a Usenet release for playback. '
+          'Returns a local URL for the media player.',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'nzb_url': {
+            'type': 'string',
+            'description': 'NZB download URL from search results',
+          },
+          'title': {
+            'type': 'string',
+            'description': 'Release title for display',
+          },
+        },
+        'required': ['nzb_url'],
+      },
+      execute: _streamUsenetContent,
+    ),
+    AgentTool(
+      name: 'stop_usenet_stream',
+      description: 'Stop an active Usenet streaming session.',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'session_id': {
+            'type': 'string',
+            'description': 'Stream session ID to stop',
+          },
+        },
+        'required': ['session_id'],
+      },
+      execute: _stopUsenetStream,
     ),
   ];
 
@@ -823,8 +902,152 @@ want Nostr content, local content, or both
   }
 
   // ---------------------------------------------------------------------------
+  // Usenet tool implementations
+  // ---------------------------------------------------------------------------
+
+  Future<ToolResult> _searchUsenet(
+    Map<String, dynamic> args,
+    AgentContext context,
+  ) async {
+    final usenet = context.usenet;
+    if (usenet == null) {
+      return const ToolResult.error(
+        'Usenet service not available. '
+        'Please configure indexers and providers in settings.',
+      );
+    }
+
+    final query = args['query'] as String? ?? '';
+    if (query.isEmpty) {
+      return const ToolResult.error('Search query cannot be empty.');
+    }
+
+    final categoryStr = args['category'] as String?;
+    final category = categoryStr != null
+        ? UsenetCategory.values.where((c) => c.name == categoryStr).firstOrNull
+        : null;
+    final limit = (args['limit'] as int?) ?? 20;
+
+    final result = await usenet.search(
+      query,
+      category: category,
+      limit: limit,
+    );
+
+    switch (result) {
+      case Success(:final value):
+        if (value.isEmpty) {
+          return ToolResult.text(
+            'No Usenet results found for "$query"'
+            '${category != null ? ' in ${category.name}' : ''}. '
+            'Try different keywords or broaden the category.',
+          );
+        }
+
+        final lines = value.take(limit).map((UsenetRelease release) {
+          final size = _formatBytes(release.sizeBytes);
+          final attrs = release.attributes.entries
+              .map((MapEntry<String, String> e) => '${e.key}: ${e.value}')
+              .join(', ');
+          final attrsLine = attrs.isNotEmpty ? '\n  Attributes: $attrs' : '';
+          return '- **${release.title}**\n'
+              '  Size: $size · Category: ${release.category.name}\n'
+              '  NZB: ${release.nzbUrl}$attrsLine';
+        });
+
+        return ToolResult.text(
+          'Found ${value.length} Usenet release(s) for "$query"'
+          '${category != null ? ' in ${category.name}' : ''}:\n\n'
+          '${lines.join('\n\n')}\n\n'
+          '💡 Stream any result with: "stream <title>"',
+        );
+
+      case Failure(:final error):
+        return ToolResult.error('Usenet search failed: $error');
+    }
+  }
+
+  Future<ToolResult> _streamUsenetContent(
+    Map<String, dynamic> args,
+    AgentContext context,
+  ) async {
+    final usenet = context.usenet;
+    if (usenet == null) {
+      return const ToolResult.error(
+        'Usenet service not available. '
+        'Please configure indexers and providers in settings.',
+      );
+    }
+
+    final nzbUrl = args['nzb_url'] as String? ?? '';
+    if (nzbUrl.isEmpty) {
+      return const ToolResult.error('NZB URL is required.');
+    }
+    final title = args['title'] as String? ?? 'Unknown';
+
+    // Fetch and parse the NZB.
+    final nzbResult = await usenet.fetchNzb(nzbUrl);
+    switch (nzbResult) {
+      case Success(:final value):
+        // Start streaming.
+        final streamResult = await usenet.startStream(value);
+        switch (streamResult) {
+          case Success(:final value):
+            return ToolResult.text(
+              'Streaming started for **$title**\n'
+              'Session ID: ${value.id}\n'
+              'Local URL: ${value.localUrl}\n'
+              'Total size: ${_formatBytes(value.totalBytes)}\n'
+              'State: ${value.state.name}\n\n'
+              '▶ Open the local URL in a media player to watch/listen.',
+            );
+          case Failure(:final error):
+            return ToolResult.error('Failed to start stream: $error');
+        }
+
+      case Failure(:final error):
+        return ToolResult.error('Failed to fetch NZB: $error');
+    }
+  }
+
+  Future<ToolResult> _stopUsenetStream(
+    Map<String, dynamic> args,
+    AgentContext context,
+  ) async {
+    final usenet = context.usenet;
+    if (usenet == null) {
+      return const ToolResult.error(
+        'Usenet service not available. '
+        'Please configure indexers and providers in settings.',
+      );
+    }
+
+    final sessionId = args['session_id'] as String? ?? '';
+    if (sessionId.isEmpty) {
+      return const ToolResult.error('Stream session ID is required.');
+    }
+
+    final result = await usenet.stopStream(sessionId);
+    switch (result) {
+      case Success():
+        return ToolResult.text('Stream session $sessionId stopped.');
+      case Failure(:final error):
+        return ToolResult.error('Failed to stop stream: $error');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
+
+  static String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
 
   static String _formatDate(DateTime date) {
     final now = DateTime.now();

@@ -100,7 +100,7 @@ class VideoThumbnail extends StatelessWidget {
                   fit: BoxFit.cover,
                 )
               else
-                Container(color: KabukTheme.surfaceVariant),
+                Container(color: context.kabukSurfaceVariant),
               // Dark overlay.
               Container(color: Colors.black.withAlpha(80)),
               // Play button.
@@ -236,8 +236,18 @@ class _NativeVideoPlayerState extends State<_NativeVideoPlayer> {
         }
       }
     } else {
-      // Direct URL — play immediately.
-      _startPlayback(widget.videoUrl);
+      // Direct URL — resolve v.redd.it if needed, then play.
+      var url = widget.videoUrl;
+      if (url.contains('v.redd.it') &&
+          !url.contains('HLSPlaylist') &&
+          !url.contains('DASHPlaylist') &&
+          !url.contains('DASH_') &&
+          !url.toLowerCase().endsWith('.mp4') &&
+          !url.toLowerCase().endsWith('.m3u8')) {
+        if (url.endsWith('/')) url = url.substring(0, url.length - 1);
+        url = '$url/HLSPlaylist.m3u8';
+      }
+      _startPlayback(url);
     }
   }
 

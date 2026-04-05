@@ -10,6 +10,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:kabuk/config/namespaces.dart';
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/knowledge/types/bookmark.dart';
@@ -22,6 +23,22 @@ import 'package:kabuk/ui/explore/profile_view.dart';
 import 'package:kabuk/ui/shared/feed_image.dart';
 import 'package:kabuk/ui/shared/video_thumbnail.dart';
 import 'package:kabuk/ui/theme.dart';
+
+// =============================================================================
+// Entity name resolution
+// =============================================================================
+
+/// Resolves a `kabuk:` URI to its `schema:name` from the knowledge store.
+///
+/// Returns `null` if the URI is not a `kabuk:` URI or no name is found.
+final entityNameProvider =
+    FutureProvider.family<String?, String>((ref, uri) async {
+  if (!uri.startsWith('kabuk:')) return null;
+  final store = ref.read(knowledgeStoreProvider);
+  final nameTriples =
+      await store.query().subject(uri).predicate(NS.schemaName).execute();
+  return nameTriples.isNotEmpty ? nameTriples.first.objectValue : null;
+});
 
 // =============================================================================
 // Article Card
@@ -67,13 +84,19 @@ class ArticleCard extends ConsumerWidget {
     if (source.contains('reddit') || url.contains('reddit.com')) {
       return KabukTheme.redditOrange; // Reddit orange
     }
-    if (source.startsWith('kabuk:') ||
-        source.isEmpty ||
-        url.startsWith('nostr:')) {
+    if (url.startsWith('nostr:') || source.startsWith('kabuk:')) {
       return const Color(0xFF9C27B0); // Nostr purple
+    }
+    // Empty source with HTTP URL → web content, not Nostr.
+    if (source.isEmpty && _hasHttpUrl(url)) {
+      return KabukTheme.accentGreen;
     }
     return KabukTheme.blueAccent; // RSS / generic
   }
+
+  /// Whether [url] is a standard HTTP(S) URL.
+  static bool _hasHttpUrl(String url) =>
+      url.startsWith('http://') || url.startsWith('https://');
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -313,7 +336,22 @@ class ArticleCard extends ConsumerWidget {
         .replaceAll(RegExp(r'https?://\S+'), '')
         .replaceAll(RegExp(r'\s{2,}'), ' ')
         .trim();
-    return cleaned.isEmpty ? 'Nostr post' : cleaned;
+    if (cleaned.isNotEmpty) return cleaned;
+
+    // Try to get domain from article URL
+    final articleUrl = article.url;
+    if (articleUrl != null && articleUrl.isNotEmpty) {
+      final uri = Uri.tryParse(articleUrl);
+      if (uri != null && uri.host.isNotEmpty) {
+        return uri.host.replaceFirst('www.', '');
+      }
+    }
+    // Also check feedSource
+    final source = article.feedSource ?? '';
+    if (source.startsWith('web:')) {
+      return source.substring(4);
+    }
+    return 'Nostr post';
   }
 
   /// Extracts a meaningful title from a Nostr note description by skipping
@@ -369,7 +407,7 @@ class ArticleCard extends ConsumerWidget {
     if (!article.read) {
       store.markArticleRead(article.uri);
     }
-    openUrlSmart(context, url, title: article.name);
+    openUrlSmart(context, url, title: article.name, ref: ref);
   }
 }
 
@@ -382,7 +420,7 @@ class ArticleCard extends ConsumerWidget {
 /// The subreddit name (`r/xxx`) and author name are tappable — tapping
 /// opens the corresponding Reddit page inside the in-app quick peek sheet.
 /// For Nostr sources, tapping the author navigates to [ProfileView].
-class _SourceHeader extends StatelessWidget {
+class _SourceHeader extends ConsumerWidget {
   const _SourceHeader({required this.article});
 
   final ArticleData article;
@@ -392,24 +430,25 @@ class _SourceHeader extends StatelessWidget {
       RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(value);
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final source = article.feedSource ?? '';
     final url = article.url ?? '';
     final isReddit =
         source.contains('reddit') || url.contains('reddit.com');
+    final hasHttpUrl =
+        url.startsWith('http://') || url.startsWith('https://');
     final isWebBrowse = source == 'reader-mode' || source.startsWith('web:') ||
-        article.tags.contains('reader-mode') || article.tags.contains('web');
+        article.tags.contains('reader-mode') || article.tags.contains('web') ||
+        (!isReddit && source.isEmpty && hasHttpUrl);
     final isNostr = !isReddit && !isWebBrowse &&
-        (url.startsWith('nostr:') ||
-            source.startsWith('kabuk:') ||
-            source.isEmpty);
+        (url.startsWith('nostr:') || source.startsWith('kabuk:'));
     final timeAgo = _formatTimeAgo(article.datePublished);
 
     final Color iconColor;
     final IconData iconData;
     if (isWebBrowse) {
       iconColor = KabukTheme.accentGreen;
-      iconData = Icons.auto_stories_rounded;
+      iconData = Icons.language_rounded;
     } else if (isReddit) {
       iconColor = KabukTheme.redditOrange;
       iconData = Icons.reddit;
@@ -423,10 +462,29 @@ class _SourceHeader extends StatelessWidget {
 
     final subreddit = _subredditName(article);
     final author = article.author;
-    final authorIsHexPubkey = author != null && _isHexPubkey(author);
+    final authorIsKabukUri =
+        author != null && author.startsWith('kabuk:');
+    final authorIsHexPubkey =
+        author != null && !authorIsKabukUri && _isHexPubkey(author);
+
+    // Resolve kabuk: URIs to human-readable names from the knowledge store.
+    final resolvedAuthor = authorIsKabukUri
+        ? ref.watch(entityNameProvider(author)).valueOrNull
+        : null;
+    final resolvedSource = source.startsWith('kabuk:')
+        ? ref.watch(entityNameProvider(source)).valueOrNull
+        : null;
+    final displaySubreddit = resolvedSource ?? subreddit;
+    // Hide author row entirely if it's an unresolved kabuk: URI or generic name.
+    final rawDisplayAuthor =
+        authorIsKabukUri ? resolvedAuthor : author;
+    final displayAuthor = (rawDisplayAuthor != null &&
+            _isGenericAuthor(rawDisplayAuthor))
+        ? null
+        : rawDisplayAuthor;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 2),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
       child: Row(
         children: [
           Container(
@@ -440,53 +498,65 @@ class _SourceHeader extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
                 // Subreddit / feed name — tappable for Reddit sources.
-                GestureDetector(
-                  onTap: isReddit && subreddit.startsWith('r/')
-                      ? () => _openSubreddit(context, subreddit)
-                      : null,
-                  child: Text(
-                    subreddit,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: isReddit && subreddit.startsWith('r/')
-                          ? KabukTheme.redditOrange
-                          : context.kabukTextSecondary,
-                      decoration: isReddit && subreddit.startsWith('r/')
-                          ? TextDecoration.none
-                          : null,
+                Flexible(
+                  child: GestureDetector(
+                    onTap: isReddit && subreddit.startsWith('r/')
+                        ? () => _openSubreddit(context, subreddit)
+                        : null,
+                    child: Text(
+                      displaySubreddit,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isReddit && subreddit.startsWith('r/')
+                            ? KabukTheme.redditOrange
+                            : context.kabukTextSecondary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ),
                 // Author — tappable for Reddit (opens QuickPeek) and
                 // Nostr hex-pubkey authors (opens ProfileView).
-                if (author != null)
-                  GestureDetector(
-                    onTap: isReddit
-                        ? () => _openUserProfile(context, author)
-                        : authorIsHexPubkey
-                            ? () => _openNostrProfile(context, author)
-                            : null,
-                    child: Text(
-                      isReddit
-                          ? (author.startsWith('u/')
-                              ? author
-                              : 'u/$author')
-                          : _formatNostrAuthor(author),
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isReddit
-                            ? KabukTheme.blueAccent.withAlpha(200)
-                            : authorIsHexPubkey
-                                ? KabukTheme.purpleAccent.withAlpha(200)
-                                : context.kabukTextTertiary,
+                if (displayAuthor != null) ...[
+                  Text(
+                    ' · ',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: context.kabukTextTertiary,
+                    ),
+                  ),
+                  Flexible(
+                    child: GestureDetector(
+                      onTap: isReddit
+                          ? () => _openUserProfile(context, displayAuthor)
+                          : authorIsHexPubkey
+                              ? () => _openNostrProfile(context, displayAuthor)
+                              : null,
+                      child: Text(
+                        isReddit
+                            ? (displayAuthor.startsWith('u/')
+                                ? displayAuthor
+                                : 'u/$displayAuthor')
+                            : _formatNostrAuthor(displayAuthor),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isReddit
+                              ? KabukTheme.blueAccent.withAlpha(200)
+                              : authorIsHexPubkey
+                                  ? KabukTheme.purpleAccent.withAlpha(200)
+                                  : context.kabukTextTertiary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ),
+                ],
               ],
             ),
           ),
@@ -519,6 +589,8 @@ class _SourceHeader extends StatelessWidget {
 
   /// Formats a Nostr author (hex pubkey) for display with `@` prefix.
   String _formatNostrAuthor(String author) {
+    // kabuk: URIs should already be resolved upstream; return as-is if not.
+    if (author.startsWith('kabuk:')) return author;
     if (author.startsWith('@')) return author;
     final base = author.endsWith('…') ? author.substring(0, author.length - 1) : author;
     if (RegExp(r'^[0-9a-fA-F]{8,}$').hasMatch(base)) {
@@ -527,7 +599,23 @@ class _SourceHeader extends StatelessWidget {
     return author;
   }
 
-  /// Extracts subreddit name (e.g. `r/flutter`) or Nostr topic from tags.
+  /// Returns true for generic/boilerplate author names.
+  static bool _isGenericAuthor(String author) {
+    final lower = author.toLowerCase().trim();
+    return lower.contains('contributor') ||
+        lower.contains('wikimedia') ||
+        lower.contains('wikipedia') ||
+        lower == 'staff' ||
+        lower == 'editor' ||
+        lower == 'editors' ||
+        lower == 'admin' ||
+        lower == 'webmaster' ||
+        lower == 'anonymous' ||
+        lower.startsWith('http://') ||
+        lower.startsWith('https://');
+  }
+
+  /// Extracts subreddit name, domain, or Nostr topic from tags/URL.
   String _subredditName(ArticleData article) {
     final tags = article.tags;
     final source = article.feedSource ?? '';
@@ -554,12 +642,29 @@ class _SourceHeader extends StatelessWidget {
     for (final tag in tags) {
       if (tag.startsWith('r/')) return tag;
     }
+
+    // If article has a regular HTTP URL and source is empty, derive domain.
+    final url = article.url;
+    if ((source.isEmpty || source.startsWith('kabuk:')) &&
+        url != null &&
+        (url.startsWith('http://') || url.startsWith('https://'))) {
+      final uri = Uri.tryParse(url);
+      if (uri != null && uri.host.isNotEmpty) {
+        return uri.host.replaceFirst('www.', '');
+      }
+    }
+
     // Return first Nostr topic tag (e.g. "flutter" → "#flutter").
     for (final tag in tags) {
       if (tag.isNotEmpty && !tag.startsWith('kabuk:')) return '#$tag';
     }
-    // Fall back: if feedSource is a kabuk URI, show "Nostr" instead of the UUID.
-    if (source.startsWith('kabuk:') || source.isEmpty) return 'Nostr';
+    // Show "Nostr" only for actual Nostr content (nostr: URLs or kabuk: source
+    // without an HTTP URL).
+    if (source.startsWith('kabuk:') ||
+        (source.isEmpty && (url ?? '').startsWith('nostr:'))) {
+      return 'Nostr';
+    }
+    if (source.isEmpty) return 'Feed';
     final last = source.split('/').last;
     return last.isNotEmpty ? last : 'Feed';
   }
@@ -780,7 +885,7 @@ class _ActionBarState extends ConsumerState<_ActionBar> {
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
         child: child,
       ),
     );
@@ -1048,22 +1153,9 @@ class _GalleryCarouselState extends State<_GalleryCarousel> {
               itemCount: widget.images.length,
               onPageChanged: (i) => setState(() => _current = i),
               itemBuilder: (context, i) {
-                return CachedNetworkImage(
+                return FeedImage(
                   imageUrl: widget.images[i],
-                  cacheManager: KabukCacheManager.instance,
                   fit: BoxFit.cover,
-                  width: double.infinity,
-                  fadeInDuration: const Duration(milliseconds: 300),
-                  placeholder: (_, _) => Container(
-                    color: context.kabukSurfaceVariant,
-                  ),
-                  errorWidget: (_, _, _) => Container(
-                    color: context.kabukCardColor,
-                    child: Icon(
-                      Icons.broken_image_outlined,
-                      color: context.kabukTextTertiary,
-                    ),
-                  ),
                 );
               },
             ),

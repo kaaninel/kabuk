@@ -133,7 +133,7 @@ class _ContactDetailSheetState extends ConsumerState<ContactDetailSheet> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: KabukTheme.surface,
+        backgroundColor: context.kabukSurface,
         title: const Text('Delete Contact'),
         content: Text(
           'Are you sure you want to delete $name? This cannot be undone.',
@@ -179,9 +179,9 @@ class _ContactDetailSheetState extends ConsumerState<ContactDetailSheet> {
     final liveContact = _currentContact;
 
     return Scaffold(
-      backgroundColor: KabukTheme.background,
+      backgroundColor: context.kabukBackground,
       appBar: AppBar(
-        backgroundColor: KabukTheme.surface,
+        backgroundColor: context.kabukSurface,
         title: const Text('Contact'),
         actions: [
           if (!_editing) ...[
@@ -361,7 +361,7 @@ class _ContactDetailSheetState extends ConsumerState<ContactDetailSheet> {
   void _showAddKeySheet(BuildContext context, PersonData contact) {
     showModalBottomSheet<PersonData?>(
       context: context,
-      backgroundColor: KabukTheme.surface,
+      backgroundColor: context.kabukSurface,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
@@ -472,7 +472,7 @@ class _AddKeySheetState extends State<_AddKeySheet> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: KabukTheme.textSecondary.withAlpha(100),
+                color: context.kabukTextSecondary.withAlpha(100),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -483,24 +483,24 @@ class _AddKeySheetState extends State<_AddKeySheet> {
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: KabukTheme.spacingXs),
-          const Text(
+          Text(
             'Add multiple identities — e.g. separate personal and work keys.',
-            style: TextStyle(color: KabukTheme.textSecondary, fontSize: 13),
+            style: TextStyle(color: context.kabukTextSecondary, fontSize: 13),
           ),
           const SizedBox(height: KabukTheme.spacingMd),
           TextField(
             controller: _keyCtrl,
-            style: const TextStyle(
-              color: KabukTheme.textPrimary,
+            style: TextStyle(
+              color: context.kabukTextPrimary,
               fontFamily: 'monospace',
               fontSize: 13,
             ),
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Nostr pubkey (npub or hex)',
               prefixIcon: Icon(Icons.key_rounded, size: 20),
               hintText: 'npub1... or 64-char hex',
               hintStyle: TextStyle(
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
                 fontSize: 12,
               ),
             ),
@@ -509,13 +509,13 @@ class _AddKeySheetState extends State<_AddKeySheet> {
           TextField(
             controller: _labelCtrl,
             textCapitalization: TextCapitalization.words,
-            style: const TextStyle(color: KabukTheme.textPrimary),
-            decoration: const InputDecoration(
+            style: TextStyle(color: context.kabukTextPrimary),
+            decoration: InputDecoration(
               labelText: 'Label (optional)',
               prefixIcon: Icon(Icons.label_outline_rounded, size: 20),
               hintText: 'e.g. Personal, Work',
               hintStyle: TextStyle(
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
                 fontSize: 12,
               ),
             ),
@@ -590,8 +590,8 @@ class _ContactHeroSection extends ConsumerWidget {
               ? TextField(
                   controller: nameCtrl,
                   textCapitalization: TextCapitalization.words,
-                  style: const TextStyle(
-                    color: KabukTheme.textPrimary,
+                  style: TextStyle(
+                    color: context.kabukTextPrimary,
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                   ),
@@ -603,8 +603,8 @@ class _ContactHeroSection extends ConsumerWidget {
                 )
               : Text(
                   displayName,
-                  style: const TextStyle(
-                    color: KabukTheme.textPrimary,
+                  style: TextStyle(
+                    color: context.kabukTextPrimary,
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                   ),
@@ -649,9 +649,9 @@ class _NostrKeyCard extends ConsumerWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: KabukTheme.spacingSm),
       decoration: BoxDecoration(
-        color: KabukTheme.surface,
+        color: context.kabukSurface,
         borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
-        border: Border.all(color: KabukTheme.divider, width: 0.5),
+        border: Border.all(color: context.kabukDivider, width: 0.5),
       ),
       child: Column(
         children: [
@@ -699,8 +699,8 @@ class _NostrKeyCard extends ConsumerWidget {
                             Flexible(
                               child: Text(
                                 nostrName,
-                                style: const TextStyle(
-                                  color: KabukTheme.textPrimary,
+                                style: TextStyle(
+                                  color: context.kabukTextPrimary,
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -735,8 +735,8 @@ class _NostrKeyCard extends ConsumerWidget {
                         child: Text(
                           '${nostrKey.pubkey.substring(0, 8)}…'
                           '${nostrKey.pubkey.substring(nostrKey.pubkey.length - 8)}',
-                          style: const TextStyle(
-                            color: KabukTheme.textSecondary,
+                          style: TextStyle(
+                            color: context.kabukTextSecondary,
                             fontSize: 11,
                             fontFamily: 'monospace',
                           ),
@@ -773,9 +773,9 @@ class _NostrKeyCard extends ConsumerWidget {
 
           // Action buttons row
           Container(
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               border: Border(
-                top: BorderSide(color: KabukTheme.divider, width: 0.5),
+                top: BorderSide(color: context.kabukDivider, width: 0.5),
               ),
             ),
             child: Row(
@@ -787,7 +787,7 @@ class _NostrKeyCard extends ConsumerWidget {
                     onPressed: onStartDm,
                   ),
                 ),
-                Container(width: 0.5, height: 36, color: KabukTheme.divider),
+                Container(width: 0.5, height: 36, color: context.kabukDivider),
                 Expanded(
                   child: _ActionButton(
                     icon: Icons.person_outline_rounded,
@@ -795,12 +795,12 @@ class _NostrKeyCard extends ConsumerWidget {
                     onPressed: onViewProfile,
                   ),
                 ),
-                Container(width: 0.5, height: 36, color: KabukTheme.divider),
+                Container(width: 0.5, height: 36, color: context.kabukDivider),
                 Expanded(
                   child: _ActionButton(
                     icon: Icons.delete_outline_rounded,
                     label: 'Remove',
-                    color: KabukTheme.textSecondary,
+                    color: context.kabukTextSecondary,
                     onPressed: () => _confirmRemove(context),
                   ),
                 ),
@@ -816,12 +816,12 @@ class _NostrKeyCard extends ConsumerWidget {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: KabukTheme.surface,
+        backgroundColor: context.kabukSurface,
         title: const Text('Remove identity?'),
         content: Text(
           'Remove ${nostrKey.displayLabel} key '
           '${nostrKey.pubkey.substring(0, 8)}… from this contact?',
-          style: const TextStyle(color: KabukTheme.textSecondary),
+          style: TextStyle(color: context.kabukTextSecondary),
         ),
         actions: [
           TextButton(
@@ -861,12 +861,12 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, size: 14, color: KabukTheme.textSecondary),
+        Icon(icon, size: 14, color: context.kabukTextSecondary),
         const SizedBox(width: 6),
         Text(
           label.toUpperCase(),
-          style: const TextStyle(
-            color: KabukTheme.textSecondary,
+          style: TextStyle(
+            color: context.kabukTextSecondary,
             fontSize: 11,
             fontWeight: FontWeight.w600,
             letterSpacing: 0.8,
@@ -900,7 +900,7 @@ class _EditField extends StatelessWidget {
       controller: controller,
       keyboardType: keyboardType,
       maxLines: maxLines,
-      style: const TextStyle(color: KabukTheme.textPrimary),
+      style: TextStyle(color: context.kabukTextPrimary),
       decoration: InputDecoration(
         labelText: label,
         prefixIcon: Icon(icon, size: 20),
@@ -957,7 +957,7 @@ class _EmptyKeys extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(KabukTheme.spacingLg),
         decoration: BoxDecoration(
-          color: KabukTheme.surface,
+          color: context.kabukSurface,
           borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
           border: Border.all(
             color: KabukTheme.purpleAccent.withAlpha(60),
@@ -973,9 +973,9 @@ class _EmptyKeys extends StatelessWidget {
               color: KabukTheme.purpleAccent.withAlpha(180),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'No Nostr identities yet',
-              style: TextStyle(color: KabukTheme.textSecondary, fontSize: 13),
+              style: TextStyle(color: context.kabukTextSecondary, fontSize: 13),
             ),
             const SizedBox(height: 4),
             const Text(

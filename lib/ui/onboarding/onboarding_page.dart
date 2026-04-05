@@ -55,8 +55,8 @@ class OnboardingPage extends StatelessWidget {
           // Title.
           Text(
             title,
-            style: const TextStyle(
-              color: KabukTheme.textPrimary,
+            style: TextStyle(
+              color: context.kabukTextPrimary,
               fontSize: 28,
               fontWeight: FontWeight.bold,
             ),
@@ -67,8 +67,8 @@ class OnboardingPage extends StatelessWidget {
           // Description.
           Text(
             description,
-            style: const TextStyle(
-              color: KabukTheme.textSecondary,
+            style: TextStyle(
+              color: context.kabukTextSecondary,
               fontSize: 16,
               height: 1.5,
             ),

@@ -6,6 +6,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:kabuk/config/providers.dart' show serviceProvidersProvider;
 import 'package:kabuk/ui/settings/settings_shared.dart';
 import 'package:kabuk/ui/theme.dart';
 
@@ -75,12 +76,12 @@ class _ServiceProviderRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return Container(
       decoration: BoxDecoration(
-        color: KabukTheme.cardColor,
+        color: context.kabukCardColor,
         borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
         border: Border.all(
           color: provider.enabled
               ? provider.color.withAlpha(40)
-              : KabukTheme.divider,
+              : context.kabukDivider,
           width: provider.enabled ? 1.0 : 0.5,
         ),
       ),
@@ -123,8 +124,8 @@ class _ServiceProviderRow extends ConsumerWidget {
                         provider.description,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: KabukTheme.textSecondary,
+                        style: TextStyle(
+                          color: context.kabukTextSecondary,
                           fontSize: 12,
                         ),
                       ),
@@ -282,8 +283,8 @@ class _ServiceProviderDetailPageState
                       const SizedBox(height: 2),
                       Text(
                         provider.description,
-                        style: const TextStyle(
-                          color: KabukTheme.textSecondary,
+                        style: TextStyle(
+                          color: context.kabukTextSecondary,
                           fontSize: 13,
                         ),
                       ),
@@ -302,9 +303,9 @@ class _ServiceProviderDetailPageState
               vertical: KabukTheme.spacingSm,
             ),
             decoration: BoxDecoration(
-              color: KabukTheme.cardColor,
+              color: context.kabukCardColor,
               borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
-              border: Border.all(color: KabukTheme.divider, width: 0.5),
+              border: Border.all(color: context.kabukDivider, width: 0.5),
             ),
             child: Row(
               children: [
@@ -344,7 +345,7 @@ class _ServiceProviderDetailPageState
           const SizedBox(height: KabukTheme.spacingXs),
           TextFormField(
             controller: _usernameController,
-            style: const TextStyle(color: KabukTheme.textPrimary, fontSize: 14),
+            style: TextStyle(color: context.kabukTextPrimary, fontSize: 14),
             decoration: const InputDecoration(hintText: 'Optional'),
           ),
           const SizedBox(height: KabukTheme.spacingMd),
@@ -357,14 +358,14 @@ class _ServiceProviderDetailPageState
             obscureText: _obscureApiKey,
             autocorrect: false,
             enableSuggestions: false,
-            style: const TextStyle(color: KabukTheme.textPrimary, fontSize: 14),
+            style: TextStyle(color: context.kabukTextPrimary, fontSize: 14),
             decoration: InputDecoration(
               hintText: 'Optional — required for some endpoints',
               suffixIcon: IconButton(
                 icon: Icon(
                   _obscureApiKey ? Icons.visibility_off : Icons.visibility,
                   size: 20,
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                 ),
                 onPressed: () =>
                     setState(() => _obscureApiKey = !_obscureApiKey),
@@ -378,7 +379,7 @@ class _ServiceProviderDetailPageState
           const SizedBox(height: KabukTheme.spacingXs),
           TextFormField(
             controller: _baseUrlController,
-            style: const TextStyle(color: KabukTheme.textPrimary, fontSize: 14),
+            style: TextStyle(color: context.kabukTextPrimary, fontSize: 14),
             keyboardType: TextInputType.url,
             decoration: InputDecoration(
               hintText: provider.baseUrl ?? 'https://...',
@@ -408,8 +409,8 @@ class _ServiceProviderDetailPageState
 
   Widget _buildLabel(String label) => Text(
     label,
-    style: const TextStyle(
-      color: KabukTheme.textSecondary,
+    style: TextStyle(
+      color: context.kabukTextSecondary,
       fontSize: 12,
       fontWeight: FontWeight.w600,
       letterSpacing: 0.5,

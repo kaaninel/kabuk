@@ -10,15 +10,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:kabuk/config/providers.dart';
+import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/knowledge/types/organization.dart';
 import 'package:kabuk/knowledge/types/person.dart';
 import 'package:kabuk/knowledge/types/place.dart';
 import 'package:kabuk/knowledge/types/product.dart';
+import 'package:kabuk/ui/explore/article_card.dart';
 import 'package:kabuk/ui/theme.dart';
 
 // =============================================================================
 // Data providers
 // =============================================================================
+
+/// Loads [ArticleData] from the knowledge store by URI.
+final articleDataProvider =
+    FutureProvider.family<ArticleData?, String>((ref, uri) async {
+  final store = ref.read(knowledgeStoreProvider);
+  return store.getArticleData(uri);
+});
 
 /// Loads [PersonData] from the knowledge store by URI.
 final personDataProvider =
@@ -73,12 +82,60 @@ class SemanticEntityCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return switch (entityType) {
+      'Article' || 'WebPage' => _ArticleEntityCard(uri: entityUri),
       'Person' => PersonCard(uri: entityUri),
       'Product' => ProductCard(uri: entityUri),
       'Place' => PlaceCard(uri: entityUri),
       'Organization' => OrganizationCard(uri: entityUri),
       _ => _UnknownEntityCard(uri: entityUri, type: entityType),
     };
+  }
+}
+
+class _ArticleEntityCard extends ConsumerWidget {
+  const _ArticleEntityCard({required this.uri});
+
+  final String uri;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final asyncData = ref.watch(articleDataProvider(uri));
+    return asyncData.when(
+      data: (article) {
+        if (article == null) return const SizedBox.shrink();
+        return ArticleCard(article: article);
+      },
+      loading: () => const _LoadingCard(),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+}
+
+/// Simple shimmer-like loading placeholder.
+class _LoadingCard extends StatelessWidget {
+  const _LoadingCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 120,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: context.kabukCardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.kabukDivider),
+      ),
+      child: Center(
+        child: SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: context.kabukTextTertiary,
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -416,7 +473,10 @@ class PlaceCard extends ConsumerWidget {
                         ),
                       ],
                       if (place.latitude != null &&
-                          place.longitude != null) ...[
+                          place.longitude != null &&
+                          // Hide zero coordinates — indicates missing data.
+                          (place.latitude != 0.0 ||
+                              place.longitude != 0.0)) ...[
                         const SizedBox(height: 4),
                         Text(
                           '${place.latitude!.toStringAsFixed(4)}, '

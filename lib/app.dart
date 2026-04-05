@@ -71,7 +71,7 @@ class OnboardingCompleteNotifier extends StateNotifier<bool> {
 
 /// Root application widget.
 ///
-/// Configures [MaterialApp] with the Kabuk dark theme.
+/// Configures [MaterialApp] with the user's preferred theme.
 /// Shows [OnboardingView] on first launch, then [KabukShell].
 class KabukApp extends ConsumerWidget {
   /// Creates the [KabukApp].
@@ -80,11 +80,14 @@ class KabukApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final onboardingDone = ref.watch(onboardingCompleteProvider);
+    final themeMode = ref.watch(themeModeProvider);
 
     return MaterialApp(
       title: 'Kabuk',
       debugShowCheckedModeBanner: false,
-      theme: KabukTheme.darkTheme,
+      theme: KabukTheme.lightTheme,
+      darkTheme: KabukTheme.darkTheme,
+      themeMode: themeMode,
       home: onboardingDone
           ? const KabukShell()
           : OnboardingView(

@@ -69,7 +69,7 @@ class _MediaGalleryViewState extends ConsumerState<MediaGalleryView> {
               }
               return RefreshIndicator(
                 color: KabukTheme.accentGreen,
-                backgroundColor: KabukTheme.surface,
+                backgroundColor: context.kabukSurface,
                 onRefresh: () async {
                   ref.invalidate(mediaListProvider);
                   widget.onRefresh();
@@ -182,14 +182,14 @@ class _MediaToolbar extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: isActive
                               ? KabukTheme.accentGreen.withAlpha(30)
-                              : KabukTheme.surface,
+                              : context.kabukSurface,
                           borderRadius: BorderRadius.circular(
                             KabukTheme.radiusXl,
                           ),
                           border: Border.all(
                             color: isActive
                                 ? KabukTheme.accentGreen
-                                : KabukTheme.divider,
+                                : context.kabukDivider,
                             width: 1,
                           ),
                         ),
@@ -198,7 +198,7 @@ class _MediaToolbar extends StatelessWidget {
                           style: TextStyle(
                             color: isActive
                                 ? KabukTheme.accentGreen
-                                : KabukTheme.textSecondary,
+                                : context.kabukTextSecondary,
                             fontSize: 12,
                             fontWeight: isActive
                                 ? FontWeight.w700
@@ -270,10 +270,10 @@ class _CaptureButton extends StatelessWidget {
             width: 32,
             height: 32,
             decoration: BoxDecoration(
-              color: KabukTheme.surfaceVariant,
+              color: context.kabukSurfaceVariant,
               borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
             ),
-            child: Icon(icon, size: 16, color: KabukTheme.textSecondary),
+            child: Icon(icon, size: 16, color: context.kabukTextSecondary),
           ),
         ),
       ),
@@ -337,7 +337,7 @@ class _MediaTile extends StatelessWidget {
   void _showMediaInfoSheet(BuildContext context, IconData icon) {
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: KabukTheme.surface,
+      backgroundColor: context.kabukSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
           top: Radius.circular(KabukTheme.radiusXl),
@@ -353,8 +353,8 @@ class _MediaTile extends StatelessWidget {
             if (media.name != null)
               Text(
                 media.name!,
-                style: const TextStyle(
-                  color: KabukTheme.textPrimary,
+                style: TextStyle(
+                  color: context.kabukTextPrimary,
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                 ),
@@ -364,8 +364,8 @@ class _MediaTile extends StatelessWidget {
               const SizedBox(height: KabukTheme.spacingSm),
               Text(
                 'Duration: ${media.duration}',
-                style: const TextStyle(
-                  color: KabukTheme.textSecondary,
+                style: TextStyle(
+                  color: context.kabukTextSecondary,
                   fontSize: 13,
                 ),
               ),
@@ -374,8 +374,8 @@ class _MediaTile extends StatelessWidget {
               const SizedBox(height: KabukTheme.spacingXs),
               Text(
                 'Size: ${media.contentSize}',
-                style: const TextStyle(
-                  color: KabukTheme.textSecondary,
+                style: TextStyle(
+                  color: context.kabukTextSecondary,
                   fontSize: 13,
                 ),
               ),
@@ -384,8 +384,8 @@ class _MediaTile extends StatelessWidget {
               const SizedBox(height: KabukTheme.spacingXs),
               Text(
                 'Format: ${media.encodingFormat}',
-                style: const TextStyle(
-                  color: KabukTheme.textSecondary,
+                style: TextStyle(
+                  color: context.kabukTextSecondary,
                   fontSize: 13,
                 ),
               ),
@@ -404,12 +404,12 @@ class _MediaTile extends StatelessWidget {
       child: ClipRRect(
       borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
       child: Container(
-        color: KabukTheme.surface,
+        color: context.kabukSurface,
         child: Stack(
           fit: StackFit.expand,
           children: [
             // Thumbnail or icon.
-            _buildThumbnail(),
+            _buildThumbnail(context),
 
             // Type badge.
             if (media.type != MediaType.image)
@@ -483,7 +483,7 @@ class _MediaTile extends StatelessWidget {
     );
   }
 
-  Widget _buildThumbnail() {
+  Widget _buildThumbnail(BuildContext context) {
     // Try to show image thumbnail.
     if (media.type == MediaType.image && media.contentUrl != null) {
       final file = File(media.contentUrl!);
@@ -502,7 +502,7 @@ class _MediaTile extends StatelessWidget {
       child: Icon(
         _typeIcon(media.type),
         size: 28,
-        color: KabukTheme.textTertiary,
+        color: context.kabukTextTertiary,
       ),
     );
   }
@@ -558,13 +558,13 @@ class _MediaEmptyState extends StatelessWidget {
             Icon(
               icon,
               size: 64,
-              color: KabukTheme.textSecondary.withAlpha(128),
+              color: context.kabukTextSecondary.withAlpha(128),
             ),
             const SizedBox(height: KabukTheme.spacingMd),
             Text(
               title,
-              style: const TextStyle(
-                color: KabukTheme.textSecondary,
+              style: TextStyle(
+                color: context.kabukTextSecondary,
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
               ),
@@ -574,7 +574,7 @@ class _MediaEmptyState extends StatelessWidget {
             Text(
               subtitle,
               style: TextStyle(
-                color: KabukTheme.textSecondary.withAlpha(180),
+                color: context.kabukTextSecondary.withAlpha(180),
                 fontSize: 14,
               ),
               textAlign: TextAlign.center,

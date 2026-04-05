@@ -16,61 +16,61 @@ import 'package:kabuk/ui/theme.dart';
 MarkdownStyleSheet kabukMarkdownStyle(BuildContext context) {
   return MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
     // Body text.
-    p: const TextStyle(
-      color: KabukTheme.textPrimary,
+    p: TextStyle(
+      color: context.kabukTextPrimary,
       fontSize: 14,
       height: 1.55,
     ),
     // Headings.
-    h1: const TextStyle(
-      color: KabukTheme.textPrimary,
+    h1: TextStyle(
+      color: context.kabukTextPrimary,
       fontSize: 24,
       fontWeight: FontWeight.w700,
       height: 1.3,
       letterSpacing: -0.3,
     ),
-    h2: const TextStyle(
-      color: KabukTheme.textPrimary,
+    h2: TextStyle(
+      color: context.kabukTextPrimary,
       fontSize: 20,
       fontWeight: FontWeight.w700,
       height: 1.3,
     ),
-    h3: const TextStyle(
-      color: KabukTheme.textPrimary,
+    h3: TextStyle(
+      color: context.kabukTextPrimary,
       fontSize: 17,
       fontWeight: FontWeight.w600,
       height: 1.3,
     ),
-    h4: const TextStyle(
-      color: KabukTheme.textPrimary,
+    h4: TextStyle(
+      color: context.kabukTextPrimary,
       fontSize: 15,
       fontWeight: FontWeight.w600,
       height: 1.3,
     ),
-    h5: const TextStyle(
-      color: KabukTheme.textSecondary,
+    h5: TextStyle(
+      color: context.kabukTextSecondary,
       fontSize: 14,
       fontWeight: FontWeight.w600,
       height: 1.3,
     ),
-    h6: const TextStyle(
-      color: KabukTheme.textSecondary,
+    h6: TextStyle(
+      color: context.kabukTextSecondary,
       fontSize: 13,
       fontWeight: FontWeight.w600,
       height: 1.3,
     ),
     // Inline code.
-    code: const TextStyle(
+    code: TextStyle(
       color: KabukTheme.accentGreen,
-      backgroundColor: KabukTheme.surfaceVariant,
+      backgroundColor: context.kabukSurfaceVariant,
       fontFamily: 'SF Mono',
       fontSize: 13,
     ),
     // Code blocks.
     codeblockDecoration: BoxDecoration(
-      color: KabukTheme.surfaceVariant,
+      color: context.kabukSurfaceVariant,
       borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
-      border: Border.all(color: KabukTheme.divider, width: 0.5),
+      border: Border.all(color: context.kabukDivider, width: 0.5),
     ),
     codeblockPadding: const EdgeInsets.all(KabukTheme.spacingSm + 4),
     // Block quotes.
@@ -86,8 +86,8 @@ MarkdownStyleSheet kabukMarkdownStyle(BuildContext context) {
       KabukTheme.spacingSm,
       KabukTheme.spacingSm,
     ),
-    blockquote: const TextStyle(
-      color: KabukTheme.textSecondary,
+    blockquote: TextStyle(
+      color: context.kabukTextSecondary,
       fontSize: 14,
       height: 1.55,
       fontStyle: FontStyle.italic,
@@ -101,34 +101,34 @@ MarkdownStyleSheet kabukMarkdownStyle(BuildContext context) {
     // Lists.
     listBullet: const TextStyle(color: KabukTheme.accentGreen, fontSize: 14),
     // Table styling.
-    tableHead: const TextStyle(
-      color: KabukTheme.textPrimary,
+    tableHead: TextStyle(
+      color: context.kabukTextPrimary,
       fontWeight: FontWeight.w600,
       fontSize: 13,
     ),
-    tableBody: const TextStyle(color: KabukTheme.textPrimary, fontSize: 13),
-    tableBorder: TableBorder.all(color: KabukTheme.divider, width: 0.5),
+    tableBody: TextStyle(color: context.kabukTextPrimary, fontSize: 13),
+    tableBorder: TableBorder.all(color: context.kabukDivider, width: 0.5),
     tableHeadAlign: TextAlign.left,
     tableCellsPadding: const EdgeInsets.symmetric(
       horizontal: KabukTheme.spacingSm,
       vertical: KabukTheme.spacingXs + 2,
     ),
     // Horizontal rule.
-    horizontalRuleDecoration: const BoxDecoration(
-      border: Border(top: BorderSide(color: KabukTheme.divider, width: 1)),
+    horizontalRuleDecoration: BoxDecoration(
+      border: Border(top: BorderSide(color: context.kabukDivider, width: 1)),
     ),
     // Emphasis.
-    em: const TextStyle(
+    em: TextStyle(
       fontStyle: FontStyle.italic,
-      color: KabukTheme.textPrimary,
+      color: context.kabukTextPrimary,
     ),
-    strong: const TextStyle(
+    strong: TextStyle(
       fontWeight: FontWeight.w700,
-      color: KabukTheme.textPrimary,
+      color: context.kabukTextPrimary,
     ),
-    del: const TextStyle(
+    del: TextStyle(
       decoration: TextDecoration.lineThrough,
-      color: KabukTheme.textSecondary,
+      color: context.kabukTextSecondary,
     ),
     // Checkbox.
     checkbox: const TextStyle(color: KabukTheme.accentGreen),

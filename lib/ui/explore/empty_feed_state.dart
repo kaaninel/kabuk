@@ -53,12 +53,12 @@ class EmptyFeedState extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: KabukTheme.spacingSm),
-            const Text(
+            Text(
               'Tap the search bar above to subscribe to\n'
               'Reddit, RSS feeds, or Nostr topics.',
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
                 fontSize: 14,
                 height: 1.5,
               ),
@@ -113,7 +113,7 @@ class EmptyFeedState extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: KabukTheme.surface,
+                color: context.kabukSurface,
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Column(
@@ -127,12 +127,12 @@ class EmptyFeedState extends StatelessWidget {
                         color: KabukTheme.warmAccent.withAlpha(180),
                       ),
                       const SizedBox(width: 8),
-                      const Text(
+                      Text(
                         'What you can do',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
-                          color: KabukTheme.textPrimary,
+                          color: context.kabukTextPrimary,
                         ),
                       ),
                     ],
@@ -217,9 +217,9 @@ class _HintRow extends StatelessWidget {
               ),
               Text(
                 subtitle,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
-                  color: KabukTheme.textTertiary,
+                  color: context.kabukTextTertiary,
                 ),
               ),
             ],

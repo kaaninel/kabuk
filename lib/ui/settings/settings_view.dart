@@ -16,8 +16,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kabuk/agents/llm.dart';
 import 'package:kabuk/config/constants.dart';
 import 'package:kabuk/config/providers.dart';
+import 'package:kabuk/plugins/registry.dart';
 import 'package:kabuk/ui/explore/explore_view.dart';
 import 'package:kabuk/ui/explore/usenet_settings_sheet.dart';
+import 'package:kabuk/ui/marketplace/marketplace_page.dart';
 import 'package:kabuk/ui/settings/dev_mode_page.dart';
 import 'package:kabuk/ui/settings/feed_sources_page.dart';
 import 'package:kabuk/ui/settings/identity_page.dart';
@@ -278,6 +280,58 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
           ],
           const SizedBox(height: KabukTheme.spacingLg),
 
+          // --- Plugins Section ---
+          const SettingsSectionHeader(
+            icon: Icons.extension_rounded,
+            title: 'Plugins',
+            color: KabukTheme.accentGreen,
+          ),
+          const SizedBox(height: KabukTheme.spacingSm),
+          Builder(builder: (context) {
+            final registry = ref.watch(pluginRegistryProvider);
+            final enabledIds = ref.watch(enabledPluginIdsProvider);
+            final enabledCount = enabledIds.length;
+            final totalCount = registry.availablePlugins.length;
+            return SettingsTile(
+              icon: Icons.store_outlined,
+              iconColor: KabukTheme.accentGreen,
+              title: 'Marketplace',
+              subtitle: enabledCount > 0
+                  ? '$enabledCount plugin${enabledCount > 1 ? 's' : ''} enabled'
+                  : '$totalCount plugins available',
+              trailing: enabledCount > 0
+                  ? Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: KabukTheme.accentGreen.withAlpha(15),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '$enabledCount/$totalCount',
+                        style: const TextStyle(
+                          color: KabukTheme.accentGreen,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    )
+                  : Icon(
+                      Icons.chevron_right,
+                      color: context.kabukTextSecondary,
+                      size: 20,
+                    ),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const MarketplacePage(),
+                ),
+              ),
+            );
+          }),
+          const SizedBox(height: KabukTheme.spacingLg),
+
           // --- Feed Sources Section ---
           const SettingsSectionHeader(
             icon: Icons.rss_feed_rounded,
@@ -348,6 +402,113 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
                 builder: (_) => const UsenetSettingsPage(),
               ),
             ),
+          ),
+          const SizedBox(height: KabukTheme.spacingLg),
+
+          // --- Media Metadata Section ---
+          const SettingsSectionHeader(
+            icon: Icons.movie_rounded,
+            title: 'Media Metadata',
+            color: KabukTheme.purpleAccent,
+          ),
+          const SizedBox(height: KabukTheme.spacingSm),
+          SettingsTile(
+            icon: Icons.theaters_rounded,
+            iconColor: KabukTheme.purpleAccent,
+            title: 'TMDB API Key',
+            subtitle: ref.watch(tmdbApiKeyProvider) != null
+                ? 'Configured'
+                : 'Not set',
+            trailing: Semantics(
+              label: ref.watch(tmdbApiKeyProvider) != null
+                  ? 'Configured'
+                  : 'Not configured',
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: ref.watch(tmdbApiKeyProvider) != null
+                      ? KabukTheme.success
+                      : context.kabukTextSecondary,
+                ),
+              ),
+            ),
+            onTap: () => _showApiKeyDialog(
+              context,
+              ref,
+              title: 'TMDB API Key',
+              hint: 'Enter your TMDB API key',
+              provider: tmdbApiKeyProvider,
+            ),
+          ),
+          const SizedBox(height: KabukTheme.spacingSm),
+          SettingsTile(
+            icon: Icons.live_tv_rounded,
+            iconColor: KabukTheme.purpleAccent,
+            title: 'TVDB API Key',
+            subtitle: ref.watch(tvdbApiKeyProvider) != null
+                ? 'Configured'
+                : 'Not set',
+            trailing: Semantics(
+              label: ref.watch(tvdbApiKeyProvider) != null
+                  ? 'Configured'
+                  : 'Not configured',
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: ref.watch(tvdbApiKeyProvider) != null
+                      ? KabukTheme.success
+                      : context.kabukTextSecondary,
+                ),
+              ),
+            ),
+            onTap: () => _showApiKeyDialog(
+              context,
+              ref,
+              title: 'TVDB API Key',
+              hint: 'Enter your TVDB API key',
+              provider: tvdbApiKeyProvider,
+            ),
+          ),
+          const SizedBox(height: KabukTheme.spacingSm),
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: KabukTheme.spacingMd,
+            ),
+            child: Text(
+              'Free API keys from themoviedb.org and thetvdb.com',
+              style: TextStyle(
+                fontSize: 11,
+                color: context.kabukTextTertiary,
+              ),
+            ),
+          ),
+          const SizedBox(height: KabukTheme.spacingLg),
+
+          // --- Explore Section ---
+          const SettingsSectionHeader(
+            icon: Icons.explore_rounded,
+            title: 'Explore',
+            color: KabukTheme.accentGreen,
+          ),
+          const SizedBox(height: KabukTheme.spacingSm),
+          SettingsTile(
+            icon: Icons.language_rounded,
+            iconColor: KabukTheme.accentGreen,
+            title: 'Open HTTP links in Classic Web',
+            subtitle: 'Use browser mode for web content',
+            trailing: Switch(
+              value: ref.watch(preferClassicWebProvider),
+              onChanged: (v) =>
+                  ref.read(preferClassicWebProvider.notifier).state = v,
+            ),
+            onTap: () {
+              final notifier = ref.read(preferClassicWebProvider.notifier);
+              notifier.state = !notifier.state;
+            },
           ),
           const SizedBox(height: KabukTheme.spacingLg),
 
@@ -570,6 +731,44 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
   bool _hasConnectedRelays() {
     final nostr = ref.watch(nostrServiceProvider);
     return nostr.connectedRelays.isNotEmpty;
+  }
+
+  /// Shows a dialog for entering or updating an API key.
+  Future<void> _showApiKeyDialog(
+    BuildContext context,
+    WidgetRef ref, {
+    required String title,
+    required String hint,
+    required NotifierProvider<MediaApiKeyNotifier, String?> provider,
+  }) async {
+    final controller = TextEditingController(text: ref.read(provider));
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          decoration: InputDecoration(
+            hintText: hint,
+            border: const OutlineInputBorder(),
+          ),
+          obscureText: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (result != null && result.isNotEmpty) {
+      await ref.read(provider.notifier).setKey(result);
+    }
   }
 }
 

@@ -66,7 +66,7 @@ class _QuickPeekSheetState extends ConsumerState<QuickPeekSheet> {
     _currentTitle = widget.title ?? '';
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(KabukTheme.surface)
+      ..setBackgroundColor(context.kabukSurface)
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageStarted: (_) {
@@ -126,8 +126,8 @@ class _QuickPeekSheetState extends ConsumerState<QuickPeekSheet> {
     return SizedBox(
       height: screenHeight * 0.9,
       child: Container(
-        decoration: const BoxDecoration(
-          color: KabukTheme.surface,
+        decoration: BoxDecoration(
+          color: context.kabukSurface,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: Column(
@@ -370,8 +370,8 @@ class _SubredditPeekSheetState extends ConsumerState<SubredditPeekSheet> {
       maxChildSize: 0.95,
       builder: (context, scrollController) {
         return Container(
-          decoration: const BoxDecoration(
-            color: KabukTheme.surface,
+          decoration: BoxDecoration(
+            color: context.kabukSurface,
             borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
           ),
           child: Column(
@@ -404,11 +404,11 @@ class _SubredditPeekSheetState extends ConsumerState<SubredditPeekSheet> {
                       label: Text(_isFollowed ? 'Unfollow' : 'Follow'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: _isFollowed
-                            ? KabukTheme.textSecondary
+                            ? context.kabukTextSecondary
                             : KabukTheme.accentGreen,
                         side: BorderSide(
                           color: _isFollowed
-                              ? KabukTheme.divider
+                              ? context.kabukDivider
                               : KabukTheme.accentGreen.withAlpha(150),
                         ),
                         padding: const EdgeInsets.symmetric(
@@ -425,7 +425,7 @@ class _SubredditPeekSheetState extends ConsumerState<SubredditPeekSheet> {
                   ],
                 ),
               ),
-              const Divider(height: 1, color: KabukTheme.divider),
+              Divider(height: 1, color: context.kabukDivider),
               // Content.
               Expanded(child: _buildContent(scrollController)),
             ],
@@ -458,21 +458,21 @@ class _SubredditPeekSheetState extends ConsumerState<SubredditPeekSheet> {
                 color: KabukTheme.error.withAlpha(180),
               ),
               const SizedBox(height: 12),
-              const Text(
+              Text(
                 'Failed to load',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: KabukTheme.textPrimary,
+                  color: context.kabukTextPrimary,
                 ),
               ),
               const SizedBox(height: 8),
               Text(
                 _error!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                 ),
               ),
               const SizedBox(height: 16),
@@ -492,10 +492,10 @@ class _SubredditPeekSheetState extends ConsumerState<SubredditPeekSheet> {
 
     final items = _items;
     if (items == null || items.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           'No posts found',
-          style: TextStyle(color: KabukTheme.textSecondary),
+          style: TextStyle(color: context.kabukTextSecondary),
         ),
       );
     }
@@ -505,7 +505,7 @@ class _SubredditPeekSheetState extends ConsumerState<SubredditPeekSheet> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       itemCount: items.length,
       separatorBuilder: (_, _) =>
-          const Divider(height: 1, color: KabukTheme.divider),
+          Divider(height: 1, color: context.kabukDivider),
       itemBuilder: (context, index) => _SubredditPostTile(item: items[index]),
     );
   }
@@ -586,7 +586,7 @@ class _PeekUrlDialogState extends State<PeekUrlDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      backgroundColor: KabukTheme.surface,
+      backgroundColor: context.kabukSurface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 120),
       child: Padding(
@@ -612,21 +612,21 @@ class _PeekUrlDialogState extends State<PeekUrlDialog> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                const Text(
+                Text(
                   'Quick Peek',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
-                    color: KabukTheme.textPrimary,
+                    color: context.kabukTextPrimary,
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 16),
             // Hint text.
-            const Text(
+            Text(
               'Enter a URL or subreddit to preview:',
-              style: TextStyle(fontSize: 13, color: KabukTheme.textSecondary),
+              style: TextStyle(fontSize: 13, color: context.kabukTextSecondary),
             ),
             const SizedBox(height: 12),
             // Input field.
@@ -639,21 +639,21 @@ class _PeekUrlDialogState extends State<PeekUrlDialog> {
               autocorrect: false,
               decoration: InputDecoration(
                 hintText: 'https://example.com or r/flutter',
-                hintStyle: const TextStyle(
-                  color: KabukTheme.textTertiary,
+                hintStyle: TextStyle(
+                  color: context.kabukTextTertiary,
                   fontSize: 14,
                 ),
-                prefixIcon: const Icon(
+                prefixIcon: Icon(
                   Icons.link_rounded,
                   size: 20,
-                  color: KabukTheme.textTertiary,
+                  color: context.kabukTextTertiary,
                 ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
                   borderSide: BorderSide.none,
                 ),
                 filled: true,
-                fillColor: KabukTheme.surfaceVariant,
+                fillColor: context.kabukSurfaceVariant,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 16,
                   vertical: 14,
@@ -669,7 +669,7 @@ class _PeekUrlDialogState extends State<PeekUrlDialog> {
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(),
                   style: TextButton.styleFrom(
-                    foregroundColor: KabukTheme.textSecondary,
+                    foregroundColor: context.kabukTextSecondary,
                   ),
                   child: const Text('Cancel'),
                 ),
@@ -713,7 +713,7 @@ class _DragHandle extends StatelessWidget {
         width: 36,
         height: 4,
         decoration: BoxDecoration(
-          color: KabukTheme.textTertiary.withAlpha(80),
+          color: context.kabukTextTertiary.withAlpha(80),
           borderRadius: BorderRadius.circular(2),
         ),
       ),
@@ -758,10 +758,10 @@ class _PeekHeader extends StatelessWidget {
           Expanded(
             child: Text(
               title,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
-                color: KabukTheme.textPrimary,
+                color: context.kabukTextPrimary,
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -794,10 +794,10 @@ class _PeekHeader extends StatelessWidget {
           // Refresh button.
           if (onRefresh != null)
             IconButton(
-              icon: const Icon(
+              icon: Icon(
                 Icons.refresh_rounded,
                 size: 20,
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
               ),
               onPressed: onRefresh,
               tooltip: 'Refresh',
@@ -806,10 +806,10 @@ class _PeekHeader extends StatelessWidget {
           // Open in browser.
           if (onOpenExternal != null)
             IconButton(
-              icon: const Icon(
+              icon: Icon(
                 Icons.open_in_new_rounded,
                 size: 20,
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
               ),
               onPressed: onOpenExternal,
               tooltip: 'Open in browser',
@@ -817,10 +817,10 @@ class _PeekHeader extends StatelessWidget {
             ),
           // Close.
           IconButton(
-            icon: const Icon(
+            icon: Icon(
               Icons.close_rounded,
               size: 20,
-              color: KabukTheme.textSecondary,
+              color: context.kabukTextSecondary,
             ),
             onPressed: onClose,
             tooltip: 'Close',
@@ -878,11 +878,11 @@ class _SubredditPostTile extends StatelessWidget {
                   // Title.
                   Text(
                     item.title,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       height: 1.3,
-                      color: KabukTheme.textPrimary,
+                      color: context.kabukTextPrimary,
                     ),
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
@@ -894,9 +894,9 @@ class _SubredditPostTile extends StatelessWidget {
                       if (item.author != null) ...[
                         Text(
                           item.author!,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
-                            color: KabukTheme.textTertiary,
+                            color: context.kabukTextTertiary,
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -904,9 +904,9 @@ class _SubredditPostTile extends StatelessWidget {
                       if (item.datePublished != null)
                         Text(
                           _formatTimeAgo(item.datePublished!),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
-                            color: KabukTheme.textTertiary,
+                            color: context.kabukTextTertiary,
                           ),
                         ),
                     ],
@@ -919,10 +919,10 @@ class _SubredditPostTile extends StatelessWidget {
                       padding: const EdgeInsets.only(top: 4),
                       child: Text(
                         _cleanDescription(item.description!),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
                           height: 1.3,
-                          color: KabukTheme.textSecondary,
+                          color: context.kabukTextSecondary,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -932,12 +932,12 @@ class _SubredditPostTile extends StatelessWidget {
               ),
             ),
             // Peek indicator.
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(top: 2, left: 4),
               child: Icon(
                 Icons.chevron_right_rounded,
                 size: 20,
-                color: KabukTheme.textTertiary,
+                color: context.kabukTextTertiary,
               ),
             ),
           ],

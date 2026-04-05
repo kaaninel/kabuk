@@ -165,7 +165,7 @@ class MarkdownEditorState extends State<MarkdownEditor> {
 
   Widget _buildEditor() {
     return Container(
-      color: KabukTheme.surfaceElevated,
+      color: context.kabukSurfaceElevated,
       child: TextField(
         controller: _controller,
         focusNode: _focusNode,
@@ -181,16 +181,16 @@ class MarkdownEditorState extends State<MarkdownEditor> {
         textAlignVertical: TextAlignVertical.top,
         textCapitalization: TextCapitalization.sentences,
         onTap: widget.onTap,
-        style: const TextStyle(
-          color: KabukTheme.textPrimary,
+        style: TextStyle(
+          color: context.kabukTextPrimary,
           fontSize: 15,
           height: 1.65,
           fontFamily: 'SF Mono',
         ),
         decoration: InputDecoration(
           hintText: widget.hintText,
-          hintStyle: const TextStyle(
-            color: KabukTheme.textTertiary,
+          hintStyle: TextStyle(
+            color: context.kabukTextTertiary,
             fontSize: 15,
             fontFamily: 'SF Mono',
           ),
@@ -209,18 +209,18 @@ class MarkdownEditorState extends State<MarkdownEditor> {
 
     if (content.trim().isEmpty) {
       return Container(
-        color: KabukTheme.surfaceElevated,
-        child: const Center(
+        color: context.kabukSurfaceElevated,
+        child: Center(
           child: Text(
             'Nothing to preview',
-            style: TextStyle(color: KabukTheme.textTertiary, fontSize: 14),
+            style: TextStyle(color: context.kabukTextTertiary, fontSize: 14),
           ),
         ),
       );
     }
 
     return Container(
-      color: KabukTheme.surfaceElevated,
+      color: context.kabukSurfaceElevated,
       child: KabukMarkdownBlock(
         data: content,
         padding: const EdgeInsets.all(KabukTheme.spacingMd),
@@ -280,12 +280,12 @@ class InlineMarkdownEditor extends StatelessWidget {
       maxLines: maxLines,
       minLines: minLines,
       keyboardType: TextInputType.multiline,
-      style: const TextStyle(color: KabukTheme.textPrimary),
+      style: TextStyle(color: context.kabukTextPrimary),
       decoration: InputDecoration(
         hintText: hintText,
-        hintStyle: const TextStyle(color: KabukTheme.textSecondary),
+        hintStyle: TextStyle(color: context.kabukTextSecondary),
         filled: true,
-        fillColor: KabukTheme.surfaceVariant,
+        fillColor: context.kabukSurfaceVariant,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: KabukTheme.spacingMd,
           vertical: KabukTheme.spacingSm,

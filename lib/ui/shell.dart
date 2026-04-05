@@ -421,6 +421,10 @@ class _ClassicNavItem extends StatelessWidget {
 // ─── Compact ─────────────────────────────────────────────────────────────────
 
 /// Compact nav bar with small icons, no labels, and a centered AI dot.
+///
+/// Supports horizontal swipe gestures for tab switching (same UX as
+/// the pill indicator bar). Touch targets meet Material 3 minimum
+/// sizing guidelines (48 dp).
 class _CompactNavBar extends StatelessWidget {
   const _CompactNavBar({
     required this.selectedTab,
@@ -436,67 +440,89 @@ class _CompactNavBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final bgColor = isDark ? context.kabukSurface : KabukTheme.lightSurfaceElevated;
+    final bgColor =
+        isDark ? context.kabukSurface : KabukTheme.lightSurfaceElevated;
     final unselectedColor = context.kabukTextTertiary;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: bgColor,
-        border: Border(
-          top: BorderSide(
-            color: context.kabukDivider,
-            width: 0.5,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragEnd: (details) {
+        final velocity = details.primaryVelocity ?? 0;
+        if (velocity < -100) {
+          onSwitchTab(selectedTab + 1);
+        } else if (velocity > 100) {
+          onSwitchTab(selectedTab - 1);
+        }
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: bgColor,
+          border: Border(
+            top: BorderSide(
+              color: context.kabukDivider,
+              width: 0.5,
+            ),
           ),
         ),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
+        child: SafeArea(
+          top: false,
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               for (var i = 0; i < 4; i++) ...[
                 if (i == 2)
                   GestureDetector(
+                    behavior: HitTestBehavior.opaque,
                     onTap: onAiTap,
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      decoration: const BoxDecoration(
-                        color: KabukTheme.primaryGreen,
-                        shape: BoxShape.circle,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 8,
                       ),
-                      child: const Icon(
-                        Icons.smart_toy_rounded,
-                        color: Colors.white,
-                        size: 16,
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: const BoxDecoration(
+                          color: KabukTheme.primaryGreen,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.smart_toy_rounded,
+                          color: Colors.white,
+                          size: 16,
+                        ),
                       ),
                     ),
                   ),
-                GestureDetector(
-                  onTap: () => onSwitchTab(i),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          _tabIcons[i],
-                          size: 20,
-                          color: selectedTab == i ? _tabColors[i] : unselectedColor,
-                        ),
-                        const SizedBox(height: 2),
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          width: selectedTab == i ? 16 : 0,
-                          height: 2,
-                          decoration: BoxDecoration(
-                            color: selectedTab == i ? _tabColors[i] : Colors.transparent,
-                            borderRadius: BorderRadius.circular(1),
+                Expanded(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => onSwitchTab(i),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _tabIcons[i],
+                            size: 20,
+                            color: selectedTab == i
+                                ? _tabColors[i]
+                                : unselectedColor,
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 2),
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            width: selectedTab == i ? 16 : 0,
+                            height: 2,
+                            decoration: BoxDecoration(
+                              color: selectedTab == i
+                                  ? _tabColors[i]
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(1),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),

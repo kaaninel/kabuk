@@ -472,7 +472,7 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: KabukTheme.background,
+      backgroundColor: context.kabukBackground,
       body: SafeArea(
         bottom: false,
         child: Column(
@@ -519,7 +519,7 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
       width: isActive ? 24 : 8,
       height: 8,
       decoration: BoxDecoration(
-        color: isActive ? KabukTheme.accentGreen : KabukTheme.divider,
+        color: isActive ? KabukTheme.accentGreen : context.kabukDivider,
         borderRadius: BorderRadius.circular(4),
       ),
     );
@@ -548,7 +548,7 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
             Container(
               padding: const EdgeInsets.all(KabukTheme.spacingMd),
               decoration: BoxDecoration(
-                color: KabukTheme.surfaceVariant,
+                color: context.kabukSurfaceVariant,
                 borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
               ),
               child: Column(
@@ -568,8 +568,8 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
                         child: Text(
                           'Downloading ${_recommendedModel!.name} '
                           '(${_recommendedModel!.formattedSize})...',
-                          style: const TextStyle(
-                            color: KabukTheme.textSecondary,
+                          style: TextStyle(
+                            color: context.kabukTextSecondary,
                             fontSize: 13,
                           ),
                         ),
@@ -581,7 +581,7 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
                     borderRadius: BorderRadius.circular(4),
                     child: LinearProgressIndicator(
                       value: _downloadProgress,
-                      backgroundColor: KabukTheme.divider,
+                      backgroundColor: context.kabukDivider,
                       color: KabukTheme.accentGreen,
                       minHeight: 6,
                     ),
@@ -591,8 +591,8 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
                     alignment: Alignment.centerRight,
                     child: Text(
                       '${(_downloadProgress * 100).toStringAsFixed(0)}%',
-                      style: const TextStyle(
-                        color: KabukTheme.textSecondary,
+                      style: TextStyle(
+                        color: context.kabukTextSecondary,
                         fontSize: 11,
                       ),
                     ),
@@ -687,21 +687,21 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
             ),
             const SizedBox(height: KabukTheme.spacingMd),
 
-            const Text(
+            Text(
               'Configure AI',
               style: TextStyle(
-                color: KabukTheme.textPrimary,
+                color: context.kabukTextPrimary,
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
               ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: KabukTheme.spacingSm),
-            const Text(
+            Text(
               'Connect an LLM provider so agents can understand '
               'your requests and respond intelligently.',
               style: TextStyle(
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
                 fontSize: 14,
                 height: 1.4,
               ),
@@ -734,7 +734,7 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
                   if (states.contains(WidgetState.selected)) {
                     return KabukTheme.accentGreen;
                   }
-                  return KabukTheme.textSecondary;
+                  return context.kabukTextSecondary;
                 }),
               ),
             ),
@@ -752,8 +752,8 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
                 obscureText: _obscureApiKey,
                 autocorrect: false,
                 enableSuggestions: false,
-                style: const TextStyle(
-                  color: KabukTheme.textPrimary,
+                style: TextStyle(
+                  color: context.kabukTextPrimary,
                   fontSize: 14,
                 ),
                 decoration: InputDecoration(
@@ -761,13 +761,13 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
                       ? 'sk-ant-...'
                       : 'sk-...',
                   hintStyle: TextStyle(
-                    color: KabukTheme.textSecondary.withAlpha(100),
+                    color: context.kabukTextSecondary.withAlpha(100),
                   ),
                   suffixIcon: IconButton(
                     icon: Icon(
                       _obscureApiKey ? Icons.visibility_off : Icons.visibility,
                       size: 20,
-                      color: KabukTheme.textSecondary,
+                      color: context.kabukTextSecondary,
                     ),
                     onPressed: () =>
                         setState(() => _obscureApiKey = !_obscureApiKey),
@@ -791,14 +791,14 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
               const SizedBox(height: KabukTheme.spacingSm),
               TextFormField(
                 controller: _modelController,
-                style: const TextStyle(
-                  color: KabukTheme.textPrimary,
+                style: TextStyle(
+                  color: context.kabukTextPrimary,
                   fontSize: 14,
                 ),
                 decoration: InputDecoration(
                   hintText: _defaultModelFor(_provider),
                   hintStyle: TextStyle(
-                    color: KabukTheme.textSecondary.withAlpha(100),
+                    color: context.kabukTextSecondary.withAlpha(100),
                   ),
                 ),
               ),
@@ -835,8 +835,8 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
                 icon: const Icon(Icons.wifi_tethering, size: 18),
                 label: const Text('Test'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: KabukTheme.textPrimary,
-                  side: const BorderSide(color: KabukTheme.divider),
+                  foregroundColor: context.kabukTextPrimary,
+                  side: BorderSide(color: context.kabukDivider),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(
@@ -874,9 +874,9 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
         // Skip option.
         TextButton(
           onPressed: () => _goToPage(2),
-          child: const Text(
+          child: Text(
             'Skip for now',
-            style: TextStyle(color: KabukTheme.textSecondary, fontSize: 14),
+            style: TextStyle(color: context.kabukTextSecondary, fontSize: 14),
           ),
         ),
         const SizedBox(height: KabukTheme.spacingSm),
@@ -925,21 +925,21 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
           ),
           const SizedBox(height: KabukTheme.spacingMd),
 
-          const Text(
+          Text(
             'Back Up Your Key',
             style: TextStyle(
-              color: KabukTheme.textPrimary,
+              color: context.kabukTextPrimary,
               fontSize: 24,
               fontWeight: FontWeight.bold,
             ),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: KabukTheme.spacingSm),
-          const Text(
+          Text(
             'Your Nostr private key is the only way to access your '
             'account. If you lose it, your identity cannot be recovered.',
             style: TextStyle(
-              color: KabukTheme.textSecondary,
+              color: context.kabukTextSecondary,
               fontSize: 14,
               height: 1.4,
             ),
@@ -1064,15 +1064,15 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
                 onChanged: (v) =>
                     setState(() => _keyBackupAcknowledged = v ?? false),
                 activeColor: KabukTheme.accentGreen,
-                side: const BorderSide(color: KabukTheme.textSecondary),
+                side: BorderSide(color: context.kabukTextSecondary),
               ),
               const SizedBox(width: KabukTheme.spacingSm),
-              const Expanded(
+              Expanded(
                 child: Text(
                   'I\'ve saved my private key in a safe place.',
                   style: TextStyle(
                     fontSize: 13,
-                    color: KabukTheme.textPrimary,
+                    color: context.kabukTextPrimary,
                   ),
                 ),
               ),
@@ -1097,9 +1097,9 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
         const SizedBox(height: KabukTheme.spacingSm),
         TextButton(
           onPressed: () => _goToPage(3),
-          child: const Text(
+          child: Text(
             'Skip (I\'ll do this later in Settings)',
-            style: TextStyle(color: KabukTheme.textSecondary, fontSize: 13),
+            style: TextStyle(color: context.kabukTextSecondary, fontSize: 13),
           ),
         ),
         const SizedBox(height: KabukTheme.spacingSm),
@@ -1144,8 +1144,8 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
           const SizedBox(height: 4),
           Text(
             subtitle,
-            style: const TextStyle(
-              color: KabukTheme.textSecondary,
+            style: TextStyle(
+              color: context.kabukTextSecondary,
               fontSize: 11,
             ),
           ),
@@ -1235,13 +1235,13 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
             width: double.infinity,
             padding: const EdgeInsets.all(KabukTheme.spacingMd),
             decoration: BoxDecoration(
-              color: KabukTheme.surfaceVariant,
+              color: context.kabukSurfaceVariant,
               borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
-              border: Border.all(color: KabukTheme.divider.withAlpha(80)),
+              border: Border.all(color: context.kabukDivider.withAlpha(80)),
             ),
-            child: const Text(
+            child: Text(
               'No models installed yet. Download one below.',
-              style: TextStyle(color: KabukTheme.textSecondary, fontSize: 13),
+              style: TextStyle(color: context.kabukTextSecondary, fontSize: 13),
               textAlign: TextAlign.center,
             ),
           )
@@ -1252,11 +1252,11 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
         // Download section.
         _buildLabel('Download a Model'),
         const SizedBox(height: KabukTheme.spacingSm),
-        const Text(
+        Text(
           'Tiny models run on-device with no internet needed. '
           'Smaller models are faster but less capable.',
           style: TextStyle(
-            color: KabukTheme.textSecondary,
+            color: context.kabukTextSecondary,
             fontSize: 12,
             height: 1.3,
           ),
@@ -1281,12 +1281,12 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
           decoration: BoxDecoration(
             color: isSelected
                 ? KabukTheme.primaryGreen.withAlpha(20)
-                : KabukTheme.surfaceVariant,
+                : context.kabukSurfaceVariant,
             borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
             border: Border.all(
               color: isSelected
                   ? KabukTheme.accentGreen
-                  : KabukTheme.divider.withAlpha(80),
+                  : context.kabukDivider.withAlpha(80),
               width: isSelected ? 1.5 : 1,
             ),
           ),
@@ -1296,7 +1296,7 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
                 isSelected ? Icons.check_circle : Icons.circle_outlined,
                 color: isSelected
                     ? KabukTheme.accentGreen
-                    : KabukTheme.textSecondary,
+                    : context.kabukTextSecondary,
                 size: 20,
               ),
               const SizedBox(width: KabukTheme.spacingSm),
@@ -1306,8 +1306,8 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
                   children: [
                     Text(
                       model.name,
-                      style: const TextStyle(
-                        color: KabukTheme.textPrimary,
+                      style: TextStyle(
+                        color: context.kabukTextPrimary,
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
                       ),
@@ -1315,8 +1315,8 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
                     Text(
                       '${model.formattedSize}'
                       '${model.quantization != null ? ' \u00b7 ${model.quantization}' : ''}',
-                      style: const TextStyle(
-                        color: KabukTheme.textSecondary,
+                      style: TextStyle(
+                        color: context.kabukTextSecondary,
                         fontSize: 11,
                       ),
                     ),
@@ -1340,7 +1340,7 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
       child: Container(
         padding: const EdgeInsets.all(KabukTheme.spacingSm),
         decoration: BoxDecoration(
-          color: KabukTheme.surfaceVariant,
+          color: context.kabukSurfaceVariant,
           borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
         ),
         child: Column(
@@ -1354,8 +1354,8 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
                     children: [
                       Text(
                         model.name,
-                        style: const TextStyle(
-                          color: KabukTheme.textPrimary,
+                        style: TextStyle(
+                          color: context.kabukTextPrimary,
                           fontWeight: FontWeight.w600,
                           fontSize: 13,
                         ),
@@ -1363,8 +1363,8 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
                       Text(
                         '${model.formattedSize}'
                         '${model.quantization != null ? ' \u00b7 ${model.quantization}' : ''}',
-                        style: const TextStyle(
-                          color: KabukTheme.textSecondary,
+                        style: TextStyle(
+                          color: context.kabukTextSecondary,
                           fontSize: 11,
                         ),
                       ),
@@ -1384,14 +1384,14 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
                       children: [
                         LinearProgressIndicator(
                           value: _downloadProgress,
-                          backgroundColor: KabukTheme.divider,
+                          backgroundColor: context.kabukDivider,
                           color: KabukTheme.accentGreen,
                         ),
                         const SizedBox(height: 2),
                         Text(
                           '${(_downloadProgress * 100).toStringAsFixed(0)}%',
-                          style: const TextStyle(
-                            color: KabukTheme.textSecondary,
+                          style: TextStyle(
+                            color: context.kabukTextSecondary,
                             fontSize: 10,
                           ),
                         ),
@@ -1426,8 +1426,8 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
               const SizedBox(height: 4),
               Text(
                 model.description!,
-                style: const TextStyle(
-                  color: KabukTheme.textSecondary,
+                style: TextStyle(
+                  color: context.kabukTextSecondary,
                   fontSize: 11,
                   height: 1.2,
                 ),
@@ -1444,8 +1444,8 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
       alignment: Alignment.centerLeft,
       child: Text(
         label,
-        style: const TextStyle(
-          color: KabukTheme.textSecondary,
+        style: TextStyle(
+          color: context.kabukTextSecondary,
           fontSize: 12,
           fontWeight: FontWeight.w600,
           letterSpacing: 0.5,
@@ -1458,7 +1458,7 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
     return Container(
       padding: const EdgeInsets.all(KabukTheme.spacingMd),
       decoration: BoxDecoration(
-        color: KabukTheme.surfaceVariant,
+        color: context.kabukSurfaceVariant,
         borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
       ),
       child: Row(
@@ -1471,16 +1471,16 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
-                    color: KabukTheme.textPrimary,
+                  style: TextStyle(
+                    color: context.kabukTextPrimary,
                     fontWeight: FontWeight.w600,
                     fontSize: 14,
                   ),
                 ),
                 Text(
                   subtitle,
-                  style: const TextStyle(
-                    color: KabukTheme.textSecondary,
+                  style: TextStyle(
+                    color: context.kabukTextSecondary,
                     fontSize: 12,
                   ),
                 ),
@@ -1498,7 +1498,7 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
 
     switch (_testStatus) {
       case _TestStatus.testing:
-        color = KabukTheme.textSecondary;
+        color = context.kabukTextSecondary;
         icon = Icons.hourglass_top;
       case _TestStatus.success:
         color = KabukTheme.accentGreen;
@@ -1580,7 +1580,7 @@ class _KeyTile extends StatelessWidget {
           vertical: KabukTheme.spacingXs,
         ),
         decoration: BoxDecoration(
-          color: KabukTheme.surfaceVariant,
+          color: context.kabukSurfaceVariant,
           borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
           border: Border.all(color: color.withAlpha(30)),
         ),
@@ -1608,16 +1608,16 @@ class _KeyTile extends StatelessWidget {
                 value,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'monospace',
                   fontSize: 11,
-                  color: KabukTheme.textPrimary,
+                  color: context.kabukTextPrimary,
                 ),
               ),
             ),
             IconButton(
               icon: const Icon(Icons.copy_rounded, size: 16),
-              color: KabukTheme.textSecondary,
+              color: context.kabukTextSecondary,
               tooltip: 'Copy $label',
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: value));

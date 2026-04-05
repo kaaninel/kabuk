@@ -22,7 +22,8 @@ class FourchanPost {
     required this.author,
     required this.content,
     required this.createdAt,
-    this.imageUrl,
+    this.thumbnailUrl,
+    this.fullImageUrl,
   });
 
   /// Post number (unique within the board).
@@ -38,7 +39,13 @@ class FourchanPost {
   final DateTime createdAt;
 
   /// Thumbnail URL (if the post includes an image).
-  final String? imageUrl;
+  final String? thumbnailUrl;
+
+  /// Full-size image URL (if the post includes an image).
+  final String? fullImageUrl;
+
+  /// Best available image URL (full-size preferred, falls back to thumbnail).
+  String? get imageUrl => fullImageUrl ?? thumbnailUrl;
 }
 
 // =============================================================================
@@ -83,7 +90,7 @@ final fourchanCommentsProvider = FutureProvider.autoDispose
         return posts
             .whereType<Map<String, dynamic>>()
             .skip(1) // skip OP — already shown in article detail
-            .map(_parsePost)
+            .map((p) => _parsePost(p, board))
             .whereType<FourchanPost>()
             .toList();
       } on Object catch (e) {
@@ -123,7 +130,7 @@ final fourchanCommentsProvider = FutureProvider.autoDispose
   return (board, threadNo);
 }
 
-FourchanPost? _parsePost(Map<String, dynamic> post) {
+FourchanPost? _parsePost(Map<String, dynamic> post, String board) {
   final no = post['no'] as int?;
   if (no == null) return null;
 
@@ -133,13 +140,13 @@ FourchanPost? _parsePost(Map<String, dynamic> post) {
   final tim = post['tim'] as int?;
   final ext = post['ext'] as String?;
 
-  // Determine board from the thread's context (not available per-post, so
-  // image URLs are reconstructed from the catalog thumbnail pattern elsewhere).
-  // For in-thread posts we use the full image URL if available.
-  final board =
-      post['board'] as String?; // injected during enrichment when possible
-  final imageUrl = (tim != null && ext != null && board != null)
+  // Build both thumbnail and full-size image URLs using the board from the
+  // thread URL context (the 4chan API does not include board per-post).
+  final thumbnailUrl = (tim != null && ext != null)
       ? 'https://i.4cdn.org/$board/${tim}s.jpg'
+      : null;
+  final fullImageUrl = (tim != null && ext != null)
+      ? 'https://i.4cdn.org/$board/$tim$ext'
       : null;
 
   return FourchanPost(
@@ -149,7 +156,8 @@ FourchanPost? _parsePost(Map<String, dynamic> post) {
     createdAt: time != null
         ? DateTime.fromMillisecondsSinceEpoch(time * 1000, isUtc: true)
         : DateTime.now().toUtc(),
-    imageUrl: imageUrl,
+    thumbnailUrl: thumbnailUrl,
+    fullImageUrl: fullImageUrl,
   );
 }
 

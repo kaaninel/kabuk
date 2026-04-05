@@ -9,6 +9,7 @@
 library;
 
 import 'dart:async';
+import 'dart:developer' as dev;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -191,6 +192,14 @@ class _UsenetPlayerPageState extends ConsumerState<UsenetPlayerPage> {
     });
     _errorSub = player.stream.error.listen((e) {
       if (mounted && e.isNotEmpty && !_hasError) {
+        // Ignore non-fatal audio device warnings (common on simulators).
+        final lower = e.toLowerCase();
+        if (lower.contains('audio device') ||
+            lower.contains('no sound') ||
+            lower.contains('ao init')) {
+          dev.log('UsenetPlayer: ignoring audio warning: $e');
+          return;
+        }
         setState(() {
           _hasError = true;
           _errorMessage = e;

@@ -132,6 +132,18 @@ class $TriplesTable extends Triples with TableInfo<$TriplesTable, Triple> {
     requiredDuringInsert: false,
     defaultValue: currentDateAndTime,
   );
+  static const VerificationMeta _syncVersionMeta = const VerificationMeta(
+    'syncVersion',
+  );
+  @override
+  late final GeneratedColumn<int> syncVersion = GeneratedColumn<int>(
+    'sync_version',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -145,6 +157,7 @@ class $TriplesTable extends Triples with TableInfo<$TriplesTable, Triple> {
     graph,
     createdAt,
     updatedAt,
+    syncVersion,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -230,6 +243,15 @@ class $TriplesTable extends Triples with TableInfo<$TriplesTable, Triple> {
         updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
       );
     }
+    if (data.containsKey('sync_version')) {
+      context.handle(
+        _syncVersionMeta,
+        syncVersion.isAcceptableOrUnknown(
+          data['sync_version']!,
+          _syncVersionMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -296,6 +318,10 @@ class $TriplesTable extends Triples with TableInfo<$TriplesTable, Triple> {
         DriftSqlType.dateTime,
         data['${effectivePrefix}updated_at'],
       )!,
+      syncVersion: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sync_version'],
+      )!,
     );
   }
 
@@ -344,6 +370,12 @@ class Triple extends DataClass implements Insertable<Triple> {
 
   /// Timestamp when this triple was last updated.
   final DateTime updatedAt;
+
+  /// Monotonically increasing version counter for sync.
+  ///
+  /// Incremented on each mutation. Remote peers request changes
+  /// `WHERE sync_version > lastKnownVersion` to get deltas.
+  final int syncVersion;
   const Triple({
     required this.id,
     required this.subject,
@@ -356,6 +388,7 @@ class Triple extends DataClass implements Insertable<Triple> {
     required this.graph,
     required this.createdAt,
     required this.updatedAt,
+    required this.syncVersion,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -379,6 +412,7 @@ class Triple extends DataClass implements Insertable<Triple> {
     map['graph'] = Variable<String>(graph);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
+    map['sync_version'] = Variable<int>(syncVersion);
     return map;
   }
 
@@ -403,6 +437,7 @@ class Triple extends DataClass implements Insertable<Triple> {
       graph: Value(graph),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
+      syncVersion: Value(syncVersion),
     );
   }
 
@@ -423,6 +458,7 @@ class Triple extends DataClass implements Insertable<Triple> {
       graph: serializer.fromJson<String>(json['graph']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      syncVersion: serializer.fromJson<int>(json['syncVersion']),
     );
   }
   @override
@@ -440,6 +476,7 @@ class Triple extends DataClass implements Insertable<Triple> {
       'graph': serializer.toJson<String>(graph),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'syncVersion': serializer.toJson<int>(syncVersion),
     };
   }
 
@@ -455,6 +492,7 @@ class Triple extends DataClass implements Insertable<Triple> {
     String? graph,
     DateTime? createdAt,
     DateTime? updatedAt,
+    int? syncVersion,
   }) => Triple(
     id: id ?? this.id,
     subject: subject ?? this.subject,
@@ -467,6 +505,7 @@ class Triple extends DataClass implements Insertable<Triple> {
     graph: graph ?? this.graph,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
+    syncVersion: syncVersion ?? this.syncVersion,
   );
   Triple copyWithCompanion(TriplesCompanion data) {
     return Triple(
@@ -487,6 +526,9 @@ class Triple extends DataClass implements Insertable<Triple> {
       graph: data.graph.present ? data.graph.value : this.graph,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      syncVersion: data.syncVersion.present
+          ? data.syncVersion.value
+          : this.syncVersion,
     );
   }
 
@@ -503,7 +545,8 @@ class Triple extends DataClass implements Insertable<Triple> {
           ..write('objectReal: $objectReal, ')
           ..write('graph: $graph, ')
           ..write('createdAt: $createdAt, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('syncVersion: $syncVersion')
           ..write(')'))
         .toString();
   }
@@ -521,6 +564,7 @@ class Triple extends DataClass implements Insertable<Triple> {
     graph,
     createdAt,
     updatedAt,
+    syncVersion,
   );
   @override
   bool operator ==(Object other) =>
@@ -536,7 +580,8 @@ class Triple extends DataClass implements Insertable<Triple> {
           other.objectReal == this.objectReal &&
           other.graph == this.graph &&
           other.createdAt == this.createdAt &&
-          other.updatedAt == this.updatedAt);
+          other.updatedAt == this.updatedAt &&
+          other.syncVersion == this.syncVersion);
 }
 
 class TriplesCompanion extends UpdateCompanion<Triple> {
@@ -551,6 +596,7 @@ class TriplesCompanion extends UpdateCompanion<Triple> {
   final Value<String> graph;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
+  final Value<int> syncVersion;
   const TriplesCompanion({
     this.id = const Value.absent(),
     this.subject = const Value.absent(),
@@ -563,6 +609,7 @@ class TriplesCompanion extends UpdateCompanion<Triple> {
     this.graph = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.syncVersion = const Value.absent(),
   });
   TriplesCompanion.insert({
     this.id = const Value.absent(),
@@ -576,6 +623,7 @@ class TriplesCompanion extends UpdateCompanion<Triple> {
     this.graph = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.syncVersion = const Value.absent(),
   }) : subject = Value(subject),
        predicate = Value(predicate),
        objectType = Value(objectType);
@@ -591,6 +639,7 @@ class TriplesCompanion extends UpdateCompanion<Triple> {
     Expression<String>? graph,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
+    Expression<int>? syncVersion,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -604,6 +653,7 @@ class TriplesCompanion extends UpdateCompanion<Triple> {
       if (graph != null) 'graph': graph,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
+      if (syncVersion != null) 'sync_version': syncVersion,
     });
   }
 
@@ -619,6 +669,7 @@ class TriplesCompanion extends UpdateCompanion<Triple> {
     Value<String>? graph,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
+    Value<int>? syncVersion,
   }) {
     return TriplesCompanion(
       id: id ?? this.id,
@@ -632,6 +683,7 @@ class TriplesCompanion extends UpdateCompanion<Triple> {
       graph: graph ?? this.graph,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      syncVersion: syncVersion ?? this.syncVersion,
     );
   }
 
@@ -671,6 +723,9 @@ class TriplesCompanion extends UpdateCompanion<Triple> {
     if (updatedAt.present) {
       map['updated_at'] = Variable<DateTime>(updatedAt.value);
     }
+    if (syncVersion.present) {
+      map['sync_version'] = Variable<int>(syncVersion.value);
+    }
     return map;
   }
 
@@ -687,7 +742,8 @@ class TriplesCompanion extends UpdateCompanion<Triple> {
           ..write('objectReal: $objectReal, ')
           ..write('graph: $graph, ')
           ..write('createdAt: $createdAt, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('syncVersion: $syncVersion')
           ..write(')'))
         .toString();
   }
@@ -3070,6 +3126,681 @@ class MessageReactionsCompanion extends UpdateCompanion<MessageReaction> {
   }
 }
 
+class $DevicePairsTable extends DevicePairs
+    with TableInfo<$DevicePairsTable, DevicePair> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $DevicePairsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _localDeviceIdMeta = const VerificationMeta(
+    'localDeviceId',
+  );
+  @override
+  late final GeneratedColumn<String> localDeviceId = GeneratedColumn<String>(
+    'local_device_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _remoteDeviceIdMeta = const VerificationMeta(
+    'remoteDeviceId',
+  );
+  @override
+  late final GeneratedColumn<String> remoteDeviceId = GeneratedColumn<String>(
+    'remote_device_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _remoteNameMeta = const VerificationMeta(
+    'remoteName',
+  );
+  @override
+  late final GeneratedColumn<String> remoteName = GeneratedColumn<String>(
+    'remote_name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _remoteAddressMeta = const VerificationMeta(
+    'remoteAddress',
+  );
+  @override
+  late final GeneratedColumn<String> remoteAddress = GeneratedColumn<String>(
+    'remote_address',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sharedPublicKeyHexMeta =
+      const VerificationMeta('sharedPublicKeyHex');
+  @override
+  late final GeneratedColumn<String> sharedPublicKeyHex =
+      GeneratedColumn<String>(
+        'shared_public_key_hex',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      );
+  static const VerificationMeta _pairingTokenMeta = const VerificationMeta(
+    'pairingToken',
+  );
+  @override
+  late final GeneratedColumn<String> pairingToken = GeneratedColumn<String>(
+    'pairing_token',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  static const VerificationMeta _lastSeenAtMeta = const VerificationMeta(
+    'lastSeenAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> lastSeenAt = GeneratedColumn<DateTime>(
+    'last_seen_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  static const VerificationMeta _lastSyncAtMeta = const VerificationMeta(
+    'lastSyncAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> lastSyncAt = GeneratedColumn<DateTime>(
+    'last_sync_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _isVerifiedMeta = const VerificationMeta(
+    'isVerified',
+  );
+  @override
+  late final GeneratedColumn<bool> isVerified = GeneratedColumn<bool>(
+    'is_verified',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_verified" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    localDeviceId,
+    remoteDeviceId,
+    remoteName,
+    remoteAddress,
+    sharedPublicKeyHex,
+    pairingToken,
+    createdAt,
+    lastSeenAt,
+    lastSyncAt,
+    isVerified,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'device_pairs';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<DevicePair> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('local_device_id')) {
+      context.handle(
+        _localDeviceIdMeta,
+        localDeviceId.isAcceptableOrUnknown(
+          data['local_device_id']!,
+          _localDeviceIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_localDeviceIdMeta);
+    }
+    if (data.containsKey('remote_device_id')) {
+      context.handle(
+        _remoteDeviceIdMeta,
+        remoteDeviceId.isAcceptableOrUnknown(
+          data['remote_device_id']!,
+          _remoteDeviceIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_remoteDeviceIdMeta);
+    }
+    if (data.containsKey('remote_name')) {
+      context.handle(
+        _remoteNameMeta,
+        remoteName.isAcceptableOrUnknown(data['remote_name']!, _remoteNameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_remoteNameMeta);
+    }
+    if (data.containsKey('remote_address')) {
+      context.handle(
+        _remoteAddressMeta,
+        remoteAddress.isAcceptableOrUnknown(
+          data['remote_address']!,
+          _remoteAddressMeta,
+        ),
+      );
+    }
+    if (data.containsKey('shared_public_key_hex')) {
+      context.handle(
+        _sharedPublicKeyHexMeta,
+        sharedPublicKeyHex.isAcceptableOrUnknown(
+          data['shared_public_key_hex']!,
+          _sharedPublicKeyHexMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_sharedPublicKeyHexMeta);
+    }
+    if (data.containsKey('pairing_token')) {
+      context.handle(
+        _pairingTokenMeta,
+        pairingToken.isAcceptableOrUnknown(
+          data['pairing_token']!,
+          _pairingTokenMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_pairingTokenMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    }
+    if (data.containsKey('last_seen_at')) {
+      context.handle(
+        _lastSeenAtMeta,
+        lastSeenAt.isAcceptableOrUnknown(
+          data['last_seen_at']!,
+          _lastSeenAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('last_sync_at')) {
+      context.handle(
+        _lastSyncAtMeta,
+        lastSyncAt.isAcceptableOrUnknown(
+          data['last_sync_at']!,
+          _lastSyncAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('is_verified')) {
+      context.handle(
+        _isVerifiedMeta,
+        isVerified.isAcceptableOrUnknown(data['is_verified']!, _isVerifiedMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {localDeviceId, remoteDeviceId};
+  @override
+  DevicePair map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DevicePair(
+      localDeviceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}local_device_id'],
+      )!,
+      remoteDeviceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}remote_device_id'],
+      )!,
+      remoteName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}remote_name'],
+      )!,
+      remoteAddress: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}remote_address'],
+      ),
+      sharedPublicKeyHex: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}shared_public_key_hex'],
+      )!,
+      pairingToken: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}pairing_token'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      lastSeenAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}last_seen_at'],
+      )!,
+      lastSyncAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}last_sync_at'],
+      ),
+      isVerified: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_verified'],
+      )!,
+    );
+  }
+
+  @override
+  $DevicePairsTable createAlias(String alias) {
+    return $DevicePairsTable(attachedDatabase, alias);
+  }
+}
+
+class DevicePair extends DataClass implements Insertable<DevicePair> {
+  /// Unique identifier for the local device in this pairing.
+  final String localDeviceId;
+
+  /// Unique identifier for the remote device.
+  final String remoteDeviceId;
+
+  /// Human-readable name of the remote device.
+  final String remoteName;
+
+  /// Last-known network address of the remote device (e.g. `http://ip:port`).
+  final String? remoteAddress;
+
+  /// Hex-encoded public key of the identity shared in this pairing.
+  final String sharedPublicKeyHex;
+
+  /// HMAC-based pairing token for mutual authentication.
+  final String pairingToken;
+
+  /// When this pairing was established.
+  final DateTime createdAt;
+
+  /// When the remote device was last seen (via beacon or sync).
+  final DateTime lastSeenAt;
+
+  /// Timestamp of the last successful sync with this device.
+  final DateTime? lastSyncAt;
+
+  /// Whether this pairing has been verified on both sides.
+  final bool isVerified;
+  const DevicePair({
+    required this.localDeviceId,
+    required this.remoteDeviceId,
+    required this.remoteName,
+    this.remoteAddress,
+    required this.sharedPublicKeyHex,
+    required this.pairingToken,
+    required this.createdAt,
+    required this.lastSeenAt,
+    this.lastSyncAt,
+    required this.isVerified,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['local_device_id'] = Variable<String>(localDeviceId);
+    map['remote_device_id'] = Variable<String>(remoteDeviceId);
+    map['remote_name'] = Variable<String>(remoteName);
+    if (!nullToAbsent || remoteAddress != null) {
+      map['remote_address'] = Variable<String>(remoteAddress);
+    }
+    map['shared_public_key_hex'] = Variable<String>(sharedPublicKeyHex);
+    map['pairing_token'] = Variable<String>(pairingToken);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['last_seen_at'] = Variable<DateTime>(lastSeenAt);
+    if (!nullToAbsent || lastSyncAt != null) {
+      map['last_sync_at'] = Variable<DateTime>(lastSyncAt);
+    }
+    map['is_verified'] = Variable<bool>(isVerified);
+    return map;
+  }
+
+  DevicePairsCompanion toCompanion(bool nullToAbsent) {
+    return DevicePairsCompanion(
+      localDeviceId: Value(localDeviceId),
+      remoteDeviceId: Value(remoteDeviceId),
+      remoteName: Value(remoteName),
+      remoteAddress: remoteAddress == null && nullToAbsent
+          ? const Value.absent()
+          : Value(remoteAddress),
+      sharedPublicKeyHex: Value(sharedPublicKeyHex),
+      pairingToken: Value(pairingToken),
+      createdAt: Value(createdAt),
+      lastSeenAt: Value(lastSeenAt),
+      lastSyncAt: lastSyncAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastSyncAt),
+      isVerified: Value(isVerified),
+    );
+  }
+
+  factory DevicePair.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DevicePair(
+      localDeviceId: serializer.fromJson<String>(json['localDeviceId']),
+      remoteDeviceId: serializer.fromJson<String>(json['remoteDeviceId']),
+      remoteName: serializer.fromJson<String>(json['remoteName']),
+      remoteAddress: serializer.fromJson<String?>(json['remoteAddress']),
+      sharedPublicKeyHex: serializer.fromJson<String>(
+        json['sharedPublicKeyHex'],
+      ),
+      pairingToken: serializer.fromJson<String>(json['pairingToken']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      lastSeenAt: serializer.fromJson<DateTime>(json['lastSeenAt']),
+      lastSyncAt: serializer.fromJson<DateTime?>(json['lastSyncAt']),
+      isVerified: serializer.fromJson<bool>(json['isVerified']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'localDeviceId': serializer.toJson<String>(localDeviceId),
+      'remoteDeviceId': serializer.toJson<String>(remoteDeviceId),
+      'remoteName': serializer.toJson<String>(remoteName),
+      'remoteAddress': serializer.toJson<String?>(remoteAddress),
+      'sharedPublicKeyHex': serializer.toJson<String>(sharedPublicKeyHex),
+      'pairingToken': serializer.toJson<String>(pairingToken),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'lastSeenAt': serializer.toJson<DateTime>(lastSeenAt),
+      'lastSyncAt': serializer.toJson<DateTime?>(lastSyncAt),
+      'isVerified': serializer.toJson<bool>(isVerified),
+    };
+  }
+
+  DevicePair copyWith({
+    String? localDeviceId,
+    String? remoteDeviceId,
+    String? remoteName,
+    Value<String?> remoteAddress = const Value.absent(),
+    String? sharedPublicKeyHex,
+    String? pairingToken,
+    DateTime? createdAt,
+    DateTime? lastSeenAt,
+    Value<DateTime?> lastSyncAt = const Value.absent(),
+    bool? isVerified,
+  }) => DevicePair(
+    localDeviceId: localDeviceId ?? this.localDeviceId,
+    remoteDeviceId: remoteDeviceId ?? this.remoteDeviceId,
+    remoteName: remoteName ?? this.remoteName,
+    remoteAddress: remoteAddress.present
+        ? remoteAddress.value
+        : this.remoteAddress,
+    sharedPublicKeyHex: sharedPublicKeyHex ?? this.sharedPublicKeyHex,
+    pairingToken: pairingToken ?? this.pairingToken,
+    createdAt: createdAt ?? this.createdAt,
+    lastSeenAt: lastSeenAt ?? this.lastSeenAt,
+    lastSyncAt: lastSyncAt.present ? lastSyncAt.value : this.lastSyncAt,
+    isVerified: isVerified ?? this.isVerified,
+  );
+  DevicePair copyWithCompanion(DevicePairsCompanion data) {
+    return DevicePair(
+      localDeviceId: data.localDeviceId.present
+          ? data.localDeviceId.value
+          : this.localDeviceId,
+      remoteDeviceId: data.remoteDeviceId.present
+          ? data.remoteDeviceId.value
+          : this.remoteDeviceId,
+      remoteName: data.remoteName.present
+          ? data.remoteName.value
+          : this.remoteName,
+      remoteAddress: data.remoteAddress.present
+          ? data.remoteAddress.value
+          : this.remoteAddress,
+      sharedPublicKeyHex: data.sharedPublicKeyHex.present
+          ? data.sharedPublicKeyHex.value
+          : this.sharedPublicKeyHex,
+      pairingToken: data.pairingToken.present
+          ? data.pairingToken.value
+          : this.pairingToken,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      lastSeenAt: data.lastSeenAt.present
+          ? data.lastSeenAt.value
+          : this.lastSeenAt,
+      lastSyncAt: data.lastSyncAt.present
+          ? data.lastSyncAt.value
+          : this.lastSyncAt,
+      isVerified: data.isVerified.present
+          ? data.isVerified.value
+          : this.isVerified,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DevicePair(')
+          ..write('localDeviceId: $localDeviceId, ')
+          ..write('remoteDeviceId: $remoteDeviceId, ')
+          ..write('remoteName: $remoteName, ')
+          ..write('remoteAddress: $remoteAddress, ')
+          ..write('sharedPublicKeyHex: $sharedPublicKeyHex, ')
+          ..write('pairingToken: $pairingToken, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('lastSeenAt: $lastSeenAt, ')
+          ..write('lastSyncAt: $lastSyncAt, ')
+          ..write('isVerified: $isVerified')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    localDeviceId,
+    remoteDeviceId,
+    remoteName,
+    remoteAddress,
+    sharedPublicKeyHex,
+    pairingToken,
+    createdAt,
+    lastSeenAt,
+    lastSyncAt,
+    isVerified,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DevicePair &&
+          other.localDeviceId == this.localDeviceId &&
+          other.remoteDeviceId == this.remoteDeviceId &&
+          other.remoteName == this.remoteName &&
+          other.remoteAddress == this.remoteAddress &&
+          other.sharedPublicKeyHex == this.sharedPublicKeyHex &&
+          other.pairingToken == this.pairingToken &&
+          other.createdAt == this.createdAt &&
+          other.lastSeenAt == this.lastSeenAt &&
+          other.lastSyncAt == this.lastSyncAt &&
+          other.isVerified == this.isVerified);
+}
+
+class DevicePairsCompanion extends UpdateCompanion<DevicePair> {
+  final Value<String> localDeviceId;
+  final Value<String> remoteDeviceId;
+  final Value<String> remoteName;
+  final Value<String?> remoteAddress;
+  final Value<String> sharedPublicKeyHex;
+  final Value<String> pairingToken;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> lastSeenAt;
+  final Value<DateTime?> lastSyncAt;
+  final Value<bool> isVerified;
+  final Value<int> rowid;
+  const DevicePairsCompanion({
+    this.localDeviceId = const Value.absent(),
+    this.remoteDeviceId = const Value.absent(),
+    this.remoteName = const Value.absent(),
+    this.remoteAddress = const Value.absent(),
+    this.sharedPublicKeyHex = const Value.absent(),
+    this.pairingToken = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.lastSeenAt = const Value.absent(),
+    this.lastSyncAt = const Value.absent(),
+    this.isVerified = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  DevicePairsCompanion.insert({
+    required String localDeviceId,
+    required String remoteDeviceId,
+    required String remoteName,
+    this.remoteAddress = const Value.absent(),
+    required String sharedPublicKeyHex,
+    required String pairingToken,
+    this.createdAt = const Value.absent(),
+    this.lastSeenAt = const Value.absent(),
+    this.lastSyncAt = const Value.absent(),
+    this.isVerified = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : localDeviceId = Value(localDeviceId),
+       remoteDeviceId = Value(remoteDeviceId),
+       remoteName = Value(remoteName),
+       sharedPublicKeyHex = Value(sharedPublicKeyHex),
+       pairingToken = Value(pairingToken);
+  static Insertable<DevicePair> custom({
+    Expression<String>? localDeviceId,
+    Expression<String>? remoteDeviceId,
+    Expression<String>? remoteName,
+    Expression<String>? remoteAddress,
+    Expression<String>? sharedPublicKeyHex,
+    Expression<String>? pairingToken,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? lastSeenAt,
+    Expression<DateTime>? lastSyncAt,
+    Expression<bool>? isVerified,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (localDeviceId != null) 'local_device_id': localDeviceId,
+      if (remoteDeviceId != null) 'remote_device_id': remoteDeviceId,
+      if (remoteName != null) 'remote_name': remoteName,
+      if (remoteAddress != null) 'remote_address': remoteAddress,
+      if (sharedPublicKeyHex != null)
+        'shared_public_key_hex': sharedPublicKeyHex,
+      if (pairingToken != null) 'pairing_token': pairingToken,
+      if (createdAt != null) 'created_at': createdAt,
+      if (lastSeenAt != null) 'last_seen_at': lastSeenAt,
+      if (lastSyncAt != null) 'last_sync_at': lastSyncAt,
+      if (isVerified != null) 'is_verified': isVerified,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  DevicePairsCompanion copyWith({
+    Value<String>? localDeviceId,
+    Value<String>? remoteDeviceId,
+    Value<String>? remoteName,
+    Value<String?>? remoteAddress,
+    Value<String>? sharedPublicKeyHex,
+    Value<String>? pairingToken,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? lastSeenAt,
+    Value<DateTime?>? lastSyncAt,
+    Value<bool>? isVerified,
+    Value<int>? rowid,
+  }) {
+    return DevicePairsCompanion(
+      localDeviceId: localDeviceId ?? this.localDeviceId,
+      remoteDeviceId: remoteDeviceId ?? this.remoteDeviceId,
+      remoteName: remoteName ?? this.remoteName,
+      remoteAddress: remoteAddress ?? this.remoteAddress,
+      sharedPublicKeyHex: sharedPublicKeyHex ?? this.sharedPublicKeyHex,
+      pairingToken: pairingToken ?? this.pairingToken,
+      createdAt: createdAt ?? this.createdAt,
+      lastSeenAt: lastSeenAt ?? this.lastSeenAt,
+      lastSyncAt: lastSyncAt ?? this.lastSyncAt,
+      isVerified: isVerified ?? this.isVerified,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (localDeviceId.present) {
+      map['local_device_id'] = Variable<String>(localDeviceId.value);
+    }
+    if (remoteDeviceId.present) {
+      map['remote_device_id'] = Variable<String>(remoteDeviceId.value);
+    }
+    if (remoteName.present) {
+      map['remote_name'] = Variable<String>(remoteName.value);
+    }
+    if (remoteAddress.present) {
+      map['remote_address'] = Variable<String>(remoteAddress.value);
+    }
+    if (sharedPublicKeyHex.present) {
+      map['shared_public_key_hex'] = Variable<String>(sharedPublicKeyHex.value);
+    }
+    if (pairingToken.present) {
+      map['pairing_token'] = Variable<String>(pairingToken.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (lastSeenAt.present) {
+      map['last_seen_at'] = Variable<DateTime>(lastSeenAt.value);
+    }
+    if (lastSyncAt.present) {
+      map['last_sync_at'] = Variable<DateTime>(lastSyncAt.value);
+    }
+    if (isVerified.present) {
+      map['is_verified'] = Variable<bool>(isVerified.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DevicePairsCompanion(')
+          ..write('localDeviceId: $localDeviceId, ')
+          ..write('remoteDeviceId: $remoteDeviceId, ')
+          ..write('remoteName: $remoteName, ')
+          ..write('remoteAddress: $remoteAddress, ')
+          ..write('sharedPublicKeyHex: $sharedPublicKeyHex, ')
+          ..write('pairingToken: $pairingToken, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('lastSeenAt: $lastSeenAt, ')
+          ..write('lastSyncAt: $lastSyncAt, ')
+          ..write('isVerified: $isVerified, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$KabukDatabase extends GeneratedDatabase {
   _$KabukDatabase(QueryExecutor e) : super(e);
   $KabukDatabaseManager get managers => $KabukDatabaseManager(this);
@@ -3080,6 +3811,7 @@ abstract class _$KabukDatabase extends GeneratedDatabase {
   late final $MessageReactionsTable messageReactions = $MessageReactionsTable(
     this,
   );
+  late final $DevicePairsTable devicePairs = $DevicePairsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -3090,6 +3822,7 @@ abstract class _$KabukDatabase extends GeneratedDatabase {
     messages,
     conversations,
     messageReactions,
+    devicePairs,
   ];
 }
 
@@ -3106,6 +3839,7 @@ typedef $$TriplesTableCreateCompanionBuilder =
       Value<String> graph,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
+      Value<int> syncVersion,
     });
 typedef $$TriplesTableUpdateCompanionBuilder =
     TriplesCompanion Function({
@@ -3120,6 +3854,7 @@ typedef $$TriplesTableUpdateCompanionBuilder =
       Value<String> graph,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
+      Value<int> syncVersion,
     });
 
 class $$TriplesTableFilterComposer
@@ -3183,6 +3918,11 @@ class $$TriplesTableFilterComposer
 
   ColumnFilters<DateTime> get updatedAt => $composableBuilder(
     column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get syncVersion => $composableBuilder(
+    column: $table.syncVersion,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -3250,6 +3990,11 @@ class $$TriplesTableOrderingComposer
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get syncVersion => $composableBuilder(
+    column: $table.syncVersion,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$TriplesTableAnnotationComposer
@@ -3299,6 +4044,11 @@ class $$TriplesTableAnnotationComposer
 
   GeneratedColumn<DateTime> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get syncVersion => $composableBuilder(
+    column: $table.syncVersion,
+    builder: (column) => column,
+  );
 }
 
 class $$TriplesTableTableManager
@@ -3340,6 +4090,7 @@ class $$TriplesTableTableManager
                 Value<String> graph = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> syncVersion = const Value.absent(),
               }) => TriplesCompanion(
                 id: id,
                 subject: subject,
@@ -3352,6 +4103,7 @@ class $$TriplesTableTableManager
                 graph: graph,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
+                syncVersion: syncVersion,
               ),
           createCompanionCallback:
               ({
@@ -3366,6 +4118,7 @@ class $$TriplesTableTableManager
                 Value<String> graph = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> syncVersion = const Value.absent(),
               }) => TriplesCompanion.insert(
                 id: id,
                 subject: subject,
@@ -3378,6 +4131,7 @@ class $$TriplesTableTableManager
                 graph: graph,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
+                syncVersion: syncVersion,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
@@ -4536,6 +5290,319 @@ typedef $$MessageReactionsTableProcessedTableManager =
       MessageReaction,
       PrefetchHooks Function()
     >;
+typedef $$DevicePairsTableCreateCompanionBuilder =
+    DevicePairsCompanion Function({
+      required String localDeviceId,
+      required String remoteDeviceId,
+      required String remoteName,
+      Value<String?> remoteAddress,
+      required String sharedPublicKeyHex,
+      required String pairingToken,
+      Value<DateTime> createdAt,
+      Value<DateTime> lastSeenAt,
+      Value<DateTime?> lastSyncAt,
+      Value<bool> isVerified,
+      Value<int> rowid,
+    });
+typedef $$DevicePairsTableUpdateCompanionBuilder =
+    DevicePairsCompanion Function({
+      Value<String> localDeviceId,
+      Value<String> remoteDeviceId,
+      Value<String> remoteName,
+      Value<String?> remoteAddress,
+      Value<String> sharedPublicKeyHex,
+      Value<String> pairingToken,
+      Value<DateTime> createdAt,
+      Value<DateTime> lastSeenAt,
+      Value<DateTime?> lastSyncAt,
+      Value<bool> isVerified,
+      Value<int> rowid,
+    });
+
+class $$DevicePairsTableFilterComposer
+    extends Composer<_$KabukDatabase, $DevicePairsTable> {
+  $$DevicePairsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get localDeviceId => $composableBuilder(
+    column: $table.localDeviceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get remoteDeviceId => $composableBuilder(
+    column: $table.remoteDeviceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get remoteName => $composableBuilder(
+    column: $table.remoteName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get remoteAddress => $composableBuilder(
+    column: $table.remoteAddress,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sharedPublicKeyHex => $composableBuilder(
+    column: $table.sharedPublicKeyHex,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get pairingToken => $composableBuilder(
+    column: $table.pairingToken,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get lastSeenAt => $composableBuilder(
+    column: $table.lastSeenAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get lastSyncAt => $composableBuilder(
+    column: $table.lastSyncAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isVerified => $composableBuilder(
+    column: $table.isVerified,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$DevicePairsTableOrderingComposer
+    extends Composer<_$KabukDatabase, $DevicePairsTable> {
+  $$DevicePairsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get localDeviceId => $composableBuilder(
+    column: $table.localDeviceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get remoteDeviceId => $composableBuilder(
+    column: $table.remoteDeviceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get remoteName => $composableBuilder(
+    column: $table.remoteName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get remoteAddress => $composableBuilder(
+    column: $table.remoteAddress,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sharedPublicKeyHex => $composableBuilder(
+    column: $table.sharedPublicKeyHex,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get pairingToken => $composableBuilder(
+    column: $table.pairingToken,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get lastSeenAt => $composableBuilder(
+    column: $table.lastSeenAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get lastSyncAt => $composableBuilder(
+    column: $table.lastSyncAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isVerified => $composableBuilder(
+    column: $table.isVerified,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$DevicePairsTableAnnotationComposer
+    extends Composer<_$KabukDatabase, $DevicePairsTable> {
+  $$DevicePairsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get localDeviceId => $composableBuilder(
+    column: $table.localDeviceId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get remoteDeviceId => $composableBuilder(
+    column: $table.remoteDeviceId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get remoteName => $composableBuilder(
+    column: $table.remoteName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get remoteAddress => $composableBuilder(
+    column: $table.remoteAddress,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get sharedPublicKeyHex => $composableBuilder(
+    column: $table.sharedPublicKeyHex,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get pairingToken => $composableBuilder(
+    column: $table.pairingToken,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get lastSeenAt => $composableBuilder(
+    column: $table.lastSeenAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get lastSyncAt => $composableBuilder(
+    column: $table.lastSyncAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isVerified => $composableBuilder(
+    column: $table.isVerified,
+    builder: (column) => column,
+  );
+}
+
+class $$DevicePairsTableTableManager
+    extends
+        RootTableManager<
+          _$KabukDatabase,
+          $DevicePairsTable,
+          DevicePair,
+          $$DevicePairsTableFilterComposer,
+          $$DevicePairsTableOrderingComposer,
+          $$DevicePairsTableAnnotationComposer,
+          $$DevicePairsTableCreateCompanionBuilder,
+          $$DevicePairsTableUpdateCompanionBuilder,
+          (
+            DevicePair,
+            BaseReferences<_$KabukDatabase, $DevicePairsTable, DevicePair>,
+          ),
+          DevicePair,
+          PrefetchHooks Function()
+        > {
+  $$DevicePairsTableTableManager(_$KabukDatabase db, $DevicePairsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$DevicePairsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$DevicePairsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$DevicePairsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> localDeviceId = const Value.absent(),
+                Value<String> remoteDeviceId = const Value.absent(),
+                Value<String> remoteName = const Value.absent(),
+                Value<String?> remoteAddress = const Value.absent(),
+                Value<String> sharedPublicKeyHex = const Value.absent(),
+                Value<String> pairingToken = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> lastSeenAt = const Value.absent(),
+                Value<DateTime?> lastSyncAt = const Value.absent(),
+                Value<bool> isVerified = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => DevicePairsCompanion(
+                localDeviceId: localDeviceId,
+                remoteDeviceId: remoteDeviceId,
+                remoteName: remoteName,
+                remoteAddress: remoteAddress,
+                sharedPublicKeyHex: sharedPublicKeyHex,
+                pairingToken: pairingToken,
+                createdAt: createdAt,
+                lastSeenAt: lastSeenAt,
+                lastSyncAt: lastSyncAt,
+                isVerified: isVerified,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String localDeviceId,
+                required String remoteDeviceId,
+                required String remoteName,
+                Value<String?> remoteAddress = const Value.absent(),
+                required String sharedPublicKeyHex,
+                required String pairingToken,
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> lastSeenAt = const Value.absent(),
+                Value<DateTime?> lastSyncAt = const Value.absent(),
+                Value<bool> isVerified = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => DevicePairsCompanion.insert(
+                localDeviceId: localDeviceId,
+                remoteDeviceId: remoteDeviceId,
+                remoteName: remoteName,
+                remoteAddress: remoteAddress,
+                sharedPublicKeyHex: sharedPublicKeyHex,
+                pairingToken: pairingToken,
+                createdAt: createdAt,
+                lastSeenAt: lastSeenAt,
+                lastSyncAt: lastSyncAt,
+                isVerified: isVerified,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$DevicePairsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$KabukDatabase,
+      $DevicePairsTable,
+      DevicePair,
+      $$DevicePairsTableFilterComposer,
+      $$DevicePairsTableOrderingComposer,
+      $$DevicePairsTableAnnotationComposer,
+      $$DevicePairsTableCreateCompanionBuilder,
+      $$DevicePairsTableUpdateCompanionBuilder,
+      (
+        DevicePair,
+        BaseReferences<_$KabukDatabase, $DevicePairsTable, DevicePair>,
+      ),
+      DevicePair,
+      PrefetchHooks Function()
+    >;
 
 class $KabukDatabaseManager {
   final _$KabukDatabase _db;
@@ -4550,4 +5617,6 @@ class $KabukDatabaseManager {
       $$ConversationsTableTableManager(_db, _db.conversations);
   $$MessageReactionsTableTableManager get messageReactions =>
       $$MessageReactionsTableTableManager(_db, _db.messageReactions);
+  $$DevicePairsTableTableManager get devicePairs =>
+      $$DevicePairsTableTableManager(_db, _db.devicePairs);
 }

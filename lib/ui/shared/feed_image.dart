@@ -166,10 +166,10 @@ class _ShimmerPlaceholderState extends State<_ShimmerPlaceholder>
           gradient: LinearGradient(
             begin: Alignment(_animation.value - 1, 0),
             end: Alignment(_animation.value, 0),
-            colors: const [
-              KabukTheme.surfaceVariant,
-              KabukTheme.surfaceElevated,
-              KabukTheme.surfaceVariant,
+            colors: [
+              context.kabukSurfaceVariant,
+              context.kabukSurfaceElevated,
+              context.kabukSurfaceVariant,
             ],
           ),
         ),
@@ -190,11 +190,11 @@ class _ErrorPlaceholder extends StatelessWidget {
     return Container(
       height: height,
       width: width ?? double.infinity,
-      color: KabukTheme.surfaceVariant,
-      child: const Center(
+      color: context.kabukSurfaceVariant,
+      child: Center(
         child: Icon(
           Icons.broken_image_outlined,
-          color: KabukTheme.textTertiary,
+          color: context.kabukTextTertiary,
           size: 32,
         ),
       ),

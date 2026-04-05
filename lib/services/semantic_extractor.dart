@@ -242,6 +242,9 @@ class SemanticExtractorService {
     // Step 6: Add image entities for content images
     _addImageEntities(entities, extraction);
 
+    // Step 7: Add link entities for discovered articles/pages
+    _addLinkEntities(entities, extraction);
+
     // Find primary entity
     int? primaryIndex;
     for (var i = 0; i < entities.length; i++) {
@@ -1082,93 +1085,60 @@ class SemanticExtractorService {
         .join(', ');
 
     final prompt =
-        '''Analyze this web page content and extract ALL semantic entities. '''
-        '''Be thorough — extract every person, place, organization, and '''
-        '''product mentioned.
+        '''Analyze this web page content and extract a comprehensive semantic graph.
+Your goal is to represent the page as a `WebPage` entity containing a rich collection of its parts.
+Do NOT just extract a single Article unless the page is strictly a text article.
 
-Page URL: ${extraction.url}
-Page Title: ${extraction.title}
+Page Metadata:
+URL: ${extraction.url}
+Title: ${extraction.title}
 Author: ${extraction.author ?? 'unknown'}
 Site: ${extraction.siteName ?? 'unknown'}
-Already found: $existingTypes
 
-Content:
+Already found entities: $existingTypes
+
+Content Preview (Markdown-ish):
 $contentPreview
 
-Extract entities in this exact JSON format:
+Instructions:
+1.  **Root Entity**: The root of your extraction MUST be a `WebPage` entity.
+2.  **Main Entity**: Identify the primary subject of the page (e.g., an `Article`, a `Product`, a `Person` profile, a `VideoObject`, or an `ImageGallery`) and link it via `mainEntity`.
+3.  **Parts**: Extract all significant sections as `hasPart`. This includes:
+    *   `ImageGallery`: If there are multiple related images.
+    *   `VideoObject`: For embedded videos.
+    *   `SiteNavigationElement`: For major navigation menus (group them).
+    *   `relatedLink`: For "See Also" or "Related Articles" links.
+4.  **Content**: For the `mainEntity` (e.g. Article), put the *cleaned* markdown content into a custom property `markdownContent` (if it's text-heavy).
+5.  **Entities**: Extract mentioned People, Places, Organizations as separate entities and link them (e.g. `mentions`, `about`).
+
+JSON Output Format:
 {
   "entities": [
     {
-      "type": "Article",
+      "type": "WebPage",
       "properties": {
-        "name": "article title",
-        "description": "brief summary",
-        "datePublished": "ISO date if mentioned",
-        "keywords": "comma-separated topics"
-      }
-    },
-    {
-      "type": "Person",
-      "properties": {
-        "name": "full name",
-        "jobTitle": "their role/title if mentioned",
-        "worksFor": "company/org name if mentioned",
-        "description": "brief bio if available",
-        "email": "if mentioned",
-        "url": "profile URL if mentioned"
+        "name": "Page Title",
+        "url": "${extraction.url}",
+        "description": "..."
       },
-      "relationshipToArticle": "author|subject|source|mentioned"
+      "relationships": [
+        {"predicate": "mainEntity", "targetIndex": 1},
+        {"predicate": "hasPart", "targetIndex": 2}
+      ]
     },
     {
-      "type": "Organization",
+      "type": "Article", // or Product, Person, etc.
       "properties": {
-        "name": "org name",
-        "description": "what they do",
-        "url": "website if mentioned",
-        "address": "location if mentioned"
-      }
-    },
-    {
-      "type": "Place",
-      "properties": {
-        "name": "place name",
-        "addressLocality": "city",
-        "addressRegion": "state/region",
-        "addressCountry": "country",
-        "latitude": 0.0,
-        "longitude": 0.0,
-        "description": "context about the place"
-      }
-    },
-    {
-      "type": "Product",
-      "properties": {
-        "name": "product name",
-        "brand": "manufacturer/company",
-        "description": "what it is",
-        "price": "price if mentioned",
-        "priceCurrency": "USD/EUR/etc"
+        "name": "Title",
+        "markdownContent": "Full markdown text...",
+        "image": "url...",
+        "datePublished": "..."
       }
     }
   ]
 }
+''';
 
-Rules:
-- Extract ALL people mentioned by name, including authors, interviewees, '''
-        '''executives, sources
-- Extract ALL locations mentioned (cities, countries, landmarks, addresses)
-- Extract ALL organizations mentioned (companies, agencies, universities, '''
-        '''governments)
-- Extract ALL products/services mentioned with prices if available
-- For places, include latitude/longitude if you know them (for well-known '''
-        '''cities/landmarks)
-- Include "relationshipToArticle" for each entity: author, subject, source, '''
-        '''mentioned, publisher
-- Only include entities actually mentioned in the content, not inferred
-- Do NOT include entities already listed in "Already found"
-- Do NOT include navigation elements, ads, or boilerplate
-- Keep property values concise (max 200 chars each)
-- Return valid JSON only, no markdown formatting''';
 
     final response = await _llm.complete(LlmRequest(
       messages: [LlmMessage.user(prompt)],
@@ -1288,8 +1258,7 @@ Rules:
     List<dynamic> parsed,
     List<SemanticEntity> entities,
   ) {
-    // First pass: collect all entities and their relationship declarations.
-    final rawEntities = <(SemanticEntity, String?)>[];
+    final startOffset = entities.length;
 
     for (final item in parsed) {
       if (item is! Map<String, dynamic>) continue;
@@ -1297,7 +1266,6 @@ Rules:
       final type = item['type']?.toString();
       final props = item['properties'];
       final conf = item['confidence'];
-      final rel = item['relationshipToArticle']?.toString();
 
       if (type == null || type.isEmpty) continue;
       if (props is! Map<String, dynamic>) continue;
@@ -1305,61 +1273,52 @@ Rules:
       final confidence = conf is num ? conf.toDouble().clamp(0.0, 1.0) : 0.7;
       if (confidence < 0.5) continue;
 
-      rawEntities.add((
-        SemanticEntity(
-          type: type,
-          properties: Map<String, dynamic>.from(props),
-          confidence: confidence,
-        ),
-        rel,
-      ));
-    }
-
-    // Second pass: find the primary article entity (index 0 if it exists)
-    // and wire up relationships from the article to related entities.
-    int? articleIndex;
-    for (var i = 0; i < rawEntities.length; i++) {
-      final (entity, _) = rawEntities[i];
-      if (entity.type == 'Article' ||
-          entity.type == 'NewsArticle' ||
-          entity.type == 'BlogPosting') {
-        articleIndex = entities.length + i;
-        break;
-      }
-    }
-
-    final articleRelationships = <EntityRelationship>[];
-
-    for (var i = 0; i < rawEntities.length; i++) {
-      final (entity, relationship) = rawEntities[i];
-
-      if (relationship != null && articleIndex != null) {
-        final predicate = _llmRelationshipMap[relationship];
-        if (predicate != null) {
-          articleRelationships.add(EntityRelationship(
-            predicate: predicate,
-            targetIndex: entities.length + i,
-          ));
+      final relationships = <EntityRelationship>[];
+      
+      // Parse explicit relationships from the LLM
+      final rels = item['relationships'];
+      if (rels is List) {
+        for (final rel in rels) {
+          if (rel is Map &&
+              rel['predicate'] != null &&
+              rel['targetIndex'] != null) {
+            final targetRelative = rel['targetIndex'];
+            if (targetRelative is int &&
+                targetRelative >= 0 &&
+                targetRelative < parsed.length) {
+              relationships.add(EntityRelationship(
+                predicate: rel['predicate'].toString(),
+                targetIndex: startOffset + targetRelative,
+              ));
+            }
+          }
         }
       }
 
-      entities.add(entity);
-    }
+      // Backward compatibility: handle "relationshipToArticle" by assuming
+      // the first entity in the batch is the root/article if not specified.
+      final relToArticle = item['relationshipToArticle']?.toString();
+      if (relToArticle != null && parsed.isNotEmpty) {
+        // Assume index 0 is the root if this is not index 0
+        final myIndex = parsed.indexOf(item);
+        if (myIndex > 0) {
+           final predicate = _llmRelationshipMap[relToArticle];
+           if (predicate != null) {
+             // Add relationship to the FIRST entity in this batch (assumed root)
+             relationships.add(EntityRelationship(
+               predicate: predicate,
+               targetIndex: startOffset, // 0th element of this batch
+             ));
+           }
+        }
+      }
 
-    // Patch the article entity with collected relationships.
-    if (articleIndex != null &&
-        articleRelationships.isNotEmpty &&
-        articleIndex < entities.length) {
-      final article = entities[articleIndex];
-      entities[articleIndex] = SemanticEntity(
-        type: article.type,
-        properties: article.properties,
-        relationships: [
-          ...article.relationships,
-          ...articleRelationships,
-        ],
-        confidence: article.confidence,
-      );
+      entities.add(SemanticEntity(
+        type: type,
+        properties: Map<String, dynamic>.from(props),
+        relationships: relationships,
+        confidence: confidence,
+      ));
     }
   }
 
@@ -1370,8 +1329,19 @@ Rules:
   /// Creates a fallback Article or WebPage entity when no structured data
   /// exists.
   SemanticEntity _createFallbackEntity(WebExtraction extraction) {
+    // Check structured data and URL patterns for specific entity types
+    // before defaulting to Article.
+    String type;
+    if (_looksLikeProduct(extraction)) {
+      type = 'Product';
+    } else if (extraction.textContent.length > 200) {
+      type = 'Article';
+    } else {
+      type = 'WebPage';
+    }
+
     return SemanticEntity(
-      type: extraction.textContent.length > 200 ? 'Article' : 'WebPage',
+      type: type,
       properties: {
         'name': extraction.title,
         if (extraction.description != null)
@@ -1385,6 +1355,35 @@ Rules:
       },
       confidence: 0.6,
     );
+  }
+
+  /// Heuristically detects whether a page is a product page based on
+  /// OG type, URL patterns, and text content indicators.
+  static bool _looksLikeProduct(WebExtraction extraction) {
+    // OG type check
+    final ogType = extraction.openGraph['og:type']?.toLowerCase();
+    if (ogType == 'product' || ogType == 'og:product') return true;
+
+    // URL patterns common for product pages
+    final url = extraction.url.toLowerCase();
+    if (url.contains('/dp/') || // Amazon
+        url.contains('/product/') ||
+        url.contains('/item/') ||
+        url.contains('/p/') && url.contains('shop')) {
+      return true;
+    }
+
+    // Text content indicators
+    final lower = extraction.textContent.toLowerCase();
+    final indicators = [
+      'add to cart', 'buy now', 'add to bag', 'add to basket',
+      'in stock', 'out of stock', 'free shipping', 'free delivery',
+    ];
+    var matches = 0;
+    for (final ind in indicators) {
+      if (lower.contains(ind)) matches++;
+    }
+    return matches >= 2;
   }
 
   /// Adds `ImageObject` entities for significant content images.
@@ -1426,6 +1425,63 @@ Rules:
         confidence: 0.7,
       ));
       imageCount++;
+    }
+  }
+
+  /// Adds entity entries for discovered links, classifying them by type.
+  ///
+  /// Links pointing to product pages become `Product` entities; other
+  /// links with images or headline-length titles become `Article`; the
+  /// rest become `WebPage`.
+  void _addLinkEntities(
+    List<SemanticEntity> entities,
+    WebExtraction extraction,
+  ) {
+    if (extraction.articleLinks.isEmpty) return;
+
+    // De-dupe against existing entities
+    final existingUrls = entities
+        .map((e) => e.properties['url'] as String?)
+        .where((u) => u != null)
+        .toSet();
+    // Also ignore self-link
+    existingUrls.add(extraction.url);
+
+    for (final link in extraction.articleLinks) {
+      if (existingUrls.contains(link.url)) continue;
+      // Skip very short titles or empty URLs
+      if (link.title.length < 3 || link.url.isEmpty) continue;
+
+      // Detect product links by URL patterns
+      final linkUrl = link.url.toLowerCase();
+      final isProduct = linkUrl.contains('/dp/') ||
+          linkUrl.contains('/product/') ||
+          linkUrl.contains('/item/') ||
+          linkUrl.contains('/gp/product/') ||
+          (linkUrl.contains('/p/') && linkUrl.contains('shop'));
+
+      // Treat as Article if it has an image or title looks like a headline.
+      // Otherwise WebPage.
+      final String type;
+      if (isProduct) {
+        type = 'Product';
+      } else if (link.image != null || link.title.length > 20) {
+        type = 'Article';
+      } else {
+        type = 'WebPage';
+      }
+
+      entities.add(SemanticEntity(
+        type: type,
+        properties: {
+          'name': link.title,
+          'url': link.url,
+          if (link.image != null && link.image!.isNotEmpty) 'image': link.image,
+          if (link.description != null) 'description': link.description,
+        },
+        confidence: 0.8,
+      ));
+      existingUrls.add(link.url);
     }
   }
 
@@ -1478,6 +1534,10 @@ Rules:
 
   /// Returns the index of an existing entity with similar type and name,
   /// or `null` if no match is found.
+  ///
+  /// Uses fuzzy matching: exact name, URL match, substring containment,
+  /// and word overlap to catch variants like "SpaceX" vs
+  /// "Space Exploration Technologies Corporation".
   int? _findSimilarEntityIndex(
     List<SemanticEntity> existing,
     SemanticEntity candidate,
@@ -1492,16 +1552,80 @@ Rules:
       if (e.type == candidate.type) {
         final eName =
             (e.properties['name'] ?? '').toString().toLowerCase().trim();
+        // Exact name match.
         if (eName.isNotEmpty && candName.isNotEmpty && eName == candName) {
           return i;
         }
+        // URL match.
         final eUrl =
             (e.properties['url'] ?? '').toString().toLowerCase().trim();
         if (eUrl.isNotEmpty && candUrl.isNotEmpty && eUrl == candUrl) {
           return i;
         }
+        // Fuzzy name match: substring containment.
+        if (eName.isNotEmpty && candName.isNotEmpty) {
+          if (eName.contains(candName) || candName.contains(eName)) {
+            return i;
+          }
+          // Strip common corporate suffixes and compare.
+          final stripped = _stripCorpSuffixes(eName);
+          final candStripped = _stripCorpSuffixes(candName);
+          if (stripped.isNotEmpty && candStripped.isNotEmpty &&
+              (stripped == candStripped ||
+               stripped.contains(candStripped) ||
+               candStripped.contains(stripped))) {
+            return i;
+          }
+          // Cross-reference: if one entity's name appears in the other's
+          // description, they're likely aliases (e.g. "SpaceX" in desc of
+          // "Space Exploration Technologies Corporation").
+          final eDesc = (e.properties['description'] ?? '')
+              .toString().toLowerCase().trim();
+          final candDesc = (candidate.properties['description'] ?? '')
+              .toString().toLowerCase().trim();
+          if (candName.length >= 4 && eDesc.contains(candName)) return i;
+          if (eName.length >= 4 && candDesc.contains(eName)) return i;
+
+          // Brand-abbreviation pattern: single-token name starting with the
+          // first word of a multi-word name (after suffix stripping).
+          // E.g. "SpaceX" starts with "Space" (first word of
+          // "Space Exploration") → 5/6 = 83% coverage → same entity.
+          final sWords = stripped.split(' ')
+              .where((w) => w.length >= 3).toList();
+          final cWords = candStripped.split(' ')
+              .where((w) => w.length >= 3).toList();
+          final single = sWords.length == 1 && cWords.length > 1
+              ? stripped.replaceAll(' ', '')
+              : cWords.length == 1 && sWords.length > 1
+                  ? candStripped.replaceAll(' ', '')
+                  : null;
+          final multiFirst = sWords.length == 1 && cWords.length > 1
+              ? cWords.first
+              : cWords.length == 1 && sWords.length > 1
+                  ? sWords.first
+                  : null;
+          if (single != null && multiFirst != null &&
+              multiFirst.length >= 4 &&
+              single.startsWith(multiFirst) &&
+              multiFirst.length >= (single.length * 0.7).ceil()) {
+            return i;
+          }
+        }
       }
     }
     return null;
+  }
+
+  /// Strips common corporate/organization suffixes for fuzzy comparison.
+  static String _stripCorpSuffixes(String name) {
+    var s = name;
+    for (final suffix in const [
+      'inc', 'inc.', 'llc', 'ltd', 'corp', 'corp.', 'corporation',
+      'company', 'co', 'co.', 'group', 'holdings', 'technologies',
+      'technology', 'the',
+    ]) {
+      s = s.replaceAll(RegExp('\\b${RegExp.escape(suffix)}\\b'), '');
+    }
+    return s.replaceAll(RegExp(r'[,.\s]+'), ' ').trim();
   }
 }

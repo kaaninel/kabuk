@@ -39,10 +39,10 @@ class MyProfilePage extends ConsumerWidget {
         if (identity == null) {
           return Scaffold(
             appBar: AppBar(title: const Text('My Profile')),
-            body: const Center(
+            body: Center(
               child: Text(
                 'No identity found.',
-                style: TextStyle(color: KabukTheme.textSecondary),
+                style: TextStyle(color: context.kabukTextSecondary),
               ),
             ),
           );
@@ -94,15 +94,15 @@ class _ProfileBodyState extends ConsumerState<_ProfileBody> {
         : widget.identity.displayName;
 
     return Scaffold(
-      backgroundColor: KabukTheme.background,
+      backgroundColor: context.kabukBackground,
       body: CustomScrollView(
         slivers: [
           // ---- Banner + AppBar ----
           SliverAppBar(
             expandedHeight: 160,
             pinned: true,
-            backgroundColor: KabukTheme.surface,
-            foregroundColor: KabukTheme.textPrimary,
+            backgroundColor: context.kabukSurface,
+            foregroundColor: context.kabukTextPrimary,
             title: const Text('My Profile'),
             actions: [
               IconButton(
@@ -154,10 +154,10 @@ class _ProfileBodyState extends ConsumerState<_ProfileBody> {
                           children: [
                             Text(
                               displayName,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 22,
                                 fontWeight: FontWeight.bold,
-                                color: KabukTheme.textPrimary,
+                                color: context.kabukTextPrimary,
                               ),
                             ),
                             if (nostrProfile?.nip05 != null)
@@ -198,26 +198,26 @@ class _ProfileBodyState extends ConsumerState<_ProfileBody> {
                   if (nostrProfile?.about?.isNotEmpty == true) ...[
                     Text(
                       nostrProfile!.about!,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
-                        color: KabukTheme.textSecondary,
+                        color: context.kabukTextSecondary,
                         height: 1.5,
                       ),
                     ),
                     const SizedBox(height: KabukTheme.spacingMd),
                   ],
 
-                  const Divider(color: KabukTheme.divider),
+                  Divider(color: context.kabukDivider),
                   const SizedBox(height: KabukTheme.spacingMd),
 
                   // ---- QR Code ----
                   if (npub.isNotEmpty) ...[
-                    const Text(
+                    Text(
                       'Public Key',
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: KabukTheme.textSecondary,
+                        color: context.kabukTextSecondary,
                         letterSpacing: 0.8,
                       ),
                     ),
@@ -260,7 +260,7 @@ class _ProfileBodyState extends ConsumerState<_ProfileBody> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: KabukTheme.surface,
+        backgroundColor: context.kabukSurface,
         title: const Text('Edit Profile'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -272,7 +272,7 @@ class _ProfileBodyState extends ConsumerState<_ProfileBody> {
                 hintText: 'Your name',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
-                  borderSide: const BorderSide(color: KabukTheme.divider),
+                  borderSide: BorderSide(color: context.kabukDivider),
                 ),
               ),
               autofocus: true,
@@ -285,7 +285,7 @@ class _ProfileBodyState extends ConsumerState<_ProfileBody> {
                 hintText: 'Tell the world about yourself',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
-                  borderSide: const BorderSide(color: KabukTheme.divider),
+                  borderSide: BorderSide(color: context.kabukDivider),
                 ),
               ),
               maxLines: 3,
@@ -348,9 +348,9 @@ class _QrCard extends StatelessWidget {
       onTap: () => _showFullScreen(context),
       child: Container(
         decoration: BoxDecoration(
-          color: KabukTheme.surfaceElevated,
+          color: context.kabukSurfaceElevated,
           borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
-          border: Border.all(color: KabukTheme.divider),
+          border: Border.all(color: context.kabukDivider),
         ),
         padding: const EdgeInsets.all(KabukTheme.spacingLg),
         child: Column(
@@ -362,40 +362,40 @@ class _QrCard extends StatelessWidget {
                 size: 220,
                 backgroundColor: Colors.white,
                 padding: const EdgeInsets.all(12),
-                eyeStyle: const QrEyeStyle(
+                eyeStyle: QrEyeStyle(
                   eyeShape: QrEyeShape.square,
-                  color: KabukTheme.background,
+                  color: context.kabukBackground,
                 ),
-                dataModuleStyle: const QrDataModuleStyle(
+                dataModuleStyle: QrDataModuleStyle(
                   dataModuleShape: QrDataModuleShape.square,
-                  color: KabukTheme.background,
+                  color: context.kabukBackground,
                 ),
               ),
             ),
             const SizedBox(height: KabukTheme.spacingSm),
             Text(
               '${npub.substring(0, 16)}…${npub.substring(npub.length - 8)}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: 'monospace',
                 fontSize: 12,
-                color: KabukTheme.textTertiary,
+                color: context.kabukTextTertiary,
               ),
             ),
             const SizedBox(height: 4),
-            const Row(
+            Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
                   Icons.zoom_out_map_rounded,
                   size: 13,
-                  color: KabukTheme.textTertiary,
+                  color: context.kabukTextTertiary,
                 ),
                 SizedBox(width: 4),
                 Text(
                   'Tap to expand',
                   style: TextStyle(
                     fontSize: 11,
-                    color: KabukTheme.textTertiary,
+                    color: context.kabukTextTertiary,
                   ),
                 ),
               ],
@@ -410,7 +410,7 @@ class _QrCard extends StatelessWidget {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: KabukTheme.surface,
+      backgroundColor: context.kabukSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
           top: Radius.circular(KabukTheme.radiusLg),
@@ -450,17 +450,17 @@ class _QrFullScreen extends StatelessWidget {
               width: 36,
               height: 4,
               decoration: BoxDecoration(
-                color: KabukTheme.divider,
+                color: context.kabukDivider,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
             const SizedBox(height: KabukTheme.spacingLg),
-            const Text(
+            Text(
               'Scan to follow / contact',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
-                color: KabukTheme.textPrimary,
+                color: context.kabukTextPrimary,
               ),
             ),
             const SizedBox(height: KabukTheme.spacingLg),
@@ -475,23 +475,23 @@ class _QrFullScreen extends StatelessWidget {
                 version: QrVersions.auto,
                 size: qrSize,
                 backgroundColor: Colors.white,
-                eyeStyle: const QrEyeStyle(
+                eyeStyle: QrEyeStyle(
                   eyeShape: QrEyeShape.square,
-                  color: KabukTheme.background,
+                  color: context.kabukBackground,
                 ),
-                dataModuleStyle: const QrDataModuleStyle(
+                dataModuleStyle: QrDataModuleStyle(
                   dataModuleShape: QrDataModuleShape.square,
-                  color: KabukTheme.background,
+                  color: context.kabukBackground,
                 ),
               ),
             ),
             const SizedBox(height: KabukTheme.spacingLg),
             SelectableText(
               npub,
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: 'monospace',
                 fontSize: 12,
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
               ),
               textAlign: TextAlign.center,
             ),
@@ -562,13 +562,13 @@ class _CopyTile extends StatelessWidget {
             vertical: KabukTheme.spacingSm,
           ),
           decoration: BoxDecoration(
-            color: KabukTheme.surfaceVariant,
+            color: context.kabukSurfaceVariant,
             borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
-            border: Border.all(color: KabukTheme.divider),
+            border: Border.all(color: context.kabukDivider),
           ),
           child: Row(
             children: [
-              Icon(icon, size: 16, color: KabukTheme.textSecondary),
+              Icon(icon, size: 16, color: context.kabukTextSecondary),
               const SizedBox(width: KabukTheme.spacingSm),
               Expanded(
                 child: Column(
@@ -576,27 +576,27 @@ class _CopyTile extends StatelessWidget {
                   children: [
                     Text(
                       label,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
-                        color: KabukTheme.textTertiary,
+                        color: context.kabukTextTertiary,
                         letterSpacing: 0.6,
                       ),
                     ),
                     Text(
                       short,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontFamily: 'monospace',
                         fontSize: 13,
-                        color: KabukTheme.textPrimary,
+                        color: context.kabukTextPrimary,
                       ),
                     ),
                   ],
                 ),
               ),
-              const Icon(
+              Icon(
                 Icons.copy_rounded,
                 size: 16,
-                color: KabukTheme.textTertiary,
+                color: context.kabukTextTertiary,
               ),
             ],
           ),
@@ -623,7 +623,7 @@ class _Avatar extends StatelessWidget {
     if (picture != null && picture!.isNotEmpty) {
       return CircleAvatar(
         radius: radius,
-        backgroundColor: KabukTheme.surfaceVariant,
+        backgroundColor: context.kabukSurfaceVariant,
         child: ClipOval(
           child: FeedImage(
             imageUrl: picture!,

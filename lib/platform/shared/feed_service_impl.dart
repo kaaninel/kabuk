@@ -8,22 +8,34 @@ import 'package:kabuk/platform/shared/fourchan_source.dart';
 import 'package:kabuk/platform/shared/nostr_feed_source.dart';
 import 'package:kabuk/platform/shared/reddit_source.dart';
 import 'package:kabuk/platform/shared/rss_source.dart';
+import 'package:kabuk/platform/shared/usenet/newznab_client.dart';
+import 'package:kabuk/platform/shared/usenet_feed_source.dart';
 import 'package:kabuk/services/feed.dart';
 import 'package:kabuk/services/mesh.dart';
 import 'package:kabuk/services/nostr.dart';
+import 'package:kabuk/services/usenet.dart';
 
-/// Cross-platform [FeedService] backed by RSS, Reddit, and Nostr sources.
+/// Cross-platform [FeedService] backed by RSS, Reddit, Nostr, and Usenet sources.
 class SharedFeedService implements FeedService {
-  /// Creates a [SharedFeedService] with the given [mesh] service
-  /// and optional [nostr] service for Nostr feed support.
-  SharedFeedService({required MeshService mesh, NostrService? nostr})
-    : _sources = {
-        FeedSourceType.rss: RssFeedSource(mesh: mesh),
-        FeedSourceType.atom: RssFeedSource(mesh: mesh), // Atom uses same parser
-        FeedSourceType.reddit: RedditFeedSource(mesh: mesh),
-        FeedSourceType.fourchan: FourchanFeedSource(mesh: mesh),
-        if (nostr != null) FeedSourceType.nostr: NostrFeedSource(nostr: nostr),
-      };
+  /// Creates a [SharedFeedService] with the given [mesh] service,
+  /// optional [nostr] service for Nostr feed support, and optional
+  /// [usenet] service for Usenet indexer feed support.
+  SharedFeedService({
+    required MeshService mesh,
+    NostrService? nostr,
+    UsenetService? usenet,
+  }) : _sources = {
+         FeedSourceType.rss: RssFeedSource(mesh: mesh),
+         FeedSourceType.atom: RssFeedSource(mesh: mesh), // Atom uses same parser
+         FeedSourceType.reddit: RedditFeedSource(mesh: mesh),
+         FeedSourceType.fourchan: FourchanFeedSource(mesh: mesh),
+         if (nostr != null) FeedSourceType.nostr: NostrFeedSource(nostr: nostr),
+         if (usenet != null)
+           FeedSourceType.usenet: UsenetFeedSource(
+             usenetService: usenet,
+             clientFactory: NewznabClient.new,
+           ),
+       };
 
   final Map<FeedSourceType, FeedSource> _sources;
 
@@ -89,6 +101,13 @@ class SharedFeedService implements FeedService {
         lower.contains('boards.4chan.org') ||
         lower.contains('boards.4channel.org')) {
       return FeedSourceType.fourchan;
+    }
+
+    // Usenet URL patterns.
+    if (lower.startsWith('usenet://')) {
+      if (_sources.containsKey(FeedSourceType.usenet)) {
+        return FeedSourceType.usenet;
+      }
     }
 
     // Common RSS/Atom file extensions.

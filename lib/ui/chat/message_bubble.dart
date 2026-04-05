@@ -174,7 +174,7 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
       ),
-      color: KabukTheme.surfaceVariant,
+      color: context.kabukSurfaceVariant,
     ).then((value) {
       if (value == null || !context.mounted) return;
       switch (value) {
@@ -224,7 +224,7 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
         decoration: BoxDecoration(
           color: _isUser
               ? KabukTheme.primaryGreen.withAlpha(30)
-              : KabukTheme.cardColor,
+              : context.kabukCardColor,
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(KabukTheme.radiusMd),
             topRight: const Radius.circular(KabukTheme.radiusMd),
@@ -234,7 +234,7 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
           border: Border.all(
             color: _isUser
                 ? KabukTheme.primaryGreen.withAlpha(60)
-                : KabukTheme.divider,
+                : context.kabukDivider,
             width: 0.5,
           ),
         ),
@@ -266,7 +266,7 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                 Text(
                   _formatTime(message.timestamp),
                   style: TextStyle(
-                    color: KabukTheme.textSecondary.withAlpha(128),
+                    color: context.kabukTextSecondary.withAlpha(128),
                     fontSize: 11,
                   ),
                 ),
@@ -277,7 +277,7 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                     height: 10,
                     child: CircularProgressIndicator(
                       strokeWidth: 1.5,
-                      color: KabukTheme.textSecondary.withAlpha(128),
+                      color: context.kabukTextSecondary.withAlpha(128),
                     ),
                   ),
                 ] else if (_isUser && message.status == 'sent') ...[
@@ -285,7 +285,7 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                   Icon(
                     Icons.check,
                     size: 12,
-                    color: KabukTheme.textSecondary.withAlpha(128),
+                    color: context.kabukTextSecondary.withAlpha(128),
                   ),
                 ] else if (_isUser &&
                     message.status.startsWith('delivered')) ...[
@@ -331,6 +331,8 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
   ///
   /// These are visually distinct from regular bubbles — smaller, with a
   /// colored left border and an icon denoting the tool operation.
+  /// Tool results show up to 5 lines with a "Show more" toggle for
+  /// longer content.
   Widget _buildToolIndicator(BuildContext context) {
     final isCall = message.role == 'tool_call';
     final meta = _parseToolMetadata();
@@ -364,7 +366,7 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                 vertical: KabukTheme.spacingXs + 2,
               ),
               decoration: BoxDecoration(
-                color: KabukTheme.surfaceVariant,
+                color: context.kabukSurfaceVariant,
                 borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
                 border: Border(left: BorderSide(color: accentColor, width: 2)),
               ),
@@ -374,41 +376,14 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                   Icon(icon, size: 14, color: accentColor),
                   const SizedBox(width: 6),
                   Flexible(
-                    child: Text.rich(
-                      TextSpan(
-                        children: [
-                          TextSpan(
-                            text: toolName,
-                            style: TextStyle(
-                              color: accentColor,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          if (!isCall && message.content.isNotEmpty) ...[
-                            const TextSpan(text: '  '),
-                            TextSpan(
-                              text: _sanitizeToolResult(message.content),
-                              style: const TextStyle(
-                                color: KabukTheme.textSecondary,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                          if (isCall) ...[
-                            const TextSpan(text: '  '),
-                            TextSpan(
-                              text: _formatToolArgs(meta?['args']),
-                              style: const TextStyle(
-                                color: KabukTheme.textSecondary,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                    child: _ExpandableToolText(
+                      toolName: toolName,
+                      isCall: isCall,
+                      content: !isCall && message.content.isNotEmpty
+                          ? _sanitizeToolResult(message.content)
+                          : null,
+                      args: isCall ? _formatToolArgs(meta?['args']) : null,
+                      accentColor: accentColor,
                     ),
                   ),
                 ],
@@ -658,5 +633,77 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
     final h = time.hour.toString().padLeft(2, '0');
     final m = time.minute.toString().padLeft(2, '0');
     return '$h:$m';
+  }
+}
+
+/// Expandable text for tool call/result indicators.
+///
+/// Shows up to 5 lines by default with a "Show more" toggle
+/// when the content exceeds that limit.
+class _ExpandableToolText extends StatefulWidget {
+  const _ExpandableToolText({
+    required this.toolName,
+    required this.isCall,
+    required this.accentColor,
+    this.content,
+    this.args,
+  });
+
+  final String toolName;
+  final bool isCall;
+  final String? content;
+  final String? args;
+  final Color accentColor;
+
+  @override
+  State<_ExpandableToolText> createState() => _ExpandableToolTextState();
+}
+
+class _ExpandableToolTextState extends State<_ExpandableToolText> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final secondaryText = widget.isCall ? widget.args : widget.content;
+    final hasSecondary = secondaryText != null && secondaryText.isNotEmpty;
+
+    return GestureDetector(
+      onTap: hasSecondary ? () => setState(() => _expanded = !_expanded) : null,
+      behavior: HitTestBehavior.opaque,
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: widget.toolName,
+              style: TextStyle(
+                color: widget.accentColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            if (hasSecondary) ...[
+              const TextSpan(text: '  '),
+              TextSpan(
+                text: secondaryText,
+                style: TextStyle(
+                  color: context.kabukTextSecondary,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+            if (hasSecondary && !_expanded)
+              TextSpan(
+                text: '  ▸',
+                style: TextStyle(
+                  color: context.kabukTextSecondary.withAlpha(120),
+                  fontSize: 11,
+                ),
+              ),
+          ],
+        ),
+        maxLines: _expanded ? null : 5,
+        overflow: _expanded ? TextOverflow.clip : TextOverflow.ellipsis,
+      ),
+    );
   }
 }

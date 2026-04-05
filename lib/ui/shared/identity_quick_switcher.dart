@@ -10,6 +10,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/services/auth.dart';
@@ -26,7 +27,7 @@ import 'package:kabuk/ui/theme.dart';
 ///   actions: [const IdentityQuickSwitcher()],
 /// )
 /// ```
-class IdentityQuickSwitcher extends ConsumerWidget {
+class IdentityQuickSwitcher extends ConsumerStatefulWidget {
   /// Creates an [IdentityQuickSwitcher].
   const IdentityQuickSwitcher({super.key, this.radius = 16});
 
@@ -34,7 +35,79 @@ class IdentityQuickSwitcher extends ConsumerWidget {
   final double radius;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<IdentityQuickSwitcher> createState() =>
+      _IdentityQuickSwitcherState();
+}
+
+class _IdentityQuickSwitcherState extends ConsumerState<IdentityQuickSwitcher>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _scaleController;
+  late final Animation<double> _scaleAnimation;
+
+  /// Minimum vertical drag distance to trigger an identity switch.
+  static const _dragThreshold = 20.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _scaleController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
+    _scaleAnimation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.8), weight: 50),
+      TweenSequenceItem(tween: Tween(begin: 0.8, end: 1.0), weight: 50),
+    ]).animate(
+      CurvedAnimation(parent: _scaleController, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _scaleController.dispose();
+    super.dispose();
+  }
+
+  /// Cycles to the next or previous identity and plays feedback.
+  ///
+  /// [direction] is `1` for next (swipe up) and `-1` for previous
+  /// (swipe down). Does nothing when fewer than two identities exist.
+  Future<void> _cycleIdentity(int direction) async {
+    final identities = ref.read(allIdentitiesProvider).valueOrNull ?? [];
+    if (identities.length < 2) return;
+
+    final currentId = ref.read(currentIdentityProvider).valueOrNull?.id;
+    if (currentId == null) return;
+
+    final currentIndex = identities.indexWhere((i) => i.id == currentId);
+    if (currentIndex == -1) return;
+
+    final targetIndex =
+        (currentIndex + direction + identities.length) % identities.length;
+
+    unawaited(HapticFeedback.lightImpact());
+    unawaited(_scaleController.forward(from: 0));
+
+    final switcher = ref.read(switchIdentityProvider);
+    await switcher(identities[targetIndex].id);
+  }
+
+  void _onVerticalDragEnd(DragEndDetails details) {
+    final dy = details.velocity.pixelsPerSecond.dy;
+    // Also check primary velocity for fling-style swipes.
+    final primaryDy = details.primaryVelocity ?? 0;
+
+    if (dy < -_dragThreshold || primaryDy < -200) {
+      // Swipe up → next identity.
+      unawaited(_cycleIdentity(1));
+    } else if (dy > _dragThreshold || primaryDy > 200) {
+      // Swipe down → previous identity.
+      unawaited(_cycleIdentity(-1));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final identitiesAsync = ref.watch(allIdentitiesProvider);
     final currentAsync = ref.watch(currentIdentityProvider);
 
@@ -44,179 +117,190 @@ class IdentityQuickSwitcher extends ConsumerWidget {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: PopupMenuButton<String>(
-        offset: const Offset(0, 48),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
-        ),
-        color: KabukTheme.surface,
-        child: Semantics(
-          label: 'Switch identity',
-          button: true,
-          excludeSemantics: true,
-          child: CircleAvatar(
-          radius: radius,
-          backgroundColor: hasIdentity
-              ? _colorFromHex(current.publicKeyHex)
-              : KabukTheme.accentGreen,
-          child: hasIdentity && initials.isNotEmpty
-              ? Text(
-                  initials,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: radius * 0.85,
-                    fontWeight: FontWeight.w700,
+      child: GestureDetector(
+        onVerticalDragEnd: _onVerticalDragEnd,
+        child: ScaleTransition(
+          scale: _scaleAnimation,
+          child: PopupMenuButton<String>(
+            offset: const Offset(0, 48),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
+            ),
+            color: context.kabukSurface,
+            child: Semantics(
+              label: 'Switch identity',
+              button: true,
+              excludeSemantics: true,
+              child: CircleAvatar(
+              radius: widget.radius,
+              backgroundColor: hasIdentity
+                  ? _colorFromHex(current.publicKeyHex)
+                  : KabukTheme.accentGreen,
+              child: hasIdentity && initials.isNotEmpty
+                  ? Text(
+                      initials,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: widget.radius * 0.85,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    )
+                  : Icon(
+                      Icons.bolt_rounded,
+                      color: Colors.white,
+                      size: widget.radius,
+                    ),
+              ),
+            ),
+            itemBuilder: (ctx) {
+              final identities = identitiesAsync.valueOrNull ?? [];
+              return [
+                if (identities.isEmpty)
+                  PopupMenuItem<String>(
+                    enabled: false,
+                    child: Text(
+                      'No identities yet',
+                      style: TextStyle(
+                        color: context.kabukTextTertiary,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  )
+                else
+                  ...identities.map(
+                    (id) => PopupMenuItem<String>(
+                      value: id.id,
+                      child: Row(
+                        children: [
+                          Icon(
+                            current?.id == id.id
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_off,
+                            color: current?.id == id.id
+                                ? KabukTheme.accentGreen
+                                : context.kabukTextSecondary,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          CircleAvatar(
+                            radius: 12,
+                            backgroundColor: _colorFromHex(id.publicKeyHex),
+                            child: Text(
+                              _initials(id),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  id.displayName.isNotEmpty
+                                      ? id.displayName
+                                      : 'Unnamed',
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                Text(
+                                  id.npub != null
+                                      ? '${id.npub!.substring(0, 16)}...'
+                                      : '${id.id.substring(0, 8)}...',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: context.kabukTextSecondary,
+                                    fontFamily: 'monospace',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                )
-              : Icon(
-                  Icons.bolt_rounded,
-                  color: Colors.white,
-                  size: radius,
-                ),
-          ),
-        ),
-        itemBuilder: (ctx) {
-          final identities = identitiesAsync.valueOrNull ?? [];
-          return [
-            if (identities.isEmpty)
-              const PopupMenuItem<String>(
-                enabled: false,
-                child: Text(
-                  'No identities yet',
-                  style: TextStyle(
-                    color: KabukTheme.textTertiary,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              )
-            else
-              ...identities.map(
-                (id) => PopupMenuItem<String>(
-                  value: id.id,
+                const PopupMenuDivider(),
+                const PopupMenuItem<String>(
+                  value: '__new__',
                   child: Row(
                     children: [
-                      Icon(
-                        current?.id == id.id
-                            ? Icons.radio_button_checked
-                            : Icons.radio_button_off,
-                        color: current?.id == id.id
-                            ? KabukTheme.accentGreen
-                            : KabukTheme.textSecondary,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 8),
-                      CircleAvatar(
-                        radius: 12,
-                        backgroundColor: _colorFromHex(id.publicKeyHex),
-                        child: Text(
-                          _initials(id),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              id.displayName.isNotEmpty
-                                  ? id.displayName
-                                  : 'Unnamed',
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            Text(
-                              id.npub != null
-                                  ? '${id.npub!.substring(0, 16)}...'
-                                  : '${id.id.substring(0, 8)}...',
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: KabukTheme.textSecondary,
-                                fontFamily: 'monospace',
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      Icon(Icons.add_rounded, size: 18),
+                      SizedBox(width: 8),
+                      Text('Generate New'),
                     ],
                   ),
                 ),
-              ),
-            const PopupMenuDivider(),
-            const PopupMenuItem<String>(
-              value: '__new__',
-              child: Row(
-                children: [
-                  Icon(Icons.add_rounded, size: 18),
-                  SizedBox(width: 8),
-                  Text('Generate New'),
-                ],
-              ),
-            ),
-            const PopupMenuItem<String>(
-              value: '__import__',
-              child: Row(
-                children: [
-                  Icon(Icons.download_rounded, size: 18),
-                  SizedBox(width: 8),
-                  Text('Import nsec'),
-                ],
-              ),
-            ),
-            const PopupMenuDivider(),
-            const PopupMenuItem<String>(
-              value: '__manage__',
-              child: Row(
-                children: [
-                  Icon(Icons.manage_accounts_rounded, size: 18),
-                  SizedBox(width: 8),
-                  Text('Manage Identities'),
-                ],
-              ),
-            ),
-          ];
-        },
-        onSelected: (value) async {
-          if (value == '__new__') {
-            final name = await _showNameDialog(context);
-            if (name == null || !context.mounted) return;
-            final auth = ref.read(authServiceProvider);
-            final created = await auth.generateKeyPair();
-            if (name.isNotEmpty) {
-              await auth.setDisplayName(name);
-            }
-            if (!context.mounted) return;
-            // Full cascade switch so all providers rebind to the new identity.
-            final switcher = ref.read(switchIdentityProvider);
-            await switcher(created.id);
-          } else if (value == '__import__') {
-            if (context.mounted) {
-              unawaited(
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => const IdentityPage()),
+                const PopupMenuItem<String>(
+                  value: '__import__',
+                  child: Row(
+                    children: [
+                      Icon(Icons.download_rounded, size: 18),
+                      SizedBox(width: 8),
+                      Text('Import nsec'),
+                    ],
+                  ),
                 ),
-              );
-            }
-          } else if (value == '__manage__') {
-            if (context.mounted) {
-              unawaited(
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => const IdentityPage()),
+                const PopupMenuDivider(),
+                const PopupMenuItem<String>(
+                  value: '__manage__',
+                  child: Row(
+                    children: [
+                      Icon(Icons.manage_accounts_rounded, size: 18),
+                      SizedBox(width: 8),
+                      Text('Manage Identities'),
+                    ],
+                  ),
                 ),
-              );
-            }
-          } else {
-            final switcher = ref.read(switchIdentityProvider);
-            await switcher(value);
-          }
-        },
+              ];
+            },
+            onSelected: (value) async {
+              if (value == '__new__') {
+                final name = await _showNameDialog(context);
+                if (name == null || !context.mounted) return;
+                final auth = ref.read(authServiceProvider);
+                final created = await auth.generateKeyPair();
+                if (name.isNotEmpty) {
+                  await auth.setDisplayName(name);
+                }
+                if (!context.mounted) return;
+                // Full cascade switch so all providers rebind to the new
+                // identity.
+                final switcher = ref.read(switchIdentityProvider);
+                await switcher(created.id);
+              } else if (value == '__import__') {
+                if (context.mounted) {
+                  unawaited(
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const IdentityPage(),
+                      ),
+                    ),
+                  );
+                }
+              } else if (value == '__manage__') {
+                if (context.mounted) {
+                  unawaited(
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const IdentityPage(),
+                      ),
+                    ),
+                  );
+                }
+              } else {
+                final switcher = ref.read(switchIdentityProvider);
+                await switcher(value);
+              }
+            },
+          ),
+        ),
       ),
     );
   }
@@ -229,7 +313,7 @@ class IdentityQuickSwitcher extends ConsumerWidget {
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: KabukTheme.surface,
+        backgroundColor: context.kabukSurface,
         title: const Text('New Identity'),
         content: TextField(
           controller: controller,

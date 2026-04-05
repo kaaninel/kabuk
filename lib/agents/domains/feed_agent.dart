@@ -1,11 +1,14 @@
-/// Feed agent — manages RSS, Reddit, and other content feed subscriptions.
+/// Feed agent — manages RSS, Reddit, Nostr, and Usenet content sources.
 ///
 /// Provides tools for subscribing to feeds, refreshing content,
-/// listing articles, and managing feed subscriptions. All articles
-/// are stored as `schema:Article` entities in the knowledge store.
+/// listing articles, and managing feed subscriptions. Also manages
+/// Usenet indexers (Newznab search APIs) and NNTP providers (news servers).
+/// All articles are stored as `schema:Article` entities in the knowledge store.
 library;
 
 import 'dart:async' show unawaited;
+import 'dart:convert' show utf8;
+import 'dart:typed_data' show Uint8List;
 
 import 'package:http/http.dart' as http;
 import 'package:kabuk/agents/base.dart';
@@ -14,29 +17,33 @@ import 'package:kabuk/agents/llm.dart';
 import 'package:kabuk/agents/memory.dart';
 import 'package:kabuk/agents/messages.dart';
 import 'package:kabuk/config/namespaces.dart';
+import 'package:kabuk/config/result.dart';
 import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/services/feed.dart';
 import 'package:kabuk/services/reader_mode.dart';
+import 'package:kabuk/services/usenet.dart';
 import 'package:kabuk/services/web_extractor.dart';
 
 /// Agent specialized in content feed management.
 ///
-/// Handles subscribing to RSS feeds and subreddits, fetching new content,
-/// listing and searching articles, and managing subscriptions.
+/// Handles subscribing to RSS feeds, subreddits, and Nostr topics,
+/// fetching new content, listing and searching articles, managing
+/// subscriptions, and configuring Usenet indexers and NNTP providers.
 class FeedAgent extends BaseAgent with AgentMemoryMixin {
   @override
   String get name => 'feeds';
 
   @override
   String get description =>
-      'Manages RSS feeds, subreddits, and other content sources — '
-      'subscribe, refresh, read articles.';
+      'Manages RSS feeds, subreddits, Nostr topics, and Usenet indexers/'
+      'providers — subscribe, refresh, read articles, configure Usenet.';
 
   @override
   String get systemPrompt => '''
 You are the Feed agent for Kabuk. You manage the user's content feed
 subscriptions and articles, stored as schema:DataFeed and schema:Article
-entities in the knowledge store.
+entities in the knowledge store. You also manage Usenet indexers and
+NNTP providers.
 
 Capabilities:
 • Subscribe to RSS/Atom feeds by URL
@@ -48,6 +55,11 @@ Capabilities:
 • Remove/unsubscribe from feeds
 • Mark articles as read
 • Search articles by keyword
+• Add Usenet indexers (Newznab-compatible) for content search
+• Add NNTP providers (news servers) for downloading
+• Test indexer/provider connections
+• List configured indexers and providers
+• Remove indexers and providers
 
 Feed Type Detection:
 • If the user mentions "r/something" or a subreddit name → feed_type: "reddit"
@@ -63,6 +75,13 @@ Nostr Feed URL Formats:
 • nostr:t/flutter,dart — subscribe to multiple hashtags
 • nostr:feed/global — subscribe to the global feed
 • nostr:feed/following — subscribe to the user's following feed
+
+Usenet Detection:
+• If the user mentions "indexer", "newznab", "nzb", "usenet indexer" → use Usenet indexer tools
+• If the user mentions "provider", "news server", "nntp", "usenet server" → use Usenet provider tools
+• If the user wants to "add a usenet server" → clarify if they mean indexer or provider
+• Indexers = search APIs (like NZBGeek, DrunkenSlug)
+• Providers = NNTP download servers (like Eweka, Newshosting, UsenetExpress)
 
 Usage Guidelines:
 • When subscribing, confirm the feed name and type
@@ -202,6 +221,139 @@ discover agent instead
       },
       execute: _markRead,
     ),
+    AgentTool(
+      name: 'add_usenet_indexer',
+      description:
+          'Add a Newznab-compatible Usenet indexer for content search.',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'name': {
+            'type': 'string',
+            'description': 'Display name for the indexer.',
+          },
+          'url': {
+            'type': 'string',
+            'description': 'Base API URL of the indexer.',
+          },
+          'api_key': {
+            'type': 'string',
+            'description': 'API key for authentication.',
+          },
+        },
+        'required': ['name', 'url', 'api_key'],
+      },
+      execute: _addUsenetIndexer,
+    ),
+    AgentTool(
+      name: 'remove_usenet_indexer',
+      description: 'Remove a configured Usenet indexer.',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'indexer_id': {
+            'type': 'string',
+            'description': 'The ID of the indexer to remove.',
+          },
+        },
+        'required': ['indexer_id'],
+      },
+      execute: _removeUsenetIndexer,
+    ),
+    AgentTool(
+      name: 'list_usenet_indexers',
+      description: 'List all configured Usenet indexers.',
+      parameters: {'type': 'object', 'properties': <String, dynamic>{}},
+      execute: _listUsenetIndexers,
+    ),
+    AgentTool(
+      name: 'add_usenet_provider',
+      description: 'Add an NNTP Usenet provider (news server) for downloading.',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'name': {
+            'type': 'string',
+            'description': 'Display name for the provider.',
+          },
+          'host': {
+            'type': 'string',
+            'description': 'NNTP server hostname.',
+          },
+          'port': {
+            'type': 'integer',
+            'description': 'NNTP server port (default: 563 for SSL).',
+          },
+          'username': {
+            'type': 'string',
+            'description': 'Account username.',
+          },
+          'password': {
+            'type': 'string',
+            'description': 'Account password.',
+          },
+          'connections': {
+            'type': 'integer',
+            'description':
+                'Maximum concurrent NNTP connections (default: 10).',
+          },
+          'priority': {
+            'type': 'integer',
+            'description':
+                'Priority order — lower values are preferred (default: 0).',
+          },
+          'ssl': {
+            'type': 'boolean',
+            'description': 'Whether to use SSL/TLS (default: true).',
+          },
+        },
+        'required': ['name', 'host', 'username', 'password'],
+      },
+      execute: _addUsenetProvider,
+    ),
+    AgentTool(
+      name: 'remove_usenet_provider',
+      description: 'Remove a configured Usenet NNTP provider.',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'provider_id': {
+            'type': 'string',
+            'description': 'The ID of the provider to remove.',
+          },
+        },
+        'required': ['provider_id'],
+      },
+      execute: _removeUsenetProvider,
+    ),
+    AgentTool(
+      name: 'list_usenet_providers',
+      description: 'List all configured Usenet NNTP providers.',
+      parameters: {'type': 'object', 'properties': <String, dynamic>{}},
+      execute: _listUsenetProviders,
+    ),
+    AgentTool(
+      name: 'test_usenet_connection',
+      description:
+          'Test connectivity for a Usenet indexer or NNTP provider.',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'type': {
+            'type': 'string',
+            'enum': ['indexer', 'provider'],
+            'description':
+                'Whether to test an indexer or a provider.',
+          },
+          'id': {
+            'type': 'string',
+            'description': 'The ID of the indexer or provider to test.',
+          },
+        },
+        'required': ['type', 'id'],
+      },
+      execute: _testUsenetConnection,
+    ),
   ];
 
   @override
@@ -210,6 +362,7 @@ discover agent instead
     AgentCapability.knowledgeRead,
     AgentCapability.knowledgeWrite,
     AgentCapability.meshConnect,
+    AgentCapability.vaultWrite,
   };
 
   @override
@@ -634,6 +787,264 @@ discover agent instead
 
     await context.knowledge.markArticleRead(uri);
     return ToolResult.text('Marked **${article.name ?? uri}** as read.');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Usenet tool implementations
+  // ---------------------------------------------------------------------------
+
+  /// Stores [secret] in the vault and returns the content hash reference.
+  Future<String> _storeSecret(
+    AgentContext context,
+    String secret,
+    String name,
+  ) async {
+    final entry = await context.vault.store(
+      Uint8List.fromList(utf8.encode(secret)),
+      name: name,
+      tags: const ['usenet', 'credential'],
+    );
+    return entry.hash;
+  }
+
+  Future<ToolResult> _addUsenetIndexer(
+    Map<String, dynamic> args,
+    AgentContext context,
+  ) async {
+    final usenet = context.usenet;
+    if (usenet == null) {
+      return const ToolResult.error('Usenet service is not available.');
+    }
+
+    final name = args['name'] as String? ?? '';
+    final url = args['url'] as String? ?? '';
+    final apiKey = args['api_key'] as String? ?? '';
+
+    if (name.isEmpty || url.isEmpty || apiKey.isEmpty) {
+      return const ToolResult.error(
+        'Name, URL, and API key are all required.',
+      );
+    }
+
+    final apiKeyRef = await _storeSecret(context, apiKey, '$name API key');
+    final indexer = UsenetIndexer(
+      id: '',
+      name: name,
+      baseUrl: url,
+      apiKeyRef: apiKeyRef,
+      enabled: true,
+    );
+
+    final result = await usenet.addIndexer(indexer);
+    return switch (result) {
+      Success(:final value) => ToolResult.text(
+          'Added indexer **${value.name}** (ID: ${value.id})\n'
+          'URL: ${value.baseUrl}',
+        ),
+      Failure(:final error) => ToolResult.error(
+          'Failed to add indexer: $error',
+        ),
+    };
+  }
+
+  Future<ToolResult> _removeUsenetIndexer(
+    Map<String, dynamic> args,
+    AgentContext context,
+  ) async {
+    final usenet = context.usenet;
+    if (usenet == null) {
+      return const ToolResult.error('Usenet service is not available.');
+    }
+
+    final indexerId = args['indexer_id'] as String? ?? '';
+    if (indexerId.isEmpty) {
+      return const ToolResult.error('Indexer ID is required.');
+    }
+
+    final result = await usenet.removeIndexer(indexerId);
+    return switch (result) {
+      Success() => ToolResult.text('Removed indexer $indexerId.'),
+      Failure(:final error) => ToolResult.error(
+          'Failed to remove indexer: $error',
+        ),
+    };
+  }
+
+  Future<ToolResult> _listUsenetIndexers(
+    Map<String, dynamic> args,
+    AgentContext context,
+  ) async {
+    final usenet = context.usenet;
+    if (usenet == null) {
+      return const ToolResult.error('Usenet service is not available.');
+    }
+
+    final indexers = await usenet.getIndexers();
+    if (indexers.isEmpty) {
+      return const ToolResult.text(
+        'No Usenet indexers configured. Use add_usenet_indexer to add one.',
+      );
+    }
+
+    final lines = indexers.map(
+      (i) => '- **${i.name}** (${i.enabled ? 'enabled' : 'disabled'})\n'
+          '  URL: ${i.baseUrl}\n'
+          '  ID: `${i.id}`',
+    );
+
+    return ToolResult.text(
+      'Found ${indexers.length} indexer(s):\n${lines.join('\n')}',
+    );
+  }
+
+  Future<ToolResult> _addUsenetProvider(
+    Map<String, dynamic> args,
+    AgentContext context,
+  ) async {
+    final usenet = context.usenet;
+    if (usenet == null) {
+      return const ToolResult.error('Usenet service is not available.');
+    }
+
+    final name = args['name'] as String? ?? '';
+    final host = args['host'] as String? ?? '';
+    final username = args['username'] as String? ?? '';
+    final password = args['password'] as String? ?? '';
+
+    if (name.isEmpty || host.isEmpty || username.isEmpty || password.isEmpty) {
+      return const ToolResult.error(
+        'Name, host, username, and password are all required.',
+      );
+    }
+
+    final port = args['port'] as int? ?? 563;
+    final connections = args['connections'] as int? ?? 10;
+    final priority = args['priority'] as int? ?? 0;
+    final ssl = args['ssl'] as bool? ?? true;
+
+    final passwordRef = await _storeSecret(
+      context,
+      password,
+      '$name password',
+    );
+    final provider = UsenetProvider(
+      id: '',
+      name: name,
+      host: host,
+      port: port,
+      username: username,
+      passwordRef: passwordRef,
+      connections: connections,
+      priority: priority,
+      ssl: ssl,
+      enabled: true,
+    );
+
+    final result = await usenet.addProvider(provider);
+    return switch (result) {
+      Success(:final value) => ToolResult.text(
+          'Added provider **${value.name}** (ID: ${value.id})\n'
+          'Host: ${value.host}:${value.port} '
+          '(${value.ssl ? 'SSL' : 'plain'}, '
+          '${value.connections} connections)',
+        ),
+      Failure(:final error) => ToolResult.error(
+          'Failed to add provider: $error',
+        ),
+    };
+  }
+
+  Future<ToolResult> _removeUsenetProvider(
+    Map<String, dynamic> args,
+    AgentContext context,
+  ) async {
+    final usenet = context.usenet;
+    if (usenet == null) {
+      return const ToolResult.error('Usenet service is not available.');
+    }
+
+    final providerId = args['provider_id'] as String? ?? '';
+    if (providerId.isEmpty) {
+      return const ToolResult.error('Provider ID is required.');
+    }
+
+    final result = await usenet.removeProvider(providerId);
+    return switch (result) {
+      Success() => ToolResult.text('Removed provider $providerId.'),
+      Failure(:final error) => ToolResult.error(
+          'Failed to remove provider: $error',
+        ),
+    };
+  }
+
+  Future<ToolResult> _listUsenetProviders(
+    Map<String, dynamic> args,
+    AgentContext context,
+  ) async {
+    final usenet = context.usenet;
+    if (usenet == null) {
+      return const ToolResult.error('Usenet service is not available.');
+    }
+
+    final providers = await usenet.getProviders();
+    if (providers.isEmpty) {
+      return const ToolResult.text(
+        'No Usenet providers configured. Use add_usenet_provider to add one.',
+      );
+    }
+
+    final lines = providers.map(
+      (p) => '- **${p.name}** (${p.enabled ? 'enabled' : 'disabled'})\n'
+          '  Host: ${p.host}:${p.port} '
+          '(${p.ssl ? 'SSL' : 'plain'}, '
+          '${p.connections} connections, '
+          'priority ${p.priority})\n'
+          '  ID: `${p.id}`',
+    );
+
+    return ToolResult.text(
+      'Found ${providers.length} provider(s):\n${lines.join('\n')}',
+    );
+  }
+
+  Future<ToolResult> _testUsenetConnection(
+    Map<String, dynamic> args,
+    AgentContext context,
+  ) async {
+    final usenet = context.usenet;
+    if (usenet == null) {
+      return const ToolResult.error('Usenet service is not available.');
+    }
+
+    final type = args['type'] as String? ?? '';
+    final id = args['id'] as String? ?? '';
+
+    if (type.isEmpty || id.isEmpty) {
+      return const ToolResult.error('Both type and id are required.');
+    }
+
+    final Result<bool> result;
+    switch (type) {
+      case 'indexer':
+        result = await usenet.testIndexer(id);
+      case 'provider':
+        result = await usenet.testProvider(id);
+      default:
+        return ToolResult.error(
+          'Invalid type "$type". Must be "indexer" or "provider".',
+        );
+    }
+
+    return switch (result) {
+      Success(:final value) => ToolResult.text(
+          value
+              ? 'Connection test passed for $type `$id`.'
+              : 'Connection test failed for $type `$id`.',
+        ),
+      Failure(:final error) => ToolResult.error(
+          'Connection test failed: $error',
+        ),
+    };
   }
 
   // ---------------------------------------------------------------------------

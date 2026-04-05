@@ -636,6 +636,18 @@ class _ProxyKnowledgeStore implements KnowledgeStore {
     // No-op in proxy — the real store is owned by the main isolate.
   }
 
+  @override
+  Future<int> pruneOrphanedEntities() async {
+    // Pruning is a maintenance operation run on the main isolate only.
+    return 0;
+  }
+
+  @override
+  Future<Map<String, int>> getEntityCounts() async {
+    // Diagnostics query — not available from agent isolates.
+    return const {};
+  }
+
   /// Executes a query using the proxy.
   Future<List<Triple>> executeQuery(_QueryFilters filters) async {
     final id = _nextId++;

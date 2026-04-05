@@ -25,7 +25,8 @@ import 'package:kabuk/services/usenet.dart';
 class UsenetFeedSource implements FeedSource {
   /// Creates a [UsenetFeedSource].
   ///
-  /// The [usenetService] provides access to configured indexers.
+  /// The [usenetService] provides access to configured indexers and
+  /// vault-backed credential resolution.
   /// The [clientFactory] builds a [NewznabClient] for a given base URL
   /// and API key — injectable for testing.
   UsenetFeedSource({
@@ -95,9 +96,19 @@ class UsenetFeedSource implements FeedSource {
     final items = <FeedItem>[];
     for (final indexer in targets) {
       try {
+        // Resolve the actual API key from the vault reference.
+        final apiKey = await _usenetService.resolveSecret(indexer.apiKeyRef);
+        if (apiKey == null) {
+          dev.log(
+            'UsenetFeedSource: API key not found in vault for ${indexer.name} '
+            '(ref: ${indexer.apiKeyRef})',
+            name: 'UsenetFeedSource',
+          );
+          continue;
+        }
         final client = _clientFactory(
           baseUrl: indexer.baseUrl,
-          apiKey: indexer.apiKeyRef,
+          apiKey: apiKey,
         );
         final result = await client.search(query, categories: categories);
         items.addAll(result.items.map(_toFeedItem));
@@ -126,9 +137,18 @@ class UsenetFeedSource implements FeedSource {
     final items = <FeedItem>[];
     for (final indexer in indexers) {
       try {
+        // Resolve the actual API key from the vault reference.
+        final apiKey = await _usenetService.resolveSecret(indexer.apiKeyRef);
+        if (apiKey == null) {
+          dev.log(
+            'UsenetFeedSource: API key not found in vault for ${indexer.name}',
+            name: 'UsenetFeedSource',
+          );
+          continue;
+        }
         final client = _clientFactory(
           baseUrl: indexer.baseUrl,
-          apiKey: indexer.apiKeyRef,
+          apiKey: apiKey,
         );
         // Browse by category uses an empty query with a category filter.
         final result = await client.search('', categories: categoryIds);

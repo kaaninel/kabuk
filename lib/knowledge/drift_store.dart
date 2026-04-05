@@ -10,6 +10,7 @@ import 'dart:async';
 import 'package:cryptography/cryptography.dart';
 import 'package:drift/drift.dart' hide QueryExecutor;
 import 'package:kabuk/config/errors.dart';
+import 'package:kabuk/config/namespaces.dart';
 import 'package:kabuk/config/result.dart';
 import 'package:kabuk/knowledge/changes.dart';
 import 'package:kabuk/knowledge/database.dart' as db;
@@ -99,6 +100,93 @@ class DriftKnowledgeStore implements KnowledgeStore {
     for (final row in rows) {
       final triple = _tripleFromRow(row);
       result.putIfAbsent(triple.subject, () => []).add(triple);
+    }
+    return result;
+  }
+
+  @override
+  Future<int> pruneOrphanedEntities() async {
+    // Entity types eligible for orphan pruning.
+    const entityTypes = [
+      NS.schemaPerson,
+      NS.schemaProduct,
+      NS.schemaPlace,
+      NS.schemaOrganization,
+    ];
+
+    // 1. Gather all candidate entity URIs by type.
+    final candidateUris = <String>{};
+    for (final type in entityTypes) {
+      final triples = await query()
+          .where(NS.rdfType, equals: type)
+          .execute();
+      candidateUris.addAll(triples.map((t) => t.subject));
+    }
+    if (candidateUris.isEmpty) return 0;
+
+    // 2. Exclude entities that are manually created (no kabuk:extractedFrom).
+    final extractedTriples = await query()
+        .predicate(NS.kabukExtractedFrom)
+        .execute();
+    final extractedUris = extractedTriples.map((t) => t.subject).toSet();
+    // Keep only entities that were extracted (have extractedFrom).
+    candidateUris.retainWhere(extractedUris.contains);
+    if (candidateUris.isEmpty) return 0;
+
+    // 3. Gather all entity URIs referenced as kabuk:memberEntity by WebPages.
+    final memberTriples = await query()
+        .predicate(NS.kabukMemberEntity)
+        .execute();
+    final referencedByWebPage = memberTriples
+        .map((t) => t.objectValue)
+        .toSet();
+
+    // 4. Gather all entity URIs referenced as schema:author from Articles.
+    final authorTriples = await query()
+        .predicate(NS.schemaAuthor)
+        .execute();
+    final referencedByAuthor = authorTriples
+        .map((t) => t.objectValue)
+        .toSet();
+
+    // 5. Determine orphans — not referenced by any WebPage or Article.
+    final orphans = candidateUris
+        .where(
+          (uri) =>
+              !referencedByWebPage.contains(uri) &&
+              !referencedByAuthor.contains(uri),
+        )
+        .toList();
+    if (orphans.isEmpty) return 0;
+
+    // 6. Delete orphaned entities in a single transaction.
+    await mutate((ctx) async {
+      for (final uri in orphans) {
+        await ctx.remove(subject: uri);
+      }
+    });
+    return orphans.length;
+  }
+
+  @override
+  Future<Map<String, int>> getEntityCounts() async {
+    final t = _db.triples;
+    final objectCol = t.objectUri;
+    final countExpr = t.subject.count(distinct: true);
+
+    final q = _db.selectOnly(t)
+      ..addColumns([objectCol, countExpr])
+      ..where(t.predicate.equals(NS.rdfType))
+      ..groupBy([objectCol]);
+
+    final rows = await q.get();
+    final result = <String, int>{};
+    for (final row in rows) {
+      final typeUri = row.read(objectCol);
+      final count = row.read(countExpr) ?? 0;
+      if (typeUri != null && count > 0) {
+        result[typeUri] = count;
+      }
     }
     return result;
   }

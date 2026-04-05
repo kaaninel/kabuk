@@ -82,6 +82,21 @@ abstract interface class KnowledgeStore {
   /// updates through Riverpod providers.
   Stream<ChangeSet> get changes;
 
+  /// Remove entities not linked to any WebPage or Article.
+  ///
+  /// Finds all entities of type Person, Product, Place, Organization
+  /// that are not referenced by any WebPage (`kabuk:memberEntity`) or
+  /// Article (`schema:author`) and were not manually created (i.e. they
+  /// have a `kabuk:extractedFrom` triple). Returns the count of deleted
+  /// entities.
+  Future<int> pruneOrphanedEntities();
+
+  /// Get count of entities grouped by their `rdf:type`.
+  ///
+  /// Returns a map from type URI (e.g. `schema:Person`) to the number
+  /// of distinct subjects with that type.
+  Future<Map<String, int>> getEntityCounts();
+
   /// Close the underlying database connection.
   ///
   /// After calling this, all other methods will throw.

@@ -59,7 +59,7 @@ class _DevModePageState extends ConsumerState<DevModePage>
         bottom: TabBar(
           controller: _tabs,
           labelColor: KabukTheme.accentGreen,
-          unselectedLabelColor: KabukTheme.textSecondary,
+          unselectedLabelColor: context.kabukTextSecondary,
           indicatorColor: KabukTheme.accentGreen,
           tabs: const [
             Tab(icon: Icon(Icons.dns_rounded), text: 'Store'),
@@ -175,7 +175,7 @@ class _KnowledgeStoreTabState extends ConsumerState<_KnowledgeStoreTab> {
                 : _TripleList(triples: _results!),
           )
         else
-          const Expanded(
+          Expanded(
             child: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -183,14 +183,14 @@ class _KnowledgeStoreTabState extends ConsumerState<_KnowledgeStoreTab> {
                   Icon(
                     Icons.dns_outlined,
                     size: 48,
-                    color: KabukTheme.textTertiary,
+                    color: context.kabukTextTertiary,
                   ),
                   SizedBox(height: KabukTheme.spacingSm),
                   Text(
                     'Enter filters and tap Search\nto inspect triples.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: KabukTheme.textSecondary,
+                      color: context.kabukTextSecondary,
                       fontSize: 13,
                     ),
                   ),
@@ -221,7 +221,7 @@ class _FilterPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: KabukTheme.surfaceElevated,
+      color: context.kabukSurfaceElevated,
       padding: const EdgeInsets.all(KabukTheme.spacingSm),
       child: Column(
         children: [
@@ -279,28 +279,28 @@ class _MonoField extends StatelessWidget {
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
-      style: const TextStyle(
+      style: TextStyle(
         fontFamily: 'monospace',
         fontSize: 11,
-        color: KabukTheme.textPrimary,
+        color: context.kabukTextPrimary,
       ),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: const TextStyle(
+        labelStyle: TextStyle(
           fontSize: 11,
-          color: KabukTheme.textSecondary,
+          color: context.kabukTextSecondary,
         ),
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
         filled: true,
-        fillColor: KabukTheme.surface,
+        fillColor: context.kabukSurface,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
-          borderSide: const BorderSide(color: KabukTheme.divider),
+          borderSide: BorderSide(color: context.kabukDivider),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
-          borderSide: const BorderSide(color: KabukTheme.divider),
+          borderSide: BorderSide(color: context.kabukDivider),
         ),
       ),
     );
@@ -316,16 +316,16 @@ class _ResultHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      color: KabukTheme.surface,
+      color: context.kabukSurface,
       padding: const EdgeInsets.symmetric(
         horizontal: KabukTheme.spacingMd,
         vertical: 6,
       ),
       child: Text(
         'Showing $shown of $total triples',
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 11,
-          color: KabukTheme.textSecondary,
+          color: context.kabukTextSecondary,
           fontFamily: 'monospace',
         ),
       ),
@@ -362,10 +362,10 @@ class _TripleList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (triples.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           'No triples match the filter.',
-          style: TextStyle(color: KabukTheme.textSecondary, fontSize: 13),
+          style: TextStyle(color: context.kabukTextSecondary, fontSize: 13),
         ),
       );
     }
@@ -373,7 +373,7 @@ class _TripleList extends StatelessWidget {
       padding: EdgeInsets.zero,
       itemCount: triples.length,
       separatorBuilder: (_, _) =>
-          const Divider(height: 0, color: KabukTheme.divider),
+          Divider(height: 0, color: context.kabukDivider),
       itemBuilder: (context, i) => _TripleTile(triple: triples[i]),
     );
   }
@@ -435,9 +435,9 @@ class _TripleTile extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 4, left: 22),
                 child: Text(
                   _formatDate(triple.createdAt!),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 10,
-                    color: KabukTheme.textTertiary,
+                    color: context.kabukTextTertiary,
                     fontFamily: 'monospace',
                   ),
                 ),
@@ -497,9 +497,9 @@ class _TripleRow extends StatelessWidget {
         Expanded(
           child: Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11,
-              color: KabukTheme.textPrimary,
+              color: context.kabukTextPrimary,
               fontFamily: 'monospace',
             ),
           ),
@@ -675,19 +675,19 @@ class _ProviderSectionWidget extends StatelessWidget {
           const SizedBox(height: 6),
           Container(
             decoration: BoxDecoration(
-              color: KabukTheme.cardColor,
+              color: context.kabukCardColor,
               borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
-              border: Border.all(color: KabukTheme.divider, width: 0.5),
+              border: Border.all(color: context.kabukDivider, width: 0.5),
             ),
             child: Column(
               children: [
                 for (var i = 0; i < section.entries.length; i++) ...[
                   if (i > 0)
-                    const Divider(
+                    Divider(
                       height: 0,
                       indent: 12,
                       endIndent: 12,
-                      color: KabukTheme.divider,
+                      color: context.kabukDivider,
                     ),
                   _ProviderRow(entry: section.entries[i]),
                 ],
@@ -725,9 +725,9 @@ class _ProviderRow extends StatelessWidget {
               flex: 2,
               child: Text(
                 entry.key,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                   fontFamily: 'monospace',
                 ),
               ),
@@ -737,9 +737,9 @@ class _ProviderRow extends StatelessWidget {
               child: Text(
                 entry.value,
                 textAlign: TextAlign.end,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
-                  color: KabukTheme.textPrimary,
+                  color: context.kabukTextPrimary,
                   fontFamily: 'monospace',
                 ),
                 overflow: TextOverflow.ellipsis,
@@ -765,20 +765,20 @@ class _LlmCostTab extends ConsumerWidget {
     final costState = ref.watch(llmCostTrackerProvider);
 
     if (costState.byModel.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               Icons.attach_money_rounded,
               size: 48,
-              color: KabukTheme.textTertiary,
+              color: context.kabukTextTertiary,
             ),
             SizedBox(height: KabukTheme.spacingSm),
             Text(
               'No LLM calls recorded yet.\nStart a conversation to track usage.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: KabukTheme.textSecondary, fontSize: 13),
+              style: TextStyle(color: context.kabukTextSecondary, fontSize: 13),
             ),
           ],
         ),
@@ -801,12 +801,12 @@ class _LlmCostTab extends ConsumerWidget {
           onReset: () => ref.read(llmCostTrackerProvider.notifier).reset(),
         ),
         const SizedBox(height: KabukTheme.spacingMd),
-        const Text(
+        Text(
           'BY MODEL',
           style: TextStyle(
             fontSize: 10,
             fontWeight: FontWeight.w700,
-            color: KabukTheme.textSecondary,
+            color: context.kabukTextSecondary,
             letterSpacing: 0.8,
           ),
         ),
@@ -848,7 +848,7 @@ class _SummaryCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(KabukTheme.spacingMd),
       decoration: BoxDecoration(
-        color: KabukTheme.cardColor,
+        color: context.kabukCardColor,
         borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
         border: Border.all(color: KabukTheme.accentGreen.withAlpha(60)),
       ),
@@ -857,11 +857,11 @@ class _SummaryCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Text(
+              Text(
                 'Session Summary',
                 style: TextStyle(
                   fontWeight: FontWeight.w700,
-                  color: KabukTheme.textPrimary,
+                  color: context.kabukTextPrimary,
                 ),
               ),
               const Spacer(),
@@ -903,7 +903,7 @@ class _SummaryCard extends StatelessWidget {
               _StatChip(
                 label: 'Session',
                 value: _formatDuration(sessionDuration),
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
               ),
             ],
           ),
@@ -947,10 +947,10 @@ class _StatChip extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w700,
-              color: KabukTheme.textPrimary,
+              color: context.kabukTextPrimary,
               fontFamily: 'monospace',
             ),
           ),
@@ -971,9 +971,9 @@ class _ModelUsageCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: KabukTheme.spacingSm),
       padding: const EdgeInsets.all(KabukTheme.spacingMd),
       decoration: BoxDecoration(
-        color: KabukTheme.cardColor,
+        color: context.kabukCardColor,
         borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
-        border: Border.all(color: KabukTheme.divider, width: 0.5),
+        border: Border.all(color: context.kabukDivider, width: 0.5),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -983,10 +983,10 @@ class _ModelUsageCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   model,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 13,
-                    color: KabukTheme.textPrimary,
+                    color: context.kabukTextPrimary,
                     fontFamily: 'monospace',
                   ),
                   overflow: TextOverflow.ellipsis,
@@ -994,9 +994,9 @@ class _ModelUsageCard extends StatelessWidget {
               ),
               Text(
                 summary.provider.name,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                 ),
               ),
             ],
@@ -1042,17 +1042,17 @@ class _ModelStat extends StatelessWidget {
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 9,
-            color: KabukTheme.textTertiary,
+            color: context.kabukTextTertiary,
             letterSpacing: 0.5,
           ),
         ),
         Text(
           value,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 11,
-            color: KabukTheme.textPrimary,
+            color: context.kabukTextPrimary,
             fontFamily: 'monospace',
           ),
         ),

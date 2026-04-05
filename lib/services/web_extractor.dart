@@ -13,6 +13,10 @@ library;
 import 'dart:convert';
 import 'dart:developer' as dev;
 
+import 'package:flutter/foundation.dart';
+
+import 'package:html/dom.dart' as dom;
+import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -65,6 +69,10 @@ class WebExtraction {
     this.favicon,
     this.description,
     this.nextPageUrl,
+    this.jsonLd = const [],
+    this.openGraph = const {},
+    this.microdata = const [],
+    this.schemaTypes = const [],
   });
 
   /// The source URL of the extracted page.
@@ -111,6 +119,18 @@ class WebExtraction {
   /// Detected from `<link rel="next">`, pagination controls, or common
   /// URL patterns (e.g. `/page/2`, `?page=2`).
   final String? nextPageUrl;
+
+  /// JSON-LD structured data found in `<script type="application/ld+json">` tags.
+  final List<Map<String, dynamic>> jsonLd;
+
+  /// OpenGraph metadata as a structured map.
+  final Map<String, String> openGraph;
+
+  /// Microdata/RDFa structured data extracted from itemscope/itemprop attributes.
+  final List<Map<String, dynamic>> microdata;
+
+  /// Schema.org types detected on the page (from JSON-LD or microdata).
+  final List<String> schemaTypes;
 }
 
 /// Extracts structured content from web pages.
@@ -165,27 +185,50 @@ class WebExtractor {
   /// Uses [http.get] to download the page, then applies regex-based
   /// heuristics to pull out metadata, text, images, and videos. No
   /// external HTML parsing library is required.
+  /// Realistic browser User-Agent for HTTP extraction.
+  static const _browserUserAgent =
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_3 like Mac OS X) '
+      'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 '
+      'Mobile/15E148 Safari/604.1';
+
   static Future<WebExtraction> fromUrl(String url) async {
+    debugPrint('[WebExtractor] fromUrl: fetching $url');
     try {
       final uri = Uri.parse(url);
       final response = await http.get(
         uri,
         headers: const {
-          'User-Agent':
-              'Mozilla/5.0 (compatible; Kabuk/1.0; +https://kabuk.app)',
-          'Accept': 'text/html,application/xhtml+xml',
+          'User-Agent': _browserUserAgent,
+          'Accept':
+              'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
           'Accept-Charset': 'utf-8',
         },
       );
 
+      debugPrint('[WebExtractor] HTTP ${response.statusCode} for $url '
+          '(${response.body.length} bytes)');
+
+      if (response.body.length < 500) {
+        debugPrint('[WebExtractor] ⚠ Very small response — likely a block page '
+            'or redirect wall. Body: ${response.body.substring(0, response.body.length.clamp(0, 200))}');
+      }
+
       if (response.statusCode != 200) {
+        debugPrint('[WebExtractor] Non-200 status: ${response.statusCode}');
         return WebExtraction(url: url, title: url, textContent: '');
       }
 
       // Decode with proper charset from Content-Type header
       final html = _decodeResponseBody(response);
-      return _parseHtml(html, url);
+      final result = _parseHtml(html, url);
+      debugPrint('[WebExtractor] Extracted: title="${result.title}", '
+          'text=${result.textContent.length} chars, '
+          'links=${result.articleLinks.length}, '
+          'images=${result.images.length}');
+      return result;
     } catch (e, st) {
+      debugPrint('[WebExtractor] HTTP extraction failed for $url: $e');
       dev.log('HTTP extraction failed for $url', error: e, stackTrace: st);
       return WebExtraction(url: url, title: url, textContent: '');
     }
@@ -227,6 +270,11 @@ class WebExtractor {
     return el ? (el.getAttribute('content') || '') : '';
   }
 
+  function resolveUrl(url) {
+    if (!url) return '';
+    try { return new URL(url, document.baseURI).href; } catch(e) { return url; }
+  }
+
   // --- Title ---
   var title = meta('property', 'og:title')
     || document.title
@@ -243,7 +291,24 @@ class WebExtractor {
   var fl = document.querySelector('link[rel="icon"]')
     || document.querySelector('link[rel="shortcut icon"]')
     || document.querySelector('link[rel="apple-touch-icon"]');
-  if (fl) favicon = fl.getAttribute('href') || '';
+  if (fl) favicon = resolveUrl(fl.getAttribute('href'));
+
+  // --- Next Page (Pagination) ---
+  var nextPageUrl = '';
+  var nextLink = document.querySelector('link[rel="next"]');
+  if (nextLink) nextPageUrl = resolveUrl(nextLink.getAttribute('href'));
+  if (!nextPageUrl) {
+    var anchors = document.querySelectorAll('a');
+    for (var i = 0; i < anchors.length; i++) {
+      var a = anchors[i];
+      var rel = a.getAttribute('rel');
+      var txt = a.innerText.trim().toLowerCase();
+      if (rel === 'next' || txt === 'next' || txt === 'next page' || txt === 'next >' || txt === '>>' || txt === 'more') {
+        nextPageUrl = resolveUrl(a.getAttribute('href'));
+        break;
+      }
+    }
+  }
 
   // --- Main content element ---
   var selectors = [
@@ -251,23 +316,74 @@ class WebExtractor {
     '.post-content', '.article-body', '.entry-content', '.article-content',
     '.post-body', '.story-body', '.content-body', '#article-body',
     '.td-post-content', '.post_content', '.article__body',
+    // Gallery/Grid selectors
+    '.gallery', '.photos', '.grid', '.listing', '.posts', '.items',
+    '.product-list', '.video-list', '.thumbs', '.thumbnails'
   ];
   var main = null;
   for (var i = 0; i < selectors.length; i++) {
     var el = document.querySelector(selectors[i]);
-    if (el && el.innerText.trim().length > 100) { main = el.cloneNode(true); break; }
+    if (el && el.innerText.trim().length > 50) { main = el.cloneNode(true); break; }
   }
   if (!main) {
     main = document.body.cloneNode(true);
   }
-  // Strip boilerplate from whatever we found (including article/main elements)
+
+  // --- Article/Content Links ---
+  // Identify links to other content (articles, galleries, products)
+  var articleLinks = [];
+  var seenLinks = {};
+  
+  // Strategy 1: Links inside Heading tags (h1-h4)
+  var headings = document.querySelectorAll('h1 a, h2 a, h3 a, h4 a, a h1, a h2, a h3, a h4');
+  headings.forEach(function(el) {
+    var a = el.tagName === 'A' ? el : el.querySelector('a');
+    var h = el.tagName === 'A' ? el.parentElement : el;
+    if (a) {
+      var href = resolveUrl(a.getAttribute('href'));
+      var txt = a.innerText.trim();
+      if (href && txt.length > 5 && !seenLinks[href]) {
+        seenLinks[href] = true;
+        // Try to find an image nearby
+        var img = '';
+        var container = h.parentElement;
+        if (container) {
+          var i = container.querySelector('img');
+          if (i) img = resolveUrl(i.getAttribute('src') || i.getAttribute('data-src'));
+        }
+        articleLinks.push({ url: href, title: txt, image: img });
+      }
+    }
+  });
+
+  // Strategy 2: Card/Grid items
+  // Look for repeated structures containing Link + Image + Title
+  var candidates = document.querySelectorAll('article, .card, .post, .item, .entry, .thumb, .product');
+  candidates.forEach(function(el) {
+    var a = el.querySelector('a');
+    var img = el.querySelector('img');
+    var titleEl = el.querySelector('h1, h2, h3, h4, .title, .name');
+    
+    if (a && (img || titleEl)) {
+      var href = resolveUrl(a.getAttribute('href'));
+      var txt = titleEl ? titleEl.innerText.trim() : (img ? (img.getAttribute('alt') || '') : a.innerText.trim());
+      
+      if (href && !seenLinks[href] && href !== window.location.href) {
+        seenLinks[href] = true;
+        var imgSrc = img ? resolveUrl(img.getAttribute('src') || img.getAttribute('data-src')) : '';
+        articleLinks.push({ url: href, title: txt, image: imgSrc });
+      }
+    }
+  });
+
+  // Strip boilerplate from main content
   var removeSelectors = [
     'nav', 'header', 'footer', 'aside', 'script', 'style', 'noscript', 'svg',
     '.sidebar', '.nav', '.menu', '.footer', '.header',
     '.ad', '.ads', '.advertisement', '.social-share', '.comments', '.comment',
     '[role="navigation"]', '[role="banner"]', '[role="contentinfo"]',
     '[aria-hidden="true"]',
-    // Related/recommended article sections
+    // Related/recommended article sections (we extracted links, now remove UI)
     '.related', '.related-articles', '.related-stories', '.related-content',
     '.recommended', '.more-stories', '.trending', '.popular',
     '.recirculation', '.recirc', '.promo', '.newsletter',
@@ -296,74 +412,98 @@ class WebExtractor {
   // --- Convert to markdown ---
   function toMarkdown(node) {
     if (!node) return '';
-    var md = '';
-    var children = node.childNodes;
-    for (var i = 0; i < children.length; i++) {
-      var c = children[i];
-      if (c.nodeType === 3) {
-        var txt = c.textContent;
-        // Skip text nodes that are only separator characters
-        if (/^[\s·•|\/\\,;:\-]+$/.test(txt)) continue;
-        md += txt;
-      } else if (c.nodeType === 1) {
-        var tag = c.tagName.toLowerCase();
-        if (tag === 'script' || tag === 'style' || tag === 'noscript' || tag === 'svg') continue;
-        if (tag === 'nav' || tag === 'aside' || tag === 'footer' || tag === 'header') continue;
-        // Skip hidden elements
-        var ariaHidden = c.getAttribute('aria-hidden');
-        if (ariaHidden === 'true') continue;
-        if (tag === 'br') { md += '\n'; continue; }
-        if (tag === 'h1') md += '\n\n# ' + c.innerText.trim() + '\n\n';
-        else if (tag === 'h2') md += '\n\n## ' + c.innerText.trim() + '\n\n';
-        else if (tag === 'h3') md += '\n\n### ' + c.innerText.trim() + '\n\n';
-        else if (tag === 'h4') md += '\n\n#### ' + c.innerText.trim() + '\n\n';
-        else if (tag === 'h5' || tag === 'h6') md += '\n\n##### ' + c.innerText.trim() + '\n\n';
-        else if (tag === 'figure') {
-          // Extract figcaption as italic text, skip image credits/bios
-          var caption = c.querySelector('figcaption');
-          if (caption) {
-            var capText = caption.innerText.trim();
-            // Skip image credits and author bios
-            if (!/^(Image|Photo|Illustration|Credit|Source)\s*[:by]/i.test(capText)
-                && !/\bis\s+(a|an|the)\s+\w+\s+(editor|reporter|writer|journalist)/i.test(capText)) {
-              md += '\n\n*' + capText + '*\n\n';
-            }
-          }
-        }
-        else if (tag === 'p' || tag === 'div') {
-          var inner = toMarkdown(c).trim();
-          if (inner && !/^[\s·•|\/\\,;:\-]+$/.test(inner)) {
-            md += '\n\n' + inner + '\n\n';
-          }
-        }
-        else if (tag === 'blockquote') md += '\n\n> ' + c.innerText.trim().replace(/\n/g, '\n> ') + '\n\n';
-        else if (tag === 'ul' || tag === 'ol') {
-          var items = c.querySelectorAll(':scope > li');
-          for (var li = 0; li < items.length; li++) {
-            var liText = items[li].innerText.trim();
-            if (liText && !/^[\s·•|]+$/.test(liText)) {
-              var prefix = tag === 'ol' ? ((li + 1) + '. ') : '- ';
-              md += '\n' + prefix + liText;
-            }
-          }
-          md += '\n\n';
-        }
-        else if (tag === 'a') {
-          var href = c.getAttribute('href') || '';
-          var text = c.innerText.trim();
-          if (text && href) md += '[' + text + '](' + href + ')';
-          else if (text) md += text;
-        }
-        else if (tag === 'strong' || tag === 'b') md += '**' + c.innerText.trim() + '**';
-        else if (tag === 'em' || tag === 'i') md += '*' + c.innerText.trim() + '*';
-        else if (tag === 'code') md += '`' + c.innerText.trim() + '`';
-        else if (tag === 'pre') md += '\n\n```\n' + c.innerText.trim() + '\n```\n\n';
-        else if (tag === 'img' || tag === 'picture') { /* handled separately */ }
-        else if (tag === 'figcaption') { /* handled under figure */ }
-        else md += toMarkdown(c);
+    
+    // Helper to process children recursively
+    function processChildren(n) {
+      var res = '';
+      var children = n.childNodes;
+      for (var i = 0; i < children.length; i++) {
+        res += toMarkdown(children[i]);
       }
+      return res;
     }
-    return md;
+
+    if (node.nodeType === 3) { // Text node
+      var txt = node.textContent;
+      // Collapse whitespace but preserve single spaces
+      return txt.replace(/\s+/g, ' ');
+    } 
+    
+    if (node.nodeType === 1) { // Element node
+      var tag = node.tagName.toLowerCase();
+      
+      // Skip hidden/irrelevant
+      if (tag === 'script' || tag === 'style' || tag === 'noscript' || tag === 'svg' ||
+          tag === 'nav' || tag === 'aside' || tag === 'footer' || tag === 'header' ||
+          tag === 'form' || tag === 'button') return '';
+          
+      if (node.getAttribute('aria-hidden') === 'true') return '';
+      
+      if (tag === 'br') return '\n';
+      if (tag === 'hr') return '\n---\n';
+      
+      // Images
+      if (tag === 'img') {
+        var src = bestSrc(node);
+        var alt = node.getAttribute('alt') || '';
+        // Skip tiny icons or data URIs
+        if (!src || src.startsWith('data:') || src.length < 10) return '';
+        // Also skip tracking pixels
+        if (src.indexOf('pixel') !== -1 || src.indexOf('spacer') !== -1 || src.indexOf('tracking') !== -1) return '';
+        return '![' + alt + '](' + src + ')';
+      }
+
+      var inner = processChildren(node);
+      
+      // Block elements
+      if (tag === 'h1') return '\n\n# ' + inner.trim() + '\n\n';
+      if (tag === 'h2') return '\n\n## ' + inner.trim() + '\n\n';
+      if (tag === 'h3') return '\n\n### ' + inner.trim() + '\n\n';
+      if (tag === 'h4') return '\n\n#### ' + inner.trim() + '\n\n';
+      if (tag === 'h5' || tag === 'h6') return '\n\n##### ' + inner.trim() + '\n\n';
+      
+      if (tag === 'p' || tag === 'div' || tag === 'section' || tag === 'article') {
+        var trimmed = inner.trim();
+        if (!trimmed) return '';
+        return '\n\n' + trimmed + '\n\n';
+      }
+      
+      if (tag === 'blockquote') {
+        return '\n\n> ' + inner.trim().replace(/\n/g, '\n> ') + '\n\n';
+      }
+      
+      if (tag === 'ul' || tag === 'ol') {
+        return '\n\n' + inner.trim() + '\n\n';
+      }
+      
+      if (tag === 'li') {
+        var trimmed = inner.trim();
+        if (!trimmed) return '';
+        var parent = node.parentNode;
+        var prefix = (parent && parent.tagName.toLowerCase() === 'ol') ? '1. ' : '- ';
+        return '\n' + prefix + trimmed;
+      }
+      
+      if (tag === 'figure') {
+        return '\n\n' + inner.trim() + '\n\n';
+      }
+
+      // Inline elements
+      if (tag === 'a') {
+        var href = node.getAttribute('href');
+        var text = inner.trim();
+        if (href && text) return '[' + text + '](' + href + ')';
+        return text;
+      }
+      
+      if (tag === 'strong' || tag === 'b') return '**' + inner + '**';
+      if (tag === 'em' || tag === 'i') return '*' + inner + '*';
+      if (tag === 'code') return '`' + inner + '`';
+      if (tag === 'pre') return '\n```\n' + inner + '\n```\n';
+      
+      return inner;
+    }
+    return '';
   }
 
   var textContent = toMarkdown(main).replace(/\n{3,}/g, '\n\n').trim();
@@ -407,23 +547,56 @@ class WebExtractor {
   }
 
   // --- Images ---
+  // Build a set of author/byline image URLs to exclude from the gallery
+  var authorImageUrls = {};
+  var _authorSels = [
+    '.author img', '.byline img', '.contributor img', '.writer img',
+    '[class*="author"] img', '[class*="byline"] img', '[class*="writer"] img',
+    '[rel="author"] img', '.post-author img', '.article-author img',
+    '.author-info img', '.author-bio img', '.author-card img',
+    '.c-entry-author img', '.c-byline img',
+    'figure[class*="author"] img', 'div[class*="avatar"] img',
+    'a[href*="/authors/"] img', 'a[href*="/staff/"] img',
+  ];
+  _authorSels.forEach(function(sel) {
+    try {
+      document.querySelectorAll(sel).forEach(function(img) {
+        var s = img.src || img.getAttribute('data-src') || '';
+        if (s) authorImageUrls[s] = true;
+      });
+    } catch(e) { /* selector not supported */ }
+  });
+
   var ogImage = meta('property', 'og:image');
   var images = [];
-  if (ogImage && isContentImage(ogImage)) images.push(ogImage);
+  if (ogImage && isContentImage(ogImage) && !authorImageUrls[ogImage]) images.push(ogImage);
 
   // Collect from main content area
   var imgs = main.querySelectorAll('img');
   for (var i = 0; i < imgs.length; i++) {
     var src = bestSrc(imgs[i]);
     if (!src || !isContentImage(src)) continue;
+    // Skip images identified as author/byline photos
+    if (authorImageUrls[src]) continue;
     var w = imgs[i].naturalWidth || parseInt(imgs[i].getAttribute('width') || '0', 10);
     var h = imgs[i].naturalHeight || parseInt(imgs[i].getAttribute('height') || '0', 10);
     if ((w > 0 && w < 80) || (h > 0 && h < 80)) continue;
-    // Skip avatar/author images
+    // Skip avatar/author images by class/alt attributes
     var cls = (imgs[i].getAttribute('class') || '').toLowerCase();
     var alt = (imgs[i].getAttribute('alt') || '').toLowerCase();
-    if (cls.indexOf('avatar') !== -1 || cls.indexOf('author') !== -1) continue;
-    if (alt.indexOf('avatar') !== -1 || alt.indexOf('headshot') !== -1) continue;
+    if (cls.indexOf('avatar') !== -1 || cls.indexOf('author') !== -1 || cls.indexOf('byline') !== -1) continue;
+    if (alt.indexOf('avatar') !== -1 || alt.indexOf('headshot') !== -1 || alt.indexOf('author') !== -1) continue;
+    // Skip if a parent element is an author/byline container
+    var parent = imgs[i].parentElement;
+    var isAuthorChild = false;
+    for (var d = 0; d < 4 && parent; d++) {
+      var pc = (parent.getAttribute('class') || '').toLowerCase();
+      if (pc.indexOf('author') !== -1 || pc.indexOf('byline') !== -1 || pc.indexOf('avatar') !== -1 || pc.indexOf('contributor') !== -1) {
+        isAuthorChild = true; break;
+      }
+      parent = parent.parentElement;
+    }
+    if (isAuthorChild) continue;
     if (images.indexOf(src) === -1) images.push(src);
   }
 
@@ -456,6 +629,93 @@ class WebExtractor {
     }
   }
 
+  // --- JSON-LD Structured Data ---
+  var jsonLd = [];
+  var ldScripts = document.querySelectorAll('script[type="application/ld+json"]');
+  for (var ld = 0; ld < ldScripts.length; ld++) {
+    try {
+      var parsed = JSON.parse(ldScripts[ld].textContent);
+      if (Array.isArray(parsed)) {
+        for (var p = 0; p < parsed.length; p++) jsonLd.push(parsed[p]);
+      } else {
+        jsonLd.push(parsed);
+      }
+    } catch(e) { /* ignore malformed JSON-LD */ }
+  }
+
+  // --- OpenGraph as structured map ---
+  var openGraph = {};
+  var ogMetas = document.querySelectorAll('meta[property^="og:"]');
+  for (var og = 0; og < ogMetas.length; og++) {
+    var prop = ogMetas[og].getAttribute('property');
+    var cont = ogMetas[og].getAttribute('content') || '';
+    if (prop && cont) openGraph[prop] = cont;
+  }
+  // Also capture article: and product: meta tags
+  var extraMetas = document.querySelectorAll('meta[property^="article:"], meta[property^="product:"], meta[property^="music:"], meta[property^="video:"], meta[property^="book:"], meta[property^="profile:"]');
+  for (var em = 0; em < extraMetas.length; em++) {
+    var prop = extraMetas[em].getAttribute('property');
+    var cont = extraMetas[em].getAttribute('content') || '';
+    if (prop && cont) openGraph[prop] = cont;
+  }
+
+  // --- Microdata (itemscope/itemprop) ---
+  var microdata = [];
+  var itemScopes = document.querySelectorAll('[itemscope]');
+  for (var is_ = 0; is_ < Math.min(itemScopes.length, 20); is_++) {
+    var item = itemScopes[is_];
+    var itemType = item.getAttribute('itemtype') || '';
+    var props = {};
+    var itemProps = item.querySelectorAll('[itemprop]');
+    for (var ip = 0; ip < itemProps.length; ip++) {
+      var propName = itemProps[ip].getAttribute('itemprop');
+      var propValue = itemProps[ip].getAttribute('content')
+        || itemProps[ip].getAttribute('href')
+        || itemProps[ip].getAttribute('src')
+        || itemProps[ip].innerText.trim().substring(0, 500);
+      if (propName && propValue) {
+        if (props[propName]) {
+          if (Array.isArray(props[propName])) props[propName].push(propValue);
+          else props[propName] = [props[propName], propValue];
+        } else {
+          props[propName] = propValue;
+        }
+      }
+    }
+    if (itemType || Object.keys(props).length > 0) {
+      microdata.push({ '@type': itemType, properties: props });
+    }
+  }
+
+  // --- Collect all Schema.org types found ---
+  var schemaTypes = [];
+  for (var j = 0; j < jsonLd.length; j++) {
+    if (jsonLd[j]['@type']) {
+      var t = jsonLd[j]['@type'];
+      if (Array.isArray(t)) { for (var tt = 0; tt < t.length; tt++) schemaTypes.push(t[tt]); }
+      else schemaTypes.push(t);
+    }
+    // Check @graph items too
+    if (jsonLd[j]['@graph']) {
+      var graph = jsonLd[j]['@graph'];
+      for (var g = 0; g < graph.length; g++) {
+        if (graph[g]['@type']) {
+          var gt = graph[g]['@type'];
+          if (Array.isArray(gt)) { for (var gtt = 0; gtt < gt.length; gtt++) schemaTypes.push(gt[gtt]); }
+          else schemaTypes.push(gt);
+        }
+      }
+    }
+  }
+  for (var m = 0; m < microdata.length; m++) {
+    if (microdata[m]['@type']) {
+      var mt = microdata[m]['@type'];
+      // Extract type name from full URL
+      var typeName = mt.split('/').pop();
+      if (typeName && schemaTypes.indexOf(typeName) === -1) schemaTypes.push(typeName);
+    }
+  }
+
   return JSON.stringify({
     title: title,
     textContent: textContent,
@@ -466,6 +726,12 @@ class WebExtractor {
     siteName: siteName,
     favicon: favicon,
     description: description,
+    nextPageUrl: nextPageUrl,
+    articleLinks: articleLinks,
+    jsonLd: jsonLd,
+    openGraph: openGraph,
+    microdata: microdata,
+    schemaTypes: schemaTypes,
   });
 })();
 ''';
@@ -496,6 +762,27 @@ class WebExtractor {
       siteName: _nonEmpty(data['siteName'] as String?),
       favicon: _resolveUrl(url, _nonEmpty(data['favicon'] as String?)),
       description: _nonEmpty(data['description'] as String?),
+      nextPageUrl: _resolveUrl(url, _nonEmpty(data['nextPageUrl'] as String?)),
+      articleLinks: (data['articleLinks'] as List<dynamic>? ?? [])
+          .map((e) {
+            final map = e as Map<String, dynamic>;
+            return ExtractedLink(
+              url: (map['url'] as String? ?? '').trim(),
+              title: (map['title'] as String? ?? '').trim(),
+              image: _resolveUrl(url, map['image'] as String?),
+            );
+          })
+          .where((e) => e.url.isNotEmpty)
+          .toList(),
+      jsonLd: (data['jsonLd'] as List<dynamic>? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .toList(),
+      openGraph: (data['openGraph'] as Map<String, dynamic>? ?? {})
+          .map((k, v) => MapEntry(k, v.toString())),
+      microdata: (data['microdata'] as List<dynamic>? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .toList(),
+      schemaTypes: _stringList(data['schemaTypes']),
     );
   }
 
@@ -554,8 +841,23 @@ class WebExtractor {
       caseSensitive: false,
     );
 
+    // Regex to detect images nested inside header, nav, or logo/brand
+    // containers by examining the ~300 chars preceding the <img>.
+    final logoContainerPattern = RegExp(
+      r'<(?:header|nav)\b[^>]*>[^<]*$|'
+      r'class="[^"]*(?:logo|brand|site-identity|masthead|site-header)[^"]*"[^>]*>[^<]*$',
+      caseSensitive: false,
+    );
+
     for (final m in imgTagRegex.allMatches(html)) {
       final attrs = m.group(1) ?? '';
+
+      // Skip images inside header/nav/logo containers.
+      final preceding = html.substring(
+        (m.start - 300).clamp(0, html.length),
+        m.start,
+      );
+      if (logoContainerPattern.hasMatch(preceding)) continue;
 
       // Try srcset first for highest resolution
       String? bestUrl;
@@ -569,6 +871,7 @@ class WebExtractor {
       bestUrl ??= attrRegex.firstMatch(attrs)?.group(1);
       if (bestUrl == null || bestUrl.isEmpty) continue;
       if (_isTrackingOrAdUrl(bestUrl)) continue;
+      if (_isLikelyLogo(bestUrl)) continue;
 
       final resolved = _resolveUrl(url, bestUrl);
       if (resolved != null && !images.contains(resolved)) {
@@ -629,6 +932,59 @@ class WebExtractor {
     // --- Navigation links (categories, sections) ---
     final navigationLinks = _extractNavigationLinks(html, url);
 
+    // --- JSON-LD from HTML ---
+    final jsonLd = <Map<String, dynamic>>[];
+    final ldPattern = RegExp(
+      r'<script[^>]+type=["\x27]application/ld\+json["\x27][^>]*>(.*?)</script>',
+      dotAll: true,
+      caseSensitive: false,
+    );
+    for (final match in ldPattern.allMatches(html)) {
+      try {
+        final content = match.group(1)?.trim() ?? '';
+        if (content.isEmpty) continue;
+        final parsed = jsonDecode(content);
+        if (parsed is List) {
+          for (final item in parsed) {
+            if (item is Map<String, dynamic>) jsonLd.add(item);
+          }
+        } else if (parsed is Map<String, dynamic>) {
+          jsonLd.add(parsed);
+        }
+      } catch (_) { /* ignore malformed JSON-LD */ }
+    }
+
+    // --- OpenGraph from HTML ---
+    final openGraphData = <String, String>{};
+    final ogPattern = RegExp(
+      r'<meta[^>]+property=["\x27]([^"\x27]+)["\x27][^>]+content=["\x27]([^"\x27]*)["\x27]',
+      caseSensitive: false,
+    );
+    final ogPatternAlt = RegExp(
+      r'<meta[^>]+content=["\x27]([^"\x27]*)["\x27][^>]+property=["\x27]([^"\x27]+)["\x27]',
+      caseSensitive: false,
+    );
+    for (final match in ogPattern.allMatches(html)) {
+      final prop = match.group(1) ?? '';
+      final content = match.group(2) ?? '';
+      if (prop.startsWith('og:') || prop.startsWith('article:') || prop.startsWith('product:')) {
+        openGraphData[prop] = content;
+      }
+    }
+    for (final match in ogPatternAlt.allMatches(html)) {
+      final content = match.group(1) ?? '';
+      final prop = match.group(2) ?? '';
+      if (prop.startsWith('og:') || prop.startsWith('article:') || prop.startsWith('product:')) {
+        openGraphData.putIfAbsent(prop, () => content);
+      }
+    }
+
+    // --- Schema types from JSON-LD ---
+    final schemaTypes = <String>[];
+    for (final ld in jsonLd) {
+      _collectSchemaTypes(ld, schemaTypes);
+    }
+
     return WebExtraction(
       url: url,
       title: _decodeEntities(title).trim(),
@@ -643,6 +999,10 @@ class WebExtractor {
       favicon: _resolveUrl(url, faviconMatch ?? faviconAlt),
       description: ogDesc != null ? _decodeEntities(ogDesc) : null,
       nextPageUrl: nextPageUrl,
+      jsonLd: jsonLd,
+      openGraph: openGraphData,
+      microdata: const [],
+      schemaTypes: schemaTypes,
     );
   }
 
@@ -881,7 +1241,8 @@ class WebExtractor {
   static bool _isLikelyLogo(String url) {
     final lower = url.toLowerCase();
     // Check path segments for common logo/icon patterns.
-    final pathPart = Uri.tryParse(lower)?.path ?? lower;
+    final uri = Uri.tryParse(lower);
+    final pathPart = uri?.path ?? lower;
     // Check the filename (last segment) for logo/icon keywords.
     final filename = pathPart.split('/').last;
     const logoKeywords = [
@@ -894,16 +1255,37 @@ class WebExtractor {
       'default-image',
       'default_image',
       'fallback',
+      'avatar',
+      'masthead',
+      'site-identity',
     ];
     if (logoKeywords.any(filename.contains)) return true;
     // Also check full path for explicit logo/icon directories.
     const pathPatterns = [
       '/logo/',
+      '/logos/',
       '/icons/',
       '/brand/',
       '/favicon/',
+      '/branding/',
     ];
-    return pathPatterns.any(pathPart.contains);
+    if (pathPatterns.any(pathPart.contains)) return true;
+    // SVG images are often logos/icons.
+    if (pathPart.endsWith('.svg')) return true;
+    // Domain + /logo or /brand pattern (e.g. cdn.example.com/logo-dark.png).
+    if (uri != null && uri.host.isNotEmpty) {
+      final domainBase = uri.host.split('.').first;
+      if (pathPart.contains('/$domainBase/logo') ||
+          pathPart.contains('/$domainBase/brand')) {
+        return true;
+      }
+    }
+    // Tiny dimension hints in URL (e.g. 16x16, 24x24, 32x32, 48x48, 64x64).
+    if (RegExp(r'[\-_/](?:16|24|32|48|64)x(?:16|24|32|48|64)[\-_./]')
+        .hasMatch(pathPart)) {
+      return true;
+    }
+    return false;
   }
 
   /// Public API for checking if a URL is likely a site logo.
@@ -1031,101 +1413,306 @@ class WebExtractor {
     return (value != null && value.isNotEmpty) ? _decodeEntities(value) : null;
   }
 
-  /// Attempts to isolate the main article text from raw HTML.
+  /// Extracts the main article text from raw HTML using DOM parsing.
   ///
-  /// Looks for `<article>`, `<main>`, or common content class containers.
-  /// Falls back to `<body>` with boilerplate sections stripped.
+  /// Uses [package:html] for proper DOM traversal instead of regex, which
+  /// eliminates CSS/script content leaking into the extracted text.
   static String _extractMainText(String html) {
-    // Try to find a main content block.
-    final blockPatterns = [
-      r'<article[^>]*>(.*?)</article>',
-      r'<main[^>]*>(.*?)</main>',
-      r'<div[^>]+class="[^"]*(?:post-content|article-body|entry-content|article-content)[^"]*"[^>]*>(.*?)</div>',
-      r'<div[^>]+role="main"[^>]*>(.*?)</div>',
+    final document = html_parser.parse(html);
+
+    // Tags whose entire subtree should be removed (not just the tag itself).
+    const stripTags = {
+      'script', 'style', 'noscript', 'nav', 'header', 'footer', 'aside',
+      'svg', 'form', 'iframe', 'button', 'select', 'fieldset', 'input',
+      'label', 'template', 'dialog', 'menu', 'menuitem',
+    };
+
+    // ARIA roles whose subtree should be removed.
+    const stripRoles = {
+      'navigation', 'complementary', 'banner', 'contentinfo', 'search',
+    };
+
+    // Class/ID fragments indicating boilerplate.
+    const boilerplatePatterns = [
+      'toolbar', 'settings', 'menu', 'sidebar', 'share', 'social',
+      'comment-form', 'login', 'signup', 'subscribe', 'paywall', 'ad-',
+      'promo', 'cookie', 'consent', 'popup', 'modal', 'overlay', 'dropdown',
+      'toggle', 'newsletter', 'sign-up', 'popular', 'trending', 'related',
+      'widget', 'advertisement', 'social-share', 'share-bar', 'recirculation',
+      'recommended', 'follow-topics', 'author-follow', 'article-footer',
+      'story-footer', 'cta', 'callout', 'mw-editsection', 'mw-navigation',
+      'mw-head', 'mw-panel', 'noprint', 'mw-jump-link', 'mw-indicators',
     ];
 
-    String? contentHtml;
-    for (final p in blockPatterns) {
-      final m = RegExp(p, caseSensitive: false, dotAll: true).firstMatch(html);
-      if (m != null && (m.group(1) ?? '').length > 200) {
-        contentHtml = m.group(1);
-        break;
+    bool isBoilerplate(dom.Element el) {
+      final cls = el.className.toLowerCase();
+      final id = (el.attributes['id'] ?? '').toLowerCase();
+      final combined = '$cls $id';
+      return boilerplatePatterns.any((p) => combined.contains(p));
+    }
+
+    // Remove unwanted elements from the DOM.
+    void stripFromDom(dom.Element root) {
+      // Collect elements to remove (can't modify while iterating).
+      final toRemove = <dom.Element>[];
+      for (final el in root.querySelectorAll('*')) {
+        final tag = el.localName?.toLowerCase() ?? '';
+        if (stripTags.contains(tag)) {
+          toRemove.add(el);
+          continue;
+        }
+        final role = el.attributes['role']?.toLowerCase() ?? '';
+        if (stripRoles.contains(role)) {
+          toRemove.add(el);
+          continue;
+        }
+        if (el.attributes['aria-hidden'] == 'true') {
+          toRemove.add(el);
+          continue;
+        }
+        if (isBoilerplate(el)) {
+          toRemove.add(el);
+          continue;
+        }
+      }
+      for (final el in toRemove) {
+        el.remove();
       }
     }
 
-    contentHtml ??= _firstMatch(html, r'<body[^>]*>(.*)</body>') ?? html;
-
-    // Strip boilerplate tags.
-    contentHtml = contentHtml.replaceAll(
-      RegExp(
-        r'<(script|style|noscript|nav|header|footer|aside|svg|form|iframe|button)[^>]*>.*?</\1>',
-        caseSensitive: false,
-        dotAll: true,
-      ),
-      '',
-    );
-
-    // Strip common boilerplate sections (newsletter signups, related/popular
-    // content, ad containers, sidebar widgets).
-    contentHtml = contentHtml.replaceAll(
-      RegExp(
-        r'<div[^>]+(?:class|id)="[^"]*(?:newsletter|signup|sign-up|subscribe|'
-        r'popular|trending|related|sidebar|widget|ad-|advertisement|'
-        r'social-share|share-bar|recirculation|promo|cookie|consent|'
-        r'most-popular|recommended|follow-topics|author-follow|'
-        r'article-footer|story-footer|cta|callout)[^"]*"[^>]*>.*?</div>',
-        caseSensitive: false,
-        dotAll: true,
-      ),
-      '',
-    );
-
-    // Strip <section> boilerplate (e.g. "Most Popular" or "Related" sections).
-    contentHtml = contentHtml.replaceAll(
-      RegExp(
-        r'<section[^>]+(?:class|id)="[^"]*(?:popular|trending|related|'
-        r'newsletter|sidebar|widget|promo|recommended|'
-        r'follow-topics|article-footer|story-footer|cta)[^"]*"[^>]*>.*?</section>',
-        caseSensitive: false,
-        dotAll: true,
-      ),
-      '',
-    );
-
-    // Convert headings to markdown.
-    for (var h = 1; h <= 6; h++) {
-      final prefix = '#' * h;
-      contentHtml = contentHtml!.replaceAllMapped(
-        RegExp('<h$h[^>]*>(.*?)</h$h>', caseSensitive: false, dotAll: true),
-        (m) => '\n\n$prefix ${_stripTags(m.group(1) ?? '')}\n\n',
-      );
+    // Find the main content container.
+    dom.Element? content;
+    for (final selector in [
+      'article',
+      'main',
+      '[role="main"]',
+      '.post-content',
+      '.article-body',
+      '.entry-content',
+      '.article-content',
+    ]) {
+      final candidates = document.querySelectorAll(selector);
+      for (final c in candidates) {
+        if ((c.text.trim()).length > 200) {
+          content = c;
+          break;
+        }
+      }
+      if (content != null) break;
     }
+    content ??= document.body ?? document.documentElement!;
 
-    // Convert <p>, <br>, <li> to newlines.
-    contentHtml = contentHtml!
-        .replaceAll(RegExp(r'<br\s*/?>',  caseSensitive: false), '\n')
-        .replaceAll(RegExp(r'</?p[^>]*>', caseSensitive: false), '\n\n')
-        .replaceAllMapped(
-          RegExp(r'<li[^>]*>(.*?)</li>', caseSensitive: false, dotAll: true),
-          (m) => '\n- ${_stripTags(m.group(1) ?? '')}',
-        );
+    // Clean the content subtree.
+    stripFromDom(content);
 
-    // Add spaces after closing inline tags to prevent word concatenation
-    // (e.g. "<a>Middle East</a><a>Israel</a>" → "Middle East Israel").
-    contentHtml = contentHtml.replaceAll(
-      RegExp(r'</(?:a|span|div|td|th|dt|dd|label|em|strong|b|i|u|time)\s*>',
-          caseSensitive: false),
-      ' ',
-    );
+    // Convert DOM to markdown.
+    final buffer = StringBuffer();
+    _domToMarkdown(content, buffer);
 
-    // Strip remaining tags, decode entities, and clean whitespace.
-    final text = _decodeEntities(_stripTags(contentHtml))
+    final text = buffer
+        .toString()
         .replaceAll(RegExp(r'[^\S\n]+'), ' ')
         .replaceAll(RegExp(r'\n{3,}'), '\n\n')
         .trim();
 
-    return text;
+    return _cleanMarkdownContent(text);
   }
+
+  /// Recursively converts a DOM subtree to markdown.
+  static void _domToMarkdown(dom.Node node, StringBuffer buffer) {
+    if (node is dom.Text) {
+      buffer.write(node.text);
+      return;
+    }
+
+    if (node is! dom.Element) {
+      for (final child in node.nodes) {
+        _domToMarkdown(child, buffer);
+      }
+      return;
+    }
+
+    final tag = node.localName?.toLowerCase() ?? '';
+
+    switch (tag) {
+      case 'br':
+        buffer.write('\n');
+      case 'hr':
+        buffer.write('\n---\n');
+      case 'p' || 'div' || 'section' || 'blockquote':
+        buffer.write('\n\n');
+        if (tag == 'blockquote') buffer.write('> ');
+        for (final child in node.nodes) {
+          _domToMarkdown(child, buffer);
+        }
+        buffer.write('\n\n');
+      case 'h1' || 'h2' || 'h3' || 'h4' || 'h5' || 'h6':
+        final level = int.parse(tag.substring(1));
+        buffer.write('\n\n${'#' * level} ');
+        // Write heading text without child tags.
+        buffer.write(node.text.trim());
+        buffer.write('\n\n');
+      case 'a':
+        final href = node.attributes['href'] ?? '';
+        final text = node.text.trim();
+        if (text.isNotEmpty && href.isNotEmpty) {
+          buffer.write('[$text]($href)');
+        } else if (text.isNotEmpty) {
+          buffer.write(text);
+        }
+      case 'img':
+        final src = node.attributes['src'] ??
+            node.attributes['data-src'] ??
+            node.attributes['data-lazy-src'] ??
+            '';
+        final alt = node.attributes['alt'] ?? '';
+        if (src.isNotEmpty) {
+          buffer.write('\n![${alt.replaceAll('\n', ' ')}]($src)\n');
+        }
+      case 'li':
+        buffer.write('\n- ');
+        for (final child in node.nodes) {
+          _domToMarkdown(child, buffer);
+        }
+      case 'ul' || 'ol':
+        buffer.write('\n');
+        for (final child in node.nodes) {
+          _domToMarkdown(child, buffer);
+        }
+        buffer.write('\n');
+      case 'pre' || 'code':
+        if (tag == 'pre') {
+          buffer.write('\n```\n');
+          buffer.write(node.text);
+          buffer.write('\n```\n');
+        } else {
+          buffer.write('`${node.text}`');
+        }
+      case 'strong' || 'b':
+        buffer.write('**');
+        for (final child in node.nodes) {
+          _domToMarkdown(child, buffer);
+        }
+        buffer.write('**');
+      case 'em' || 'i':
+        buffer.write('_');
+        for (final child in node.nodes) {
+          _domToMarkdown(child, buffer);
+        }
+        buffer.write('_');
+      case 'figure':
+        // Process children (usually <img> + <figcaption>).
+        for (final child in node.nodes) {
+          _domToMarkdown(child, buffer);
+        }
+      case 'figcaption':
+        buffer.write('\n_');
+        buffer.write(node.text.trim());
+        buffer.write('_\n');
+      case 'table':
+        // Simple table → plain text extraction.
+        for (final row in node.querySelectorAll('tr')) {
+          final cells = row
+              .querySelectorAll('td, th')
+              .map((c) => c.text.trim())
+              .where((t) => t.isNotEmpty)
+              .join(' | ');
+          if (cells.isNotEmpty) buffer.write('\n$cells');
+        }
+        buffer.write('\n');
+      default:
+        // Inline or unknown — just recurse into children.
+        for (final child in node.nodes) {
+          _domToMarkdown(child, buffer);
+        }
+    }
+  }
+
+  /// Post-processes converted markdown to remove residual page-chrome text
+  /// that slips through HTML stripping (font-size controls, theme selectors,
+  /// paywall markers, etc.).
+  static String _cleanMarkdownContent(String markdown) {
+    final lines = markdown.split('\n');
+    final cleaned = <String>[];
+
+    for (final line in lines) {
+      final trimmed = line.trim();
+
+      // Single-word UI control labels (font size, layout width, etc.)
+      if (_uiControlWord.hasMatch(trimmed)) continue;
+
+      // "Width *", "Size *", "Font *", etc.
+      if (_uiSettingLine.hasMatch(trimmed)) continue;
+
+      // Standalone colour names (theme selectors).
+      if (_colourName.hasMatch(trimmed)) continue;
+
+      // "Subscribe …", "Sign in …", "Log in …", "Create account …"
+      if (_authActionLine.hasMatch(trimmed)) continue;
+
+      // "Subscribers only", "Members only", "Premium content"
+      if (_accessGateLine.hasMatch(trimmed)) continue;
+
+      // Wikipedia / wiki CMS edit links and navigation tabs.
+      if (_wikiEditLink.hasMatch(trimmed)) continue;
+      if (_wikiNavTab.hasMatch(trimmed)) continue;
+      if (trimmed.contains('Birthday mode') ||
+          trimmed.contains('Baby Globe')) {
+        continue;
+      }
+
+      cleaned.add(line);
+    }
+
+    return cleaned
+        .join('\n')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+        .trim();
+  }
+
+  /// Single-word lines matching common UI controls.
+  static final _uiControlWord = RegExp(
+    r'^(Small|Standard|Large|Medium|Wide|Narrow|Compact|Default|Normal|'
+    r'Expanded|Collapsed|On|Off|Enabled|Disabled|Auto)\s*\*?\s*$',
+  );
+
+  /// Lines like "Width *", "Size *", "Font *", etc.
+  static final _uiSettingLine = RegExp(
+    r'^(Width|Height|Size|Color|Theme|Font|Layout|View|Display|Spacing|'
+    r'Appearance|Mode|Style|Contrast)\s*\*?\s*$',
+  );
+
+  /// Standalone colour names often used as theme selectors.
+  static final _colourName = RegExp(
+    r'^(Orange|Blue|Green|Red|Dark|Light|White|Black|Gray|Grey|Purple|'
+    r'Yellow|Cyan|Teal|Amber|Indigo)\s*$',
+  );
+
+  /// Auth / subscription action lines.
+  static final _authActionLine = RegExp(
+    r'^(Subscribe|Sign\s*in|Log\s*in|Create\s+account|Register|Join)',
+    caseSensitive: false,
+  );
+
+  /// Paywall / access gate lines (with optional bullet prefix).
+  static final _accessGateLine = RegExp(
+    r'^[\s\u00B7\u2022•·\-*]*\s*'
+    r'(Subscribers?\s+only|Members?\s+only|Premium\s+content|'
+    r'Exclusive\s+content|Paid\s+content)\s*$',
+    caseSensitive: false,
+  );
+
+  /// Wikipedia / wiki CMS edit links (e.g. `"edit"`, `"[edit]"`).
+  static final _wikiEditLink = RegExp(
+    r'^\[?\s*edit\s*\]?\s*$',
+    caseSensitive: false,
+  );
+
+  /// Wikipedia navigation tabs (Article, Talk, Read, View source, etc.).
+  static final _wikiNavTab = RegExp(
+    r'^(Article|Talk|Read|View\s+source|View\s+history)\s*$',
+    caseSensitive: false,
+  );
 
   /// Removes all HTML tags from [html].
   static String _stripTags(String html) =>
@@ -1319,5 +1906,31 @@ class WebExtractor {
     }
 
     return links;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Structured data helpers
+  // ---------------------------------------------------------------------------
+
+  /// Recursively collects Schema.org `@type` values from JSON-LD data.
+  static void _collectSchemaTypes(
+    Map<String, dynamic> data,
+    List<String> types,
+  ) {
+    final type = data['@type'];
+    if (type is String && !types.contains(type)) {
+      types.add(type);
+    } else if (type is List) {
+      for (final t in type) {
+        if (t is String && !types.contains(t)) types.add(t);
+      }
+    }
+    // Check @graph
+    final graph = data['@graph'];
+    if (graph is List) {
+      for (final item in graph) {
+        if (item is Map<String, dynamic>) _collectSchemaTypes(item, types);
+      }
+    }
   }
 }

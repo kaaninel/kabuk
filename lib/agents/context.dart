@@ -18,6 +18,7 @@ import 'package:kabuk/services/mesh.dart';
 import 'package:kabuk/services/nostr.dart';
 import 'package:kabuk/services/notification.dart';
 import 'package:kabuk/services/presentation.dart';
+import 'package:kabuk/services/usenet.dart';
 import 'package:kabuk/services/vault.dart';
 
 /// Callback invoked when a tool is about to be called.
@@ -49,6 +50,7 @@ class AgentContext {
     required this.runtime,
     this.nostr,
     this.feed,
+    this.usenet,
     this.onToolCall,
     this.onToolResult,
     this.privacyLevel = PrivacyLevel.standard,
@@ -129,6 +131,9 @@ class AgentContext {
   /// Feed service for fetching RSS, Reddit, and other content sources.
   final FeedService? feed;
 
+  /// Usenet service for indexer/provider management, search, and streaming.
+  final UsenetService? usenet;
+
   /// Optional callback invoked when a tool is about to be called.
   final ToolCallCallback? onToolCall;
 
@@ -152,6 +157,7 @@ class AgentContext {
       runtime: runtime,
       nostr: nostr,
       feed: feed,
+      usenet: usenet,
       onToolCall: onToolCall ?? this.onToolCall,
       onToolResult: onToolResult ?? this.onToolResult,
       privacyLevel: privacyLevel,

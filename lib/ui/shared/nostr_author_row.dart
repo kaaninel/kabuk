@@ -87,7 +87,7 @@ class NostrAuthorRow extends StatelessWidget {
   /// Visual density preset.
   final AuthorRowSize size;
 
-  /// Override name color (defaults to [KabukTheme.textPrimary]).
+  /// Override name color (defaults to the theme's text primary color).
   final Color? nameColor;
 
   /// Override name font weight (defaults to [FontWeight.w600]).
@@ -113,11 +113,11 @@ class NostrAuthorRow extends StatelessWidget {
         else
           CircleAvatar(
             radius: size.avatarRadius,
-            backgroundColor: KabukTheme.surfaceVariant,
+            backgroundColor: context.kabukSurfaceVariant,
             child: Text(
               name.isNotEmpty ? name[0].toUpperCase() : '?',
               style: TextStyle(
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
                 fontSize: size.nameFontSize - 2,
               ),
             ),
@@ -134,7 +134,7 @@ class NostrAuthorRow extends StatelessWidget {
           child: Text(
             name,
             style: TextStyle(
-              color: nameColor ?? KabukTheme.textPrimary,
+              color: nameColor ?? context.kabukTextPrimary,
               fontWeight: nameWeight ?? FontWeight.w600,
               fontSize: size.nameFontSize,
             ),
@@ -156,7 +156,7 @@ class NostrAuthorRow extends StatelessWidget {
         Text(
           time,
           style: TextStyle(
-            color: KabukTheme.textTertiary,
+            color: context.kabukTextTertiary,
             fontSize: size.timeFontSize,
           ),
         ),

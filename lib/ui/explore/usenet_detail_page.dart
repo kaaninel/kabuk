@@ -5,6 +5,8 @@
 /// attributes, and actions to stream, download, or share the content.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +15,7 @@ import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/config/result.dart';
 import 'package:kabuk/knowledge/types/usenet.dart';
 import 'package:kabuk/services/usenet.dart';
+import 'package:kabuk/ui/explore/usenet_player.dart';
 import 'package:kabuk/ui/shared/time_format.dart';
 import 'package:kabuk/ui/theme.dart';
 
@@ -82,8 +85,16 @@ class UsenetDetailPage extends ConsumerStatefulWidget {
 class _UsenetDetailPageState extends ConsumerState<UsenetDetailPage> {
   StreamSession? _activeSession;
   bool _isStreaming = false;
+  DownloadProgress? _downloadProgress;
+  StreamSubscription<DownloadProgress>? _downloadSub;
 
   UsenetReleaseData get _release => widget.release;
+
+  @override
+  void dispose() {
+    _downloadSub?.cancel();
+    super.dispose();
+  }
 
   // ---------------------------------------------------------------------------
   // Actions
@@ -103,6 +114,14 @@ class _UsenetDetailPageState extends ConsumerState<UsenetDetailPage> {
           _activeSession = value;
           _isStreaming = false;
         });
+        // Auto-navigate to the player on successful stream start.
+        if (mounted) {
+          await Navigator.of(context).push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => UsenetPlayerPage(session: value),
+            ),
+          );
+        }
       case Failure(:final error):
         setState(() => _isStreaming = false);
         _showError('Failed to start stream: $error');
@@ -120,15 +139,86 @@ class _UsenetDetailPageState extends ConsumerState<UsenetDetailPage> {
   }
 
   void _downloadContent(NzbFile nzb) {
+    _downloadSub?.cancel();
     final service = ref.read(usenetServiceProvider);
     final title = _release.title ?? 'download';
-    service.downloadContent(nzb, outputName: title).listen(
+    _downloadSub = service.downloadContent(nzb, outputName: title).listen(
       (progress) {
-        // Download progress is fire-and-forget for now.
+        if (!mounted) return;
+        setState(() => _downloadProgress = progress);
+        if (progress.state == DownloadState.completed) {
+          _showSnackBar('Download complete!');
+          _downloadSub?.cancel();
+          _downloadSub = null;
+          Future.delayed(const Duration(seconds: 3), () {
+            if (mounted) setState(() => _downloadProgress = null);
+          });
+        } else if (progress.state == DownloadState.failed) {
+          _showError('Download failed');
+          _downloadSub?.cancel();
+          _downloadSub = null;
+          Future.delayed(const Duration(seconds: 3), () {
+            if (mounted) setState(() => _downloadProgress = null);
+          });
+        }
       },
-      onError: (Object e) => _showError('Download failed: $e'),
+      onError: (Object e) {
+        _showError('Download failed: $e');
+        setState(() => _downloadProgress = null);
+      },
     );
-    _showSnackBar('Download started');
+  }
+
+  void _cancelDownload() {
+    _downloadSub?.cancel();
+    _downloadSub = null;
+    setState(() => _downloadProgress = null);
+    _showSnackBar('Download cancelled');
+  }
+
+  void _showFileActions(NzbFileEntry entry) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.play_arrow_rounded),
+              title: Text(entry.filename),
+              subtitle: Text(_formatBytes(entry.bytes)),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.play_circle_outline_rounded),
+              title: const Text('Stream this file'),
+              onTap: () {
+                Navigator.pop(ctx);
+                final nzb = NzbFile(
+                  title: entry.filename,
+                  files: [entry],
+                  totalBytes: entry.bytes,
+                );
+                _startStream(nzb);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.download_rounded),
+              title: const Text('Download this file'),
+              onTap: () {
+                Navigator.pop(ctx);
+                final nzb = NzbFile(
+                  title: entry.filename,
+                  files: [entry],
+                  totalBytes: entry.bytes,
+                );
+                _downloadContent(nzb);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _shareNzbUrl() {
@@ -224,6 +314,15 @@ class _UsenetDetailPageState extends ConsumerState<UsenetDetailPage> {
                   const SizedBox(height: KabukTheme.spacingLg),
                 ],
 
+                // ── Download progress ─────────────────────────────
+                if (_downloadProgress != null) ...[
+                  _DownloadProgressSection(
+                    progress: _downloadProgress!,
+                    onCancel: _cancelDownload,
+                  ),
+                  const SizedBox(height: KabukTheme.spacingLg),
+                ],
+
                 // ── Action buttons ────────────────────────────────
                 _ActionButtonsSection(
                   nzbAsync: nzbAsync,
@@ -237,7 +336,10 @@ class _UsenetDetailPageState extends ConsumerState<UsenetDetailPage> {
                 const SizedBox(height: KabukTheme.spacingLg),
 
                 // ── NZB file list ─────────────────────────────────
-                _NzbFileListSection(nzbAsync: nzbAsync),
+                _NzbFileListSection(
+                  nzbAsync: nzbAsync,
+                  onFileTap: _showFileActions,
+                ),
 
                 const SizedBox(height: KabukTheme.spacingXl),
               ]),
@@ -765,9 +867,10 @@ class _ActionButtonsSection extends StatelessWidget {
 // =============================================================================
 
 class _NzbFileListSection extends StatelessWidget {
-  const _NzbFileListSection({required this.nzbAsync});
+  const _NzbFileListSection({required this.nzbAsync, this.onFileTap});
 
   final AsyncValue<NzbFile?>? nzbAsync;
+  final void Function(NzbFileEntry entry)? onFileTap;
 
   @override
   Widget build(BuildContext context) {
@@ -929,6 +1032,9 @@ class _NzbFileListSection extends StatelessWidget {
                   isPrimary: files[i] == largestFile &&
                       !files[i].isPar2 &&
                       !files[i].isRar,
+                  onTap: onFileTap != null
+                      ? () => onFileTap!(files[i])
+                      : null,
                 ),
                 if (i < files.length - 1)
                   Divider(
@@ -950,10 +1056,15 @@ class _NzbFileListSection extends StatelessWidget {
 // =============================================================================
 
 class _FileEntryTile extends StatelessWidget {
-  const _FileEntryTile({required this.entry, this.isPrimary = false});
+  const _FileEntryTile({
+    required this.entry,
+    this.isPrimary = false,
+    this.onTap,
+  });
 
   final NzbFileEntry entry;
   final bool isPrimary;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -961,7 +1072,10 @@ class _FileEntryTile extends StatelessWidget {
     final iconColor =
         isPrimary ? KabukTheme.accentGreen : context.kabukTextSecondary;
 
-    return Padding(
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
+      child: Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: KabukTheme.spacingSm,
         vertical: KabukTheme.spacingSm,
@@ -1019,6 +1133,133 @@ class _FileEntryTile extends StatelessWidget {
                 ),
               ),
             ),
+        ],
+      ),
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// Download Progress Section
+// =============================================================================
+
+class _DownloadProgressSection extends StatelessWidget {
+  const _DownloadProgressSection({
+    required this.progress,
+    required this.onCancel,
+  });
+
+  final DownloadProgress progress;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final progressValue = progress.totalBytes > 0
+        ? progress.bytesDownloaded / progress.totalBytes
+        : null;
+
+    final stateLabel = switch (progress.state) {
+      DownloadState.queued => 'Queued',
+      DownloadState.downloading => 'Downloading…',
+      DownloadState.postProcessing => 'Post-processing…',
+      DownloadState.completed => 'Complete!',
+      DownloadState.failed => 'Failed',
+      DownloadState.paused => 'Paused',
+    };
+
+    final stateColor = switch (progress.state) {
+      DownloadState.downloading => KabukTheme.blueAccent,
+      DownloadState.postProcessing => KabukTheme.warmAccent,
+      DownloadState.completed => KabukTheme.accentGreen,
+      DownloadState.failed => KabukTheme.error,
+      DownloadState.queued || DownloadState.paused => KabukTheme.textSecondary,
+    };
+
+    final percent = progressValue != null
+        ? '${(progressValue * 100).toStringAsFixed(1)}%'
+        : null;
+
+    final segmentInfo = progress.totalSegments > 0
+        ? '${progress.segmentsFetched} / ${progress.totalSegments} segments'
+        : null;
+
+    return Container(
+      padding: const EdgeInsets.all(KabukTheme.spacingMd),
+      decoration: BoxDecoration(
+        color: context.kabukSurfaceElevated,
+        borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
+        border: Border.all(color: stateColor.withAlpha(60)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.download_rounded, size: 18, color: stateColor),
+              const SizedBox(width: 8),
+              Text(
+                stateLabel,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: stateColor,
+                ),
+              ),
+              const Spacer(),
+              if (percent != null)
+                Text(
+                  percent,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: context.kabukTextSecondary,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: KabukTheme.spacingSm),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: progressValue,
+              minHeight: 6,
+              backgroundColor: context.kabukSurfaceVariant,
+              color: stateColor,
+            ),
+          ),
+          const SizedBox(height: KabukTheme.spacingSm),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  [
+                    '${_formatBytes(progress.bytesDownloaded)} / '
+                        '${_formatBytes(progress.totalBytes)}',
+                    ?segmentInfo,
+                  ].join(' · '),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.kabukTextTertiary,
+                  ),
+                ),
+              ),
+              if (progress.state != DownloadState.completed &&
+                  progress.state != DownloadState.failed)
+                TextButton.icon(
+                  onPressed: onCancel,
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  label: const Text('Cancel'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: KabukTheme.error,
+                    textStyle: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ],
       ),
     );

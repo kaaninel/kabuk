@@ -61,8 +61,8 @@ class ErrorRetryWidget extends StatelessWidget {
             Text(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: KabukTheme.textSecondary,
+              style: TextStyle(
+                color: context.kabukTextSecondary,
                 fontSize: 14,
               ),
             ),

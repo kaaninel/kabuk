@@ -209,9 +209,9 @@ class _NostrChannelDetailState extends ConsumerState<NostrChannelDetail> {
     );
 
     return Scaffold(
-      backgroundColor: KabukTheme.background,
+      backgroundColor: context.kabukBackground,
       appBar: AppBar(
-        backgroundColor: KabukTheme.surface,
+        backgroundColor: context.kabukSurface,
         leadingWidth: 48,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -239,18 +239,18 @@ class _NostrChannelDetailState extends ConsumerState<NostrChannelDetail> {
             if (widget.channelAbout != null && widget.channelAbout!.isNotEmpty)
               Text(
                 widget.channelAbout!,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                 ),
                 overflow: TextOverflow.ellipsis,
               )
             else
               Text(
                 'Public channel · ${widget.channelEventId.substring(0, 8)}',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                 ),
               ),
           ],
@@ -258,7 +258,7 @@ class _NostrChannelDetailState extends ConsumerState<NostrChannelDetail> {
         actions: [
           PopupMenuButton<_ChannelAction>(
             icon: const Icon(Icons.more_vert_rounded),
-            color: KabukTheme.surfaceElevated,
+            color: context.kabukSurfaceElevated,
             onSelected: (action) => _handleAppBarAction(context, action),
             itemBuilder: (_) => const [
               PopupMenuItem(
@@ -297,20 +297,20 @@ class _NostrChannelDetailState extends ConsumerState<NostrChannelDetail> {
               ),
               data: (messages) {
                 if (messages.isEmpty) {
-                  return const Center(
+                  return Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
                           Icons.tag_rounded,
                           size: 48,
-                          color: KabukTheme.textTertiary,
+                          color: context.kabukTextTertiary,
                         ),
                         SizedBox(height: 12),
                         Text(
                           'No messages yet.\nBe the first to say something!',
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: KabukTheme.textSecondary),
+                          style: TextStyle(color: context.kabukTextSecondary),
                         ),
                       ],
                     ),
@@ -350,7 +350,7 @@ class _NostrChannelDetailState extends ConsumerState<NostrChannelDetail> {
                 ),
                 child: FloatingActionButton.small(
                   onPressed: _scrollToBottom,
-                  backgroundColor: KabukTheme.surfaceElevated,
+                  backgroundColor: context.kabukSurfaceElevated,
                   child: const Icon(
                     Icons.keyboard_arrow_down_rounded,
                     color: KabukTheme.accentGreen,
@@ -370,7 +370,7 @@ class _NostrChannelDetailState extends ConsumerState<NostrChannelDetail> {
   Widget _buildReplyBanner() {
     final ev = _replyToEvent!;
     return Container(
-      color: KabukTheme.surfaceVariant,
+      color: context.kabukSurfaceVariant,
       padding: const EdgeInsets.symmetric(
         horizontal: KabukTheme.spacingMd,
         vertical: KabukTheme.spacingXs,
@@ -403,9 +403,9 @@ class _NostrChannelDetailState extends ConsumerState<NostrChannelDetail> {
                   ev.content,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
-                    color: KabukTheme.textSecondary,
+                    color: context.kabukTextSecondary,
                   ),
                 ),
               ],
@@ -414,7 +414,7 @@ class _NostrChannelDetailState extends ConsumerState<NostrChannelDetail> {
           IconButton(
             icon: const Icon(Icons.close_rounded, size: 18),
             onPressed: () => setState(() => _replyToEvent = null),
-            color: KabukTheme.textSecondary,
+            color: context.kabukTextSecondary,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
           ),
@@ -468,7 +468,7 @@ class _NostrChannelDetailState extends ConsumerState<NostrChannelDetail> {
   void _showChannelInfo(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: KabukTheme.surface,
+      backgroundColor: context.kabukSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -508,8 +508,8 @@ class _NostrChannelDetailState extends ConsumerState<NostrChannelDetail> {
                           widget.channelAbout!.isNotEmpty)
                         Text(
                           widget.channelAbout!,
-                          style: const TextStyle(
-                            color: KabukTheme.textSecondary,
+                          style: TextStyle(
+                            color: context.kabukTextSecondary,
                             fontSize: 13,
                           ),
                         ),
@@ -519,13 +519,13 @@ class _NostrChannelDetailState extends ConsumerState<NostrChannelDetail> {
               ],
             ),
             const SizedBox(height: KabukTheme.spacingMd),
-            const Divider(color: KabukTheme.divider),
+            Divider(color: context.kabukDivider),
             const SizedBox(height: KabukTheme.spacingSm),
             SelectableText(
               'Channel ID: ${widget.channelEventId}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
                 fontFamily: 'monospace',
               ),
             ),
@@ -634,7 +634,7 @@ class _MessageBubble extends ConsumerWidget {
                     decoration: BoxDecoration(
                       color: isOwn
                           ? KabukTheme.accentGreen.withAlpha(50)
-                          : KabukTheme.surfaceElevated,
+                          : context.kabukSurfaceElevated,
                       borderRadius: BorderRadius.only(
                         topLeft: const Radius.circular(KabukTheme.radiusMd),
                         topRight: const Radius.circular(KabukTheme.radiusMd),
@@ -658,7 +658,7 @@ class _MessageBubble extends ConsumerWidget {
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: KabukTheme.surfaceVariant,
+                              color: context.kabukSurfaceVariant,
                               borderRadius: BorderRadius.circular(6),
                               border: Border(
                                 left: BorderSide(
@@ -667,20 +667,20 @@ class _MessageBubble extends ConsumerWidget {
                                 ),
                               ),
                             ),
-                            child: const Text(
+                            child: Text(
                               'Reply to message',
                               style: TextStyle(
                                 fontSize: 11,
-                                color: KabukTheme.textSecondary,
+                                color: context.kabukTextSecondary,
                                 fontStyle: FontStyle.italic,
                               ),
                             ),
                           ),
                         Text(
                           event.content,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 14,
-                            color: KabukTheme.textPrimary,
+                            color: context.kabukTextPrimary,
                           ),
                         ),
                       ],
@@ -690,9 +690,9 @@ class _MessageBubble extends ConsumerWidget {
                     padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
                     child: Text(
                       _relativeTime(time),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 10,
-                        color: KabukTheme.textTertiary,
+                        color: context.kabukTextTertiary,
                       ),
                     ),
                   ),
@@ -709,7 +709,7 @@ class _MessageBubble extends ConsumerWidget {
   void _showMessageMenu(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: KabukTheme.surface,
+      backgroundColor: context.kabukSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -721,7 +721,7 @@ class _MessageBubble extends ConsumerWidget {
             width: 36,
             height: 4,
             decoration: BoxDecoration(
-              color: KabukTheme.textTertiary,
+              color: context.kabukTextTertiary,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -815,13 +815,13 @@ class _Avatar extends StatelessWidget {
       return CircleAvatar(
         radius: 16,
         backgroundImage: NetworkImage(url!),
-        backgroundColor: KabukTheme.surfaceVariant,
+        backgroundColor: context.kabukSurfaceVariant,
         onBackgroundImageError: (_, _) {},
       );
     }
     return CircleAvatar(
       radius: 16,
-      backgroundColor: KabukTheme.surfaceVariant,
+      backgroundColor: context.kabukSurfaceVariant,
       child: Text(
         pubkey.isNotEmpty ? pubkey[0].toUpperCase() : '#',
         style: const TextStyle(

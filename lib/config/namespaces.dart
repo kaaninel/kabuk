@@ -90,6 +90,79 @@ abstract final class NS {
   /// `schema:DataFeed` type URI.
   static const String schemaDataFeed = '${schema}DataFeed';
 
+  /// `schema:Product` type URI.
+  static const String schemaProduct = '${schema}Product';
+
+  /// `schema:WebPage` type URI.
+  static const String schemaWebPage = '${schema}WebPage';
+
+  /// `schema:WebSite` type URI.
+  static const String schemaWebSite = '${schema}WebSite';
+
+  /// `schema:Offer` type URI.
+  static const String schemaOffer = '${schema}Offer';
+
+  /// `schema:Review` type URI.
+  static const String schemaReview = '${schema}Review';
+
+  /// `schema:AggregateRating` type URI.
+  static const String schemaAggregateRating = '${schema}AggregateRating';
+
+  /// `schema:BreadcrumbList` type URI.
+  static const String schemaBreadcrumbList = '${schema}BreadcrumbList';
+
+  /// `schema:ListItem` type URI.
+  static const String schemaListItem = '${schema}ListItem';
+
+  /// `schema:SiteNavigationElement` type URI.
+  static const String schemaSiteNavigationElement = '${schema}SiteNavigationElement';
+
+  /// `schema:PostalAddress` type URI.
+  static const String schemaPostalAddress = '${schema}PostalAddress';
+
+  /// `schema:GeoCoordinates` type URI.
+  static const String schemaGeoCoordinates = '${schema}GeoCoordinates';
+
+  /// `schema:CreativeWork` type URI.
+  static const String schemaCreativeWork = '${schema}CreativeWork';
+
+  /// `schema:CollectionPage` type URI.
+  static const String schemaCollectionPage = '${schema}CollectionPage';
+
+  /// `schema:ItemList` type URI.
+  static const String schemaItemList = '${schema}ItemList';
+
+  /// `schema:HowTo` type URI.
+  static const String schemaHowTo = '${schema}HowTo';
+
+  /// `schema:Recipe` type URI.
+  static const String schemaRecipe = '${schema}Recipe';
+
+  /// `schema:FAQPage` type URI.
+  static const String schemaFAQPage = '${schema}FAQPage';
+
+  /// `schema:Question` type URI.
+  static const String schemaQuestion = '${schema}Question';
+
+  /// `schema:Answer` type URI.
+  static const String schemaAnswer = '${schema}Answer';
+
+  // ---------------------------------------------------------------------------
+  // Schema.org Movie/TV types
+  // ---------------------------------------------------------------------------
+
+  /// `schema:TVSeries` type URI.
+  static const String schemaTVSeries = '${schema}TVSeries';
+
+  /// `schema:TVSeason` type URI.
+  static const String schemaTVSeason = '${schema}TVSeason';
+
+  /// `schema:TVEpisode` type URI.
+  static const String schemaTVEpisode = '${schema}TVEpisode';
+
+  /// `schema:Movie` type URI.
+  static const String schemaMovie = '${schema}Movie';
+
   // ---------------------------------------------------------------------------
   // Schema.org common predicates
   // ---------------------------------------------------------------------------
@@ -177,6 +250,178 @@ abstract final class NS {
 
   /// `schema:dataFeedElement` — links a DataFeed to its elements.
   static const String schemaDataFeedElement = '${schema}dataFeedElement';
+
+  /// `schema:price` — the price of a product/offer.
+  static const String schemaPrice = '${schema}price';
+
+  /// `schema:priceCurrency` — the currency of the price (ISO 4217).
+  static const String schemaPriceCurrency = '${schema}priceCurrency';
+
+  /// `schema:brand` — the brand of a product.
+  static const String schemaBrand = '${schema}brand';
+
+  /// `schema:sku` — the stock keeping unit of a product.
+  static const String schemaSku = '${schema}sku';
+
+  /// `schema:gtin` — the Global Trade Item Number of a product.
+  static const String schemaGtin = '${schema}gtin';
+
+  /// `schema:category` — a category for the item.
+  static const String schemaCategory = '${schema}category';
+
+  /// `schema:ratingValue` — the rating value.
+  static const String schemaRatingValue = '${schema}ratingValue';
+
+  /// `schema:reviewCount` — the count of reviews.
+  static const String schemaReviewCount = '${schema}reviewCount';
+
+  /// `schema:bestRating` — the highest rating value.
+  static const String schemaBestRating = '${schema}bestRating';
+
+  /// `schema:worstRating` — the lowest rating value.
+  static const String schemaWorstRating = '${schema}worstRating';
+
+  /// `schema:streetAddress` — street address.
+  static const String schemaStreetAddress = '${schema}streetAddress';
+
+  /// `schema:postalCode` — postal code.
+  static const String schemaPostalCode = '${schema}postalCode';
+
+  /// `schema:addressLocality` — city/locality.
+  static const String schemaAddressLocality = '${schema}addressLocality';
+
+  /// `schema:addressRegion` — state/region.
+  static const String schemaAddressRegion = '${schema}addressRegion';
+
+  /// `schema:addressCountry` — country.
+  static const String schemaAddressCountry = '${schema}addressCountry';
+
+  /// `schema:geo` — the geo coordinates.
+  static const String schemaGeo = '${schema}geo';
+
+  /// `schema:latitude` — latitude.
+  static const String schemaLatitude = '${schema}latitude';
+
+  /// `schema:longitude` — longitude.
+  static const String schemaLongitude = '${schema}longitude';
+
+  /// `schema:offers` — an offer for a product.
+  static const String schemaOffers = '${schema}offers';
+
+  /// `schema:aggregateRating` — the overall rating.
+  static const String schemaAggregateRatingPred = '${schema}aggregateRating';
+
+  /// `schema:review` — a review of the item.
+  static const String schemaReviewPred = '${schema}review';
+
+  /// `schema:reviewBody` — the body text of a review.
+  static const String schemaReviewBody = '${schema}reviewBody';
+
+  /// `schema:publisher` — the publisher of the content.
+  static const String schemaPublisher = '${schema}publisher';
+
+  /// `schema:mainEntityOfPage` — the main entity described by the page.
+  static const String schemaMainEntityOfPage = '${schema}mainEntityOfPage';
+
+  /// `schema:isPartOf` — indicates the item is part of another item.
+  static const String schemaIsPartOf = '${schema}isPartOf';
+
+  /// `schema:hasPart` — indicates the item has a part.
+  static const String schemaHasPart = '${schema}hasPart';
+
+  /// `schema:about` — the subject matter of the content.
+  static const String schemaAbout = '${schema}about';
+
+  /// `schema:mentions` — an entity mentioned in the content.
+  static const String schemaMentions = '${schema}mentions';
+
+  /// `schema:mainEntity` — the primary entity described by a creative work.
+  static const String schemaMainEntity = '${schema}mainEntity';
+
+  /// `schema:associatedMedia` — media object associated with the creative work.
+  static const String schemaAssociatedMedia = '${schema}associatedMedia';
+
+  /// `schema:keywords` — keywords or tags.
+  static const String schemaKeywords = '${schema}keywords';
+
+  /// `schema:inLanguage` — the language of the content.
+  static const String schemaInLanguage = '${schema}inLanguage';
+
+  /// `schema:position` — the position of an item in a series or list.
+  static const String schemaPosition = '${schema}position';
+
+  /// `schema:numberOfItems` — number of items in a list.
+  static const String schemaNumberOfItems = '${schema}numberOfItems';
+
+  /// `schema:itemListElement` — an element of an item list.
+  static const String schemaItemListElement = '${schema}itemListElement';
+
+  /// `schema:availability` — product availability.
+  static const String schemaAvailability = '${schema}availability';
+
+  /// `schema:condition` — product condition.
+  static const String schemaItemCondition = '${schema}itemCondition';
+
+  /// `schema:color` — color of a product.
+  static const String schemaColor = '${schema}color';
+
+  /// `schema:material` — material of a product.
+  static const String schemaMaterial = '${schema}material';
+
+  /// `schema:logo` — logo of an organization.
+  static const String schemaLogo = '${schema}logo';
+
+  /// `schema:sameAs` — URL of a reference web page indicating the item's identity.
+  static const String schemaSameAs = '${schema}sameAs';
+
+  /// `schema:jobTitle` — a person's job title.
+  static const String schemaJobTitle = '${schema}jobTitle';
+
+  /// `schema:worksFor` — organization a person works for.
+  static const String schemaWorksFor = '${schema}worksFor';
+
+  /// `schema:memberOf` — organization a person is member of.
+  static const String schemaMemberOf = '${schema}memberOf';
+
+  /// `schema:alumniOf` — educational organization a person is alumni of.
+  static const String schemaAlumniOf = '${schema}alumniOf';
+
+  // ---------------------------------------------------------------------------
+  // Schema.org Movie/TV predicates
+  // ---------------------------------------------------------------------------
+
+  /// `schema:numberOfSeasons` — total number of seasons in a TV series.
+  static const String schemaNumberOfSeasons = '${schema}numberOfSeasons';
+
+  /// `schema:numberOfEpisodes` — total number of episodes.
+  static const String schemaNumberOfEpisodes = '${schema}numberOfEpisodes';
+
+  /// `schema:seasonNumber` — the season number within a series.
+  static const String schemaSeasonNumber = '${schema}seasonNumber';
+
+  /// `schema:episodeNumber` — the episode number within a season.
+  static const String schemaEpisodeNumber = '${schema}episodeNumber';
+
+  /// `schema:partOfSeries` — links a season/episode to its parent series.
+  static const String schemaPartOfSeries = '${schema}partOfSeries';
+
+  /// `schema:partOfSeason` — links an episode to its parent season.
+  static const String schemaPartOfSeason = '${schema}partOfSeason';
+
+  /// `schema:genre` — the genre of a creative work.
+  static const String schemaGenre = '${schema}genre';
+
+  /// `schema:director` — the director of a movie or episode.
+  static const String schemaDirector = '${schema}director';
+
+  /// `schema:actor` — an actor in a movie or TV series.
+  static const String schemaActor = '${schema}actor';
+
+  /// `schema:productionCompany` — the production company.
+  static const String schemaProductionCompany = '${schema}productionCompany';
+
+  /// `schema:countryOfOrigin` — the country of origin.
+  static const String schemaCountryOfOrigin = '${schema}countryOfOrigin';
 
   // ---------------------------------------------------------------------------
   // Kabuk-specific predicates
@@ -296,6 +541,30 @@ abstract final class NS {
 
   /// `kabuk:nostrUserReposted` — whether the current user reposted this event.
   static const String kabukNostrUserReposted = '${kabuk}nostrUserReposted';
+
+  /// `kabuk:extractedFrom` — the source URL this entity was extracted from.
+  static const String kabukExtractedFrom = '${kabuk}extractedFrom';
+
+  /// `kabuk:sourceWebPage` — links to the WebPage entity this was found on.
+  static const String kabukSourceWebPage = '${kabuk}sourceWebPage';
+
+  /// `kabuk:semanticType` — the Schema.org type string for display purposes.
+  static const String kabukSemanticType = '${kabuk}semanticType';
+
+  /// `kabuk:confidence` — extraction confidence score (0.0-1.0).
+  static const String kabukConfidence = '${kabuk}confidence';
+
+  /// `kabuk:WebChannel` entity type — a web-based content channel.
+  static const String kabukWebChannel = '${kabuk}WebChannel';
+
+  /// `kabuk:channelDomain` — the domain of a web channel.
+  static const String kabukChannelDomain = '${kabuk}channelDomain';
+
+  /// `kabuk:channelFavicon` — favicon URL for a web channel.
+  static const String kabukChannelFavicon = '${kabuk}channelFavicon';
+
+  /// `kabuk:memberEntity` — links a channel to a member entity.
+  static const String kabukMemberEntity = '${kabuk}memberEntity';
 
   // ---------------------------------------------------------------------------
   // Kabuk entity types
@@ -422,6 +691,137 @@ abstract final class NS {
   static const String kabukSearchSource = '${kabuk}searchSource';
 
   // ---------------------------------------------------------------------------
+  // Usenet predicates & types
+  // ---------------------------------------------------------------------------
+
+  /// `kabuk:UsenetIndexer` entity type — a Newznab-compatible indexer.
+  static const String kabukUsenetIndexer = '${kabuk}UsenetIndexer';
+
+  /// `kabuk:UsenetProvider` entity type — an NNTP server provider.
+  static const String kabukUsenetProvider = '${kabuk}UsenetProvider';
+
+  /// `kabuk:UsenetRelease` entity type — a search result from an indexer.
+  static const String kabukUsenetRelease = '${kabuk}UsenetRelease';
+
+  /// `kabuk:NzbFile` entity type — parsed NZB metadata.
+  static const String kabukNzbFile = '${kabuk}NzbFile';
+
+  /// `kabuk:host` — hostname of a server (NNTP provider).
+  static const String kabukHost = '${kabuk}host';
+
+  /// `kabuk:port` — port number for a server connection.
+  static const String kabukPort = '${kabuk}port';
+
+  /// `kabuk:username` — username for authentication.
+  static const String kabukUsername = '${kabuk}username';
+
+  /// `kabuk:passwordRef` — Vault reference for encrypted password storage.
+  static const String kabukPasswordRef = '${kabuk}passwordRef';
+
+  /// `kabuk:connections` — number of simultaneous connections allowed.
+  static const String kabukConnections = '${kabuk}connections';
+
+  /// `kabuk:ssl` — whether the connection uses SSL/TLS.
+  static const String kabukSsl = '${kabuk}ssl';
+
+  /// `kabuk:retentionDays` — article retention period in days.
+  static const String kabukRetentionDays = '${kabuk}retentionDays';
+
+  /// `kabuk:apiKeyRef` — Vault reference for encrypted API key storage.
+  static const String kabukApiKeyRef = '${kabuk}apiKeyRef';
+
+  /// `kabuk:enabled` — whether an entity (indexer/provider) is active.
+  static const String kabukEnabled = '${kabuk}enabled';
+
+  /// `kabuk:sizeBytes` — file size in bytes.
+  static const String kabukSizeBytes = '${kabuk}sizeBytes';
+
+  /// `kabuk:usenetCategory` — Usenet content category.
+  static const String kabukUsenetCategory = '${kabuk}usenetCategory';
+
+  /// `kabuk:newsgroup` — the Usenet newsgroup name.
+  static const String kabukNewsgroup = '${kabuk}newsgroup';
+
+  /// `kabuk:nzbUrl` — URL to download the NZB file.
+  static const String kabukNzbUrl = '${kabuk}nzbUrl';
+
+  /// `kabuk:imdbId` — IMDB identifier for movie/TV content.
+  static const String kabukImdbId = '${kabuk}imdbId';
+
+  /// `kabuk:tvdbId` — TVDB identifier for TV content.
+  static const String kabukTvdbId = '${kabuk}tvdbId';
+
+  /// `kabuk:usenetAttributes` — comma-separated quality attributes (2160p, HDR, etc.).
+  static const String kabukUsenetAttributes = '${kabuk}usenetAttributes';
+
+  /// `kabuk:poster` — the Usenet poster/uploader.
+  static const String kabukPoster = '${kabuk}poster';
+
+  /// `kabuk:indexerRef` — reference to the source UsenetIndexer entity.
+  static const String kabukIndexerRef = '${kabuk}indexerRef';
+
+  /// `kabuk:releaseRef` — reference to the source UsenetRelease entity.
+  static const String kabukReleaseRef = '${kabuk}releaseRef';
+
+  /// `kabuk:totalBytes` — total size in bytes for an NZB file.
+  static const String kabukTotalBytes = '${kabuk}totalBytes';
+
+  /// `kabuk:fileCount` — number of files in an NZB.
+  static const String kabukFileCount = '${kabuk}fileCount';
+
+  /// `kabuk:segmentCount` — number of segments in an NZB.
+  static const String kabukSegmentCount = '${kabuk}segmentCount';
+
+  /// `kabuk:hasPar2` — whether the NZB contains PAR2 recovery files.
+  static const String kabukHasPar2 = '${kabuk}hasPar2';
+
+  /// `kabuk:hasRar` — whether the NZB contains RAR archives.
+  static const String kabukHasRar = '${kabuk}hasRar';
+
+  /// `kabuk:contentType` — detected MIME type of the content.
+  static const String kabukContentType = '${kabuk}contentType';
+
+  /// `kabuk:capabilities` — comma-separated capability strings.
+  static const String kabukCapabilities = '${kabuk}capabilities';
+
+  /// `kabuk:lastSync` — ISO-8601 timestamp of last synchronization.
+  static const String kabukLastSync = '${kabuk}lastSync';
+
+  // ---------------------------------------------------------------------------
+  // Kabuk media (TV/Movie) predicates
+  // ---------------------------------------------------------------------------
+
+  /// `kabuk:tmdbId` — TMDB identifier for movie/TV content.
+  static const String kabukTmdbId = '${kabuk}tmdbId';
+
+  /// `kabuk:posterPath` — TMDB poster image path.
+  static const String kabukPosterPath = '${kabuk}posterPath';
+
+  /// `kabuk:backdropPath` — TMDB backdrop image path.
+  static const String kabukBackdropPath = '${kabuk}backdropPath';
+
+  /// `kabuk:voteAverage` — average user rating score.
+  static const String kabukVoteAverage = '${kabuk}voteAverage';
+
+  /// `kabuk:airDate` — original air date of a TV episode or season.
+  static const String kabukAirDate = '${kabuk}airDate';
+
+  /// `kabuk:mediaStatus` — production status (e.g. Returning Series, Ended).
+  static const String kabukMediaStatus = '${kabuk}mediaStatus';
+
+  /// `kabuk:network` — the broadcast network.
+  static const String kabukNetwork = '${kabuk}network';
+
+  /// `kabuk:runtime` — runtime in minutes.
+  static const String kabukRuntime = '${kabuk}runtime';
+
+  /// `kabuk:overview` — plot summary or synopsis.
+  static const String kabukOverview = '${kabuk}overview';
+
+  /// `kabuk:stillPath` — TMDB still image path for an episode.
+  static const String kabukStillPath = '${kabuk}stillPath';
+
+  // ---------------------------------------------------------------------------
   // Cache / expiry predicates
   // ---------------------------------------------------------------------------
 
@@ -438,6 +838,36 @@ abstract final class NS {
   /// the entity.  Used together with [kabukExpiresAt] to extend the lifetime
   /// of frequently-accessed articles.
   static const String kabukLastViewedAt = '${kabuk}lastViewedAt';
+
+  /// `kabuk:browsedAt` — ISO-8601 timestamp of when the content was first
+  /// browsed (fetched into the local store). Used by the content expiry
+  /// service to determine whether the entity has exceeded its time-to-live.
+  static const String kabukBrowsedAt = '${kabuk}browsedAt';
+
+  /// `kabuk:saved` — boolean flag (`'true'` / `'false'`) indicating
+  /// whether the user has explicitly saved this entity. Saved content is
+  /// excluded from automatic expiry regardless of its age.
+  static const String kabukSaved = '${kabuk}saved';
+
+  // ---------------------------------------------------------------------------
+  // Plugin predicates & types
+  // ---------------------------------------------------------------------------
+
+  /// `kabuk:Plugin` entity type — a registered content plugin.
+  static const String kabukPlugin = '${kabuk}Plugin';
+
+  /// `kabuk:pluginId` — the unique string identifier of a plugin.
+  static const String kabukPluginId = '${kabuk}pluginId';
+
+  /// `kabuk:pluginEnabled` — whether the plugin is currently enabled.
+  static const String kabukPluginEnabled = '${kabuk}pluginEnabled';
+
+  /// `kabuk:pluginConfig` — JSON-encoded configuration map for a plugin.
+  static const String kabukPluginConfig = '${kabuk}pluginConfig';
+
+  /// `kabuk:pluginInstalledAt` — ISO-8601 timestamp when the plugin was
+  /// first registered in the knowledge store.
+  static const String kabukPluginInstalledAt = '${kabuk}pluginInstalledAt';
 
   // ---------------------------------------------------------------------------
   // Helpers

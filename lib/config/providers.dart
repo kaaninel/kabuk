@@ -14,6 +14,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, debugPrint, defaultTargetPlatform;
+import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kabuk/agents/context.dart';
 import 'package:kabuk/agents/cost_tracker.dart';
@@ -42,25 +43,38 @@ import 'package:kabuk/platform/ios/notification_service_impl.dart'
     as ios_notification;
 import 'package:kabuk/platform/shared/auth_service_impl.dart';
 import 'package:kabuk/platform/shared/device_capabilities.dart';
+import 'package:kabuk/platform/shared/device_sync_impl.dart';
 import 'package:kabuk/platform/shared/feed_service_impl.dart';
 import 'package:kabuk/platform/shared/media_service_impl.dart';
+import 'package:kabuk/platform/shared/mesh_sync.dart';
 import 'package:kabuk/platform/shared/model_manager_impl.dart';
 import 'package:kabuk/platform/shared/nostr_service_impl.dart';
 import 'package:kabuk/platform/shared/presentation_service_impl.dart';
+import 'package:kabuk/platform/shared/composite_media_service.dart';
+import 'package:kabuk/platform/shared/imdbapi_client.dart';
+import 'package:kabuk/platform/shared/tmdb_client.dart';
+import 'package:kabuk/platform/shared/tvdb_client.dart';
+import 'package:kabuk/platform/shared/tvmaze_client.dart';
+import 'package:kabuk/platform/shared/usenet/usenet_service_impl.dart';
 import 'package:kabuk/platform/shared/vault_service_impl.dart';
 import 'package:kabuk/rfw/built_in_libraries.dart';
 import 'package:kabuk/rfw/registry.dart';
 import 'package:kabuk/rfw/runtime.dart';
 import 'package:kabuk/services/auth.dart';
+import 'package:kabuk/services/device_sync.dart';
 import 'package:kabuk/services/feed.dart';
 import 'package:kabuk/services/media.dart';
 import 'package:kabuk/services/mesh.dart';
 import 'package:kabuk/services/model_manager.dart';
 import 'package:kabuk/services/nostr.dart';
 import 'package:kabuk/services/nostr_utils.dart';
+import 'package:kabuk/services/media_metadata.dart';
 import 'package:kabuk/services/notification.dart';
 import 'package:kabuk/services/presentation.dart';
+import 'package:kabuk/services/usenet.dart';
 import 'package:kabuk/services/vault.dart';
+import 'package:kabuk/ui/settings/settings_shared.dart'
+    show ServiceProviderConfig, defaultProviders;
 import 'package:kabuk/ui/shell.dart' show KabukShell;
 
 // =============================================================================
@@ -175,6 +189,27 @@ final meshServiceProvider = Provider<MeshService>((ref) {
   return _createMeshService();
 });
 
+/// The [KabukMeshSync] for peer discovery.
+///
+/// Shared instance so both the mesh service and device sync service
+/// can access discovered peers.
+final meshSyncProvider = Provider<KabukMeshSync>((ref) {
+  final sync = KabukMeshSync();
+  ref.onDispose(() => sync.stop());
+  return sync;
+});
+
+/// The [DeviceSyncService] for cross-device identity and knowledge sync.
+///
+/// Manages device pairing, peer discovery, and bidirectional
+/// knowledge store replication between devices sharing the same identity.
+final deviceSyncServiceProvider = Provider<DeviceSyncService>((ref) {
+  final db = ref.watch(databaseProvider);
+  final auth = ref.watch(authServiceProvider);
+  final meshSync = ref.watch(meshSyncProvider);
+  return SharedDeviceSyncService(db: db, auth: auth, meshSync: meshSync);
+});
+
 /// The [NotificationService] for local and push notifications.
 final notificationServiceProvider = Provider<NotificationService>((ref) {
   final service = _createNotificationService();
@@ -210,6 +245,7 @@ final agentContextProvider = Provider<AgentContext>((ref) {
   final auth = ref.watch(authServiceProvider);
   final nostr = ref.watch(nostrServiceProvider);
   final feed = ref.watch(feedServiceProvider);
+  final usenet = ref.watch(usenetServiceProvider);
 
   return AgentContext(
     knowledge: knowledge,
@@ -223,6 +259,7 @@ final agentContextProvider = Provider<AgentContext>((ref) {
     runtime: runtime,
     nostr: nostr,
     feed: feed,
+    usenet: usenet,
   );
 });
 
@@ -239,15 +276,169 @@ final mediaServiceProvider = Provider<MediaService>((ref) {
 // Feed Service
 // =============================================================================
 
-/// The [FeedService] for fetching RSS, Reddit, Nostr, and other content sources.
+/// The [FeedService] for fetching RSS, Reddit, Nostr, Usenet, and other content sources.
 ///
-/// Uses the shared [MeshService] for HTTP requests and [NostrService]
-/// for Nostr hashtag/topic feeds.
+/// Uses the shared [MeshService] for HTTP requests, [NostrService]
+/// for Nostr hashtag/topic feeds, and [UsenetService] for Newznab
+/// indexer search feeds.
 final feedServiceProvider = Provider<FeedService>((ref) {
   final mesh = ref.watch(meshServiceProvider);
   final nostr = ref.watch(nostrServiceProvider);
-  return SharedFeedService(mesh: mesh, nostr: nostr);
+  final usenet = ref.watch(usenetServiceProvider);
+  return SharedFeedService(mesh: mesh, nostr: nostr, usenet: usenet);
 });
+
+// =============================================================================
+// Usenet Service
+// =============================================================================
+
+/// Absolute path to the platform cache directory, set at app startup.
+///
+/// Used by services that need a writable temp directory (e.g. [UsenetService]
+/// stream cache). Initialised from `getTemporaryDirectory()` in `main.dart`.
+final cacheDirectoryProvider = StateProvider<String?>((ref) => null);
+
+/// The [UsenetService] for indexer/provider management, search, and streaming.
+///
+/// Uses the shared [KnowledgeStore] for configuration persistence,
+/// [VaultService] for secure credential storage, and [MeshService] for
+/// HTTP / network operations.  The stream cache path is resolved from
+/// [cacheDirectoryProvider] so it always points to a writable directory.
+final usenetServiceProvider = Provider<UsenetService>((ref) {
+  final store = ref.watch(knowledgeStoreProvider);
+  final vault = ref.watch(vaultServiceProvider);
+  final mesh = ref.watch(meshServiceProvider);
+  final cacheDir = ref.watch(cacheDirectoryProvider);
+  final cachePath =
+      cacheDir != null ? '$cacheDir/usenet_cache' : 'usenet_cache';
+  return UsenetServiceImpl(
+    store: store,
+    vault: vault,
+    mesh: mesh,
+    cachePath: cachePath,
+  );
+});
+
+// =============================================================================
+// Media Metadata API Keys
+// =============================================================================
+
+/// TMDB API key for media metadata lookups.
+///
+/// Persisted to the global settings database so the key survives app restarts.
+final tmdbApiKeyProvider = NotifierProvider<MediaApiKeyNotifier, String?>(
+  () => MediaApiKeyNotifier(
+    subject: 'kabuk:settings/tmdb',
+    predicate: 'kabuk:apiKey',
+  ),
+);
+
+/// TVDB API key for TV metadata lookups.
+///
+/// Persisted to the global settings database so the key survives app restarts.
+final tvdbApiKeyProvider = NotifierProvider<MediaApiKeyNotifier, String?>(
+  () => MediaApiKeyNotifier(
+    subject: 'kabuk:settings/tvdb',
+    predicate: 'kabuk:apiKey',
+  ),
+);
+
+/// Notifier that persists a media API key to the global settings DB.
+///
+/// Each instance is configured with a unique [subject]/[predicate] pair
+/// so the same class can be reused for TMDB, TVDB, or any future service.
+class MediaApiKeyNotifier extends Notifier<String?> {
+  /// Creates a notifier scoped to the given triple address.
+  MediaApiKeyNotifier({required this.subject, required this.predicate});
+
+  /// RDF subject URI for this key in the global settings DB.
+  final String subject;
+
+  /// RDF predicate URI for this key in the global settings DB.
+  final String predicate;
+
+  bool _disposed = false;
+
+  @override
+  String? build() {
+    _disposed = false;
+    ref.onDispose(() => _disposed = true);
+    _loadFromDb();
+    return null;
+  }
+
+  Future<void> _loadFromDb() async {
+    final db = ref.read(globalSettingsDbProvider);
+    final rows = await db.findTriples(subject: subject, predicate: predicate);
+    if (_disposed) return;
+    if (rows.isNotEmpty) {
+      final value = rows.first.objectString;
+      if (value != null && value.isNotEmpty) {
+        state = value;
+      }
+    }
+  }
+
+  /// Updates the in-memory key and persists it to the global settings DB.
+  ///
+  /// Pass `null` or an empty string to clear the saved key.
+  Future<void> setKey(String? key) async {
+    state = (key != null && key.isNotEmpty) ? key : null;
+    final db = ref.read(globalSettingsDbProvider);
+    await db.deleteTriple(subject: subject, predicate: predicate);
+    if (key != null && key.isNotEmpty) {
+      await db.insertTriple(
+        TriplesCompanion(
+          subject: Value(subject),
+          predicate: Value(predicate),
+          objectType: const Value('string'),
+          objectString: Value(key),
+        ),
+      );
+    }
+  }
+}
+
+// ── Media Metadata ──────────────────────────────────────────────────────────
+
+/// Composite [MediaMetadataService] — always available via free APIs
+/// (TVmaze + IMDbAPI.dev), enhanced with TMDB when an API key is configured.
+///
+/// Unlike the previous TMDB-only provider, this never returns `null`.
+final mediaMetadataServiceProvider = Provider<MediaMetadataService>((ref) {
+  // Free clients — always available, no API key needed.
+  final tvMaze = TvMazeClient();
+  final imdbApi = ImdbApiClient();
+
+  // TMDB — enhanced results when key is configured.
+  final tmdbKey = ref.watch(tmdbApiKeyProvider);
+  final tmdb = (tmdbKey != null && tmdbKey.isNotEmpty)
+      ? TmdbClient(apiKey: tmdbKey)
+      : null;
+
+  return CompositeMediaService(
+    tmdb: tmdb,
+    tvMaze: tvMaze,
+    imdbApi: imdbApi,
+  );
+});
+
+/// Standalone [TvdbClient] for TVDB-specific lookups.
+///
+/// Returns `null` when no TVDB API key has been configured.
+final tvdbClientProvider = Provider<TvdbClient?>((ref) {
+  final key = ref.watch(tvdbApiKeyProvider);
+  if (key == null || key.isEmpty) return null;
+  return TvdbClient(apiKey: key);
+});
+
+// =============================================================================
+// Explore Preferences
+// =============================================================================
+
+/// When true, tapping HTTP links in the feed opens them in Classic Web mode
+/// instead of the semantic browse session.
+final preferClassicWebProvider = StateProvider<bool>((ref) => false);
 
 // =============================================================================
 // Identity / Auth
@@ -574,9 +765,17 @@ final localModelConfigProvider =
 /// Notifier that persists [LocalModelConfig] in the global settings DB.
 ///
 /// Model configuration is shared across all identity profiles.
+///
+/// Includes GPU crash recovery: when GPU acceleration is enabled, a
+/// `kabuk:settings/gpu-test-pending` flag is written before inference
+/// starts. If the app crashes (e.g. Vulkan SIGSEGV on Adreno GPUs)
+/// the flag survives and on next launch the config is automatically
+/// reverted to CPU-only.
 class LocalModelConfigNotifier extends Notifier<LocalModelConfig?> {
   static const _subject = 'kabuk:settings/local-model';
   static const _predicate = 'kabuk:configJson';
+  static const _gpuCrashSubject = 'kabuk:settings/gpu-test-pending';
+  static const _gpuCrashPredicate = 'kabuk:flag';
 
   bool _disposed = false;
 
@@ -597,18 +796,46 @@ class LocalModelConfigNotifier extends Notifier<LocalModelConfig?> {
       if (jsonStr != null) {
         try {
           final map = jsonDecode(jsonStr) as Map<String, dynamic>;
-          final config = LocalModelConfig.fromJson(map);
+          var config = LocalModelConfig.fromJson(map);
 
           // Validate the model file still exists on disk.
           // If the app was reinstalled or the simulator was reset,
           // the persisted path may point to a deleted file.
-          if (File(config.modelPath).existsSync()) {
-            state = config;
-          } else {
+          if (!File(config.modelPath).existsSync()) {
             // Clear the stale config so the user is prompted to
             // re-download the model.
             await _clearFromDb();
+            return;
           }
+
+          // GPU crash recovery: if the gpu-test-pending flag is set,
+          // it means the app crashed during GPU inference last time.
+          // Revert to CPU-only to prevent a crash loop.
+          final crashRows = await db.findTriples(
+            subject: _gpuCrashSubject,
+            predicate: _gpuCrashPredicate,
+          );
+          if (_disposed) return;
+          if (crashRows.isNotEmpty && config.nGpuLayers > 0) {
+            config = LocalModelConfig(
+              modelPath: config.modelPath,
+              nGpuLayers: 0,
+              gpuBackend: 'cpu',
+              contextSize: config.contextSize,
+              maxTokens: config.maxTokens,
+              threads: config.threads,
+              temperature: config.temperature,
+              topP: config.topP,
+              minP: config.minP,
+              topK: config.topK,
+              mmprojPath: config.mmprojPath,
+            );
+            // Persist the CPU-only fallback and clear the crash flag.
+            await _persistConfig(config);
+            await _clearGpuCrashFlag();
+          }
+
+          state = config;
         } on Object {
           // Corrupted data — leave config as null.
         }
@@ -619,10 +846,36 @@ class LocalModelConfigNotifier extends Notifier<LocalModelConfig?> {
   /// Updates the in-memory config and persists it to the global DB.
   Future<void> setConfig(LocalModelConfig? config) async {
     state = config;
+    await _persistConfig(config);
+  }
+
+  /// Sets the GPU crash-recovery flag before GPU inference starts.
+  ///
+  /// Call this before any GPU-accelerated inference. If the process
+  /// crashes (SIGSEGV from a broken Vulkan driver), the flag will
+  /// survive and trigger automatic fallback to CPU on next launch.
+  Future<void> markGpuTestPending() async {
     final db = ref.read(globalSettingsDbProvider);
+    await db.deleteTriple(
+      subject: _gpuCrashSubject,
+      predicate: _gpuCrashPredicate,
+    );
+    await db.insertTriple(
+      const TriplesCompanion(
+        subject: Value(_gpuCrashSubject),
+        predicate: Value(_gpuCrashPredicate),
+        objectType: Value('string'),
+        objectString: Value('true'),
+      ),
+    );
+  }
 
+  /// Clears the GPU crash-recovery flag after successful inference.
+  Future<void> clearGpuTestPending() async => _clearGpuCrashFlag();
+
+  Future<void> _persistConfig(LocalModelConfig? config) async {
+    final db = ref.read(globalSettingsDbProvider);
     await db.deleteTriple(subject: _subject, predicate: _predicate);
-
     if (config != null) {
       await db.insertTriple(
         TriplesCompanion(
@@ -639,6 +892,14 @@ class LocalModelConfigNotifier extends Notifier<LocalModelConfig?> {
   Future<void> _clearFromDb() async {
     final db = ref.read(globalSettingsDbProvider);
     await db.deleteTriple(subject: _subject, predicate: _predicate);
+  }
+
+  Future<void> _clearGpuCrashFlag() async {
+    final db = ref.read(globalSettingsDbProvider);
+    await db.deleteTriple(
+      subject: _gpuCrashSubject,
+      predicate: _gpuCrashPredicate,
+    );
   }
 }
 
@@ -968,9 +1229,19 @@ final messagesProvider = StreamProvider<List<Message>>((ref) {
 });
 
 /// All Person entities from the knowledge store — used as contacts.
-final contactsProvider = FutureProvider<List<PersonData>>((ref) {
+/// Deduplicates by URI and name to prevent the same person appearing multiple
+/// times (e.g. from multiple web extractions creating separate entities).
+final contactsProvider = FutureProvider<List<PersonData>>((ref) async {
   final store = ref.watch(knowledgeStoreProvider);
-  return store.listPersons(limit: 100);
+  final persons = await store.listPersons(limit: 100);
+  final seenUris = <String>{};
+  final seenNames = <String>{};
+  return persons.where((p) {
+    if (!seenUris.add(p.uri)) return false;
+    final normName = (p.name ?? '').trim().toLowerCase();
+    if (normName.isNotEmpty && !seenNames.add(normName)) return false;
+    return true;
+  }).toList();
 });
 
 /// Fetches (and caches) the Nostr kind-0 profile for a given pubkey.
@@ -1210,6 +1481,105 @@ class DevModeNotifier extends Notifier<bool> {
 }
 
 // =============================================================================
+// Service provider configs (persisted)
+// =============================================================================
+
+/// Persisted service-provider configs.
+///
+/// Each provider's user-overrides (API key, base URL, enabled state) are
+/// stored as a JSON blob in the global settings DB so they survive restarts.
+final serviceProvidersProvider =
+    NotifierProvider<ServiceProvidersNotifier, List<ServiceProviderConfig>>(
+  ServiceProvidersNotifier.new,
+);
+
+/// Notifier that loads / saves service-provider configs from the global DB.
+class ServiceProvidersNotifier extends Notifier<List<ServiceProviderConfig>> {
+  static const _subject = 'kabuk:settings/serviceProviders';
+  static const _predicate = 'kabuk:configJson';
+
+  bool _disposed = false;
+
+  @override
+  List<ServiceProviderConfig> build() {
+    _disposed = false;
+    ref.onDispose(() => _disposed = true);
+    _loadFromDb();
+    return defaultProviders;
+  }
+
+  Future<void> _loadFromDb() async {
+    final db = ref.read(globalSettingsDbProvider);
+    final rows = await db.findTriples(subject: _subject, predicate: _predicate);
+    if (_disposed) return;
+    if (rows.isNotEmpty) {
+      final jsonStr = rows.first.objectString;
+      if (jsonStr != null) {
+        try {
+          final list = jsonDecode(jsonStr) as List<dynamic>;
+          final overrides = <String, Map<String, dynamic>>{};
+          for (final item in list) {
+            if (item is Map<String, dynamic>) {
+              final id = item['id'] as String?;
+              if (id != null) overrides[id] = item;
+            }
+          }
+          // Merge saved overrides onto default providers.
+          state = [
+            for (final p in defaultProviders)
+              if (overrides.containsKey(p.id))
+                p.copyWith(
+                  apiKey: overrides[p.id]!['apiKey'] as String?,
+                  baseUrl: overrides[p.id]!['baseUrl'] as String?,
+                  username: overrides[p.id]!['username'] as String?,
+                  enabled: overrides[p.id]!['enabled'] as bool? ?? p.enabled,
+                )
+              else
+                p,
+          ];
+        } on Object {
+          // Corrupted data — keep defaults.
+        }
+      }
+    }
+  }
+
+  /// Updates a provider by id and persists all configs.
+  Future<void> update(ServiceProviderConfig updated) async {
+    state = [
+      for (final p in state)
+        if (p.id == updated.id) updated else p,
+    ];
+    await _saveToDb();
+  }
+
+  Future<void> _saveToDb() async {
+    final db = ref.read(globalSettingsDbProvider);
+    await db.deleteTriple(subject: _subject, predicate: _predicate);
+
+    // Only persist user overrides (apiKey, baseUrl, username, enabled).
+    final list = <Map<String, dynamic>>[
+      for (final p in state)
+        {
+          'id': p.id,
+          'apiKey': p.apiKey,
+          'baseUrl': p.baseUrl,
+          'username': p.username,
+          'enabled': p.enabled,
+        },
+    ];
+    await db.insertTriple(
+      TriplesCompanion(
+        subject: const Value(_subject),
+        predicate: const Value(_predicate),
+        objectType: const Value('string'),
+        objectString: Value(jsonEncode(list)),
+      ),
+    );
+  }
+}
+
+// =============================================================================
 // Simple agent runtime (runs in main isolate for now)
 // =============================================================================
 
@@ -1326,4 +1696,125 @@ class CostTrackingLlmService implements LlmService {
 
   @override
   int countTokens(String text) => inner.countTokens(text);
+}
+
+// ---------------------------------------------------------------------------
+// Navigation bar style
+// ---------------------------------------------------------------------------
+
+/// Available bottom navigation bar display styles.
+enum NavbarStyle {
+  /// Standard Material 3 NavigationBar with icons and labels.
+  classic,
+
+  /// Compact bar with small icons, no labels.
+  compact,
+
+  /// Thin colored pill/indicator bar (original Kabuk design).
+  pill,
+}
+
+/// Persisted navigation bar style preference.
+final navbarStyleProvider =
+    NotifierProvider<NavbarStyleNotifier, NavbarStyle>(NavbarStyleNotifier.new);
+
+/// Manages the user's preferred [NavbarStyle], persisted in global settings.
+class NavbarStyleNotifier extends Notifier<NavbarStyle> {
+  static const _subject = 'kabuk:settings/appearance';
+  static const _predicate = 'kabuk:navbarStyle';
+  bool _disposed = false;
+
+  @override
+  NavbarStyle build() {
+    _disposed = false;
+    ref.onDispose(() => _disposed = true);
+    _loadFromDb();
+    return NavbarStyle.classic;
+  }
+
+  Future<void> _loadFromDb() async {
+    final db = ref.read(globalSettingsDbProvider);
+    final rows = await db.findTriples(
+      subject: _subject,
+      predicate: _predicate,
+    );
+    if (_disposed) return;
+    if (rows.isNotEmpty) {
+      final name = rows.first.objectString;
+      if (name != null) {
+        final parsed = NavbarStyle.values.where((s) => s.name == name);
+        if (parsed.isNotEmpty) state = parsed.first;
+      }
+    }
+  }
+
+  /// Sets the navigation bar style and persists it.
+  Future<void> setStyle(NavbarStyle style) async {
+    state = style;
+    final db = ref.read(globalSettingsDbProvider);
+    await db.deleteTriple(subject: _subject, predicate: _predicate);
+    await db.insertTriple(
+      TriplesCompanion(
+        subject: const Value(_subject),
+        predicate: const Value(_predicate),
+        objectType: const Value('string'),
+        objectString: Value(style.name),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Theme mode
+// ---------------------------------------------------------------------------
+
+/// Persisted theme mode preference (dark / light / system).
+final themeModeProvider =
+    NotifierProvider<ThemeModeNotifier, ThemeMode>(ThemeModeNotifier.new);
+
+/// Manages the user's preferred [ThemeMode], persisted in global settings.
+class ThemeModeNotifier extends Notifier<ThemeMode> {
+  static const _subject = 'kabuk:settings/appearance';
+  static const _predicate = 'kabuk:themeMode';
+  bool _disposed = false;
+
+  @override
+  ThemeMode build() {
+    _disposed = false;
+    ref.onDispose(() => _disposed = true);
+    _loadFromDb();
+    return ThemeMode.dark;
+  }
+
+  Future<void> _loadFromDb() async {
+    final db = ref.read(globalSettingsDbProvider);
+    final rows = await db.findTriples(
+      subject: _subject,
+      predicate: _predicate,
+    );
+    if (_disposed) return;
+    if (rows.isNotEmpty) {
+      final name = rows.first.objectString;
+      state = switch (name) {
+        'light' => ThemeMode.light,
+        'system' => ThemeMode.system,
+        _ => ThemeMode.dark,
+      };
+    }
+  }
+
+  /// Sets the theme mode and persists it.
+  Future<void> setMode(ThemeMode mode) async {
+    state = mode;
+    final db = ref.read(globalSettingsDbProvider);
+    await db.deleteTriple(subject: _subject, predicate: _predicate);
+    await db.insertTriple(
+      TriplesCompanion(
+        subject: const Value(_subject),
+        predicate: const Value(_predicate),
+        objectType: const Value('string'),
+        objectString: Value(mode.name),
+      ),
+    );
+  }
 }

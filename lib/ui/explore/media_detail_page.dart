@@ -32,14 +32,19 @@ import 'package:url_launcher/url_launcher.dart';
 ///
 /// [mediaType] is the [MediaType] enum value; [title] and [posterPath]
 /// are shown immediately while the full detail loads from the API.
+///
+/// Pass an explicit [navigator] when the calling [context] may become
+/// invalid before the push completes (e.g. after popping the search page).
 Future<void> pushMediaDetail(
   BuildContext context, {
   required int tmdbId,
   required MediaType mediaType,
   required String title,
   String? posterPath,
+  NavigatorState? navigator,
 }) {
-  return Navigator.of(context).push<void>(
+  final nav = navigator ?? Navigator.of(context);
+  return nav.push<void>(
     PageRouteBuilder<void>(
       pageBuilder: (context, animation, secondaryAnimation) => MediaDetailPage(
         tmdbId: tmdbId,
@@ -127,13 +132,6 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
 
   Future<void> _fetchDetail() async {
     final service = ref.read(mediaMetadataServiceProvider);
-    if (service == null) {
-      setState(() {
-        _error = 'Media metadata service not configured (missing TMDB key).';
-        _loading = false;
-      });
-      return;
-    }
 
     if (_isTv) {
       await _fetchTvSeries(service);
@@ -189,7 +187,6 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
 
   Future<void> _fetchSeason(int seasonNumber) async {
     final service = ref.read(mediaMetadataServiceProvider);
-    if (service == null) return;
 
     setState(() => _loadingSeason = true);
     final result = await service.getTvSeason(widget.tmdbId, seasonNumber);
@@ -967,33 +964,33 @@ class _EpisodeCard extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: KabukTheme.spacingSm),
       child: Container(
+        constraints: const BoxConstraints(minHeight: 80),
         decoration: BoxDecoration(
           color: context.kabukCardColor,
           borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
         ),
-        child: IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Episode still.
-              ClipRRect(
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(KabukTheme.radiusMd),
-                  bottomLeft: Radius.circular(KabukTheme.radiusMd),
-                ),
-                child: SizedBox(
-                  width: 130,
-                  child: stillUrl != null
-                      ? CachedNetworkImage(
-                          imageUrl: stillUrl,
-                          fit: BoxFit.cover,
-                          height: double.infinity,
-                          errorWidget: (_, _, _) =>
-                              _episodePlaceholder(context),
-                        )
-                      : _episodePlaceholder(context),
-                ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Episode still.
+            ClipRRect(
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(KabukTheme.radiusMd),
+                bottomLeft: Radius.circular(KabukTheme.radiusMd),
               ),
+              child: SizedBox(
+                width: 130,
+                height: 80,
+                child: stillUrl != null
+                    ? CachedNetworkImage(
+                        imageUrl: stillUrl,
+                        fit: BoxFit.cover,
+                        errorWidget: (_, _, _) =>
+                            _episodePlaceholder(context),
+                      )
+                    : _episodePlaceholder(context),
+              ),
+            ),
 
               // Episode details.
               Expanded(
@@ -1065,7 +1062,6 @@ class _EpisodeCard extends StatelessWidget {
             ],
           ),
         ),
-      ),
     );
   }
 

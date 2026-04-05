@@ -15,4 +15,5 @@ export 'model_manager.dart';
 export 'nostr.dart';
 export 'notification.dart';
 export 'presentation.dart';
+export 'usenet.dart';
 export 'vault.dart';

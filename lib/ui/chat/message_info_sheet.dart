@@ -41,16 +41,16 @@ class MessageInfoSheet extends StatelessWidget {
                 height: 4,
                 margin: const EdgeInsets.only(bottom: KabukTheme.spacingMd),
                 decoration: BoxDecoration(
-                  color: KabukTheme.textSecondary.withAlpha(100),
+                  color: context.kabukTextSecondary.withAlpha(100),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
             ),
             // Title
-            const Text(
+            Text(
               'Message Info',
               style: TextStyle(
-                color: KabukTheme.textPrimary,
+                color: context.kabukTextPrimary,
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
               ),
@@ -76,7 +76,7 @@ class MessageInfoSheet extends StatelessWidget {
               const SizedBox(height: KabukTheme.spacingSm),
               _MetadataSection(metadata: message.metadata!),
             ],
-            const Divider(color: KabukTheme.divider, height: 24),
+            Divider(color: context.kabukDivider, height: 24),
             // Message ID (compact, copyable)
             InkWell(
               borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
@@ -96,27 +96,27 @@ class MessageInfoSheet extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.fingerprint,
                       size: 14,
-                      color: KabukTheme.textTertiary,
+                      color: context.kabukTextTertiary,
                     ),
                     const SizedBox(width: KabukTheme.spacingSm),
                     Expanded(
                       child: Text(
                         message.id,
-                        style: const TextStyle(
-                          color: KabukTheme.textTertiary,
+                        style: TextStyle(
+                          color: context.kabukTextTertiary,
                           fontSize: 11,
                           fontFamily: 'monospace',
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const Icon(
+                    Icon(
                       Icons.copy,
                       size: 12,
-                      color: KabukTheme.textTertiary,
+                      color: context.kabukTextTertiary,
                     ),
                   ],
                 ),
@@ -128,15 +128,15 @@ class MessageInfoSheet extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(KabukTheme.spacingSm),
               decoration: BoxDecoration(
-                color: KabukTheme.surfaceVariant,
+                color: context.kabukSurfaceVariant,
                 borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
               ),
               child: Text(
                 message.content.length > 300
                     ? '${message.content.substring(0, 300)}…'
                     : message.content,
-                style: const TextStyle(
-                  color: KabukTheme.textSecondary,
+                style: TextStyle(
+                  color: context.kabukTextSecondary,
                   fontSize: 12,
                   height: 1.4,
                 ),
@@ -200,8 +200,8 @@ class _InfoRow extends StatelessWidget {
             width: 100,
             child: Text(
               label,
-              style: const TextStyle(
-                color: KabukTheme.textSecondary,
+              style: TextStyle(
+                color: context.kabukTextSecondary,
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
               ),
@@ -210,8 +210,8 @@ class _InfoRow extends StatelessWidget {
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
-                color: KabukTheme.textPrimary,
+              style: TextStyle(
+                color: context.kabukTextPrimary,
                 fontSize: 13,
               ),
             ),
@@ -261,13 +261,13 @@ class _MetadataSectionState extends State<_MetadataSection> {
                       ? Icons.keyboard_arrow_down
                       : Icons.keyboard_arrow_right,
                   size: 18,
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                 ),
                 const SizedBox(width: 4),
-                const Text(
+                Text(
                   'Metadata',
                   style: TextStyle(
-                    color: KabukTheme.textSecondary,
+                    color: context.kabukTextSecondary,
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
                   ),
@@ -282,13 +282,13 @@ class _MetadataSectionState extends State<_MetadataSection> {
             margin: const EdgeInsets.only(top: 4),
             padding: const EdgeInsets.all(KabukTheme.spacingSm),
             decoration: BoxDecoration(
-              color: KabukTheme.surfaceVariant,
+              color: context.kabukSurfaceVariant,
               borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
             ),
             child: SelectableText(
               const JsonEncoder.withIndent('  ').convert(parsed),
-              style: const TextStyle(
-                color: KabukTheme.textSecondary,
+              style: TextStyle(
+                color: context.kabukTextSecondary,
                 fontSize: 11,
                 fontFamily: 'monospace',
                 height: 1.4,

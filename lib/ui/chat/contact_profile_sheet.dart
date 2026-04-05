@@ -42,14 +42,14 @@ class ContactProfileSheet extends ConsumerWidget {
     final name = profile?.displayName ?? displayName;
 
     return Scaffold(
-      backgroundColor: KabukTheme.background,
+      backgroundColor: context.kabukBackground,
       body: CustomScrollView(
         slivers: [
           // ── Banner + app bar ──────────────────────────────────────────────
           SliverAppBar(
             expandedHeight: 160,
             pinned: true,
-            backgroundColor: KabukTheme.surface,
+            backgroundColor: context.kabukSurface,
             leading: const BackButton(),
             actions: [
               IconButton(
@@ -79,7 +79,7 @@ class ContactProfileSheet extends ConsumerWidget {
           ),
 
           // ── Notes section header ──────────────────────────────────────────
-          const SliverToBoxAdapter(
+          SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.fromLTRB(
                 KabukTheme.spacingMd,
@@ -92,13 +92,13 @@ class ContactProfileSheet extends ConsumerWidget {
                   Icon(
                     Icons.article_outlined,
                     size: 14,
-                    color: KabukTheme.textSecondary,
+                    color: context.kabukTextSecondary,
                   ),
                   SizedBox(width: 6),
                   Text(
                     'Notes',
                     style: TextStyle(
-                      color: KabukTheme.textSecondary,
+                      color: context.kabukTextSecondary,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                       letterSpacing: 0.8,
@@ -129,14 +129,14 @@ class ContactProfileSheet extends ConsumerWidget {
                 child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
               ),
             ),
-            error: (_, _) => const SliverToBoxAdapter(
+            error: (_, _) => SliverToBoxAdapter(
               child: Padding(
                 padding: EdgeInsets.all(KabukTheme.spacingMd),
                 child: Center(
                   child: Text(
                     'Could not load notes',
                     style: TextStyle(
-                      color: KabukTheme.textSecondary,
+                      color: context.kabukTextSecondary,
                       fontSize: 14,
                     ),
                   ),
@@ -202,7 +202,7 @@ class _BannerBackground extends StatelessWidget {
                 end: Alignment.bottomCenter,
                 colors: [
                   Colors.transparent,
-                  KabukTheme.background.withAlpha(230),
+                  context.kabukBackground.withAlpha(230),
                 ],
               ),
             ),
@@ -276,7 +276,7 @@ class _ProfileHeader extends StatelessWidget {
                 Container(
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: KabukTheme.background, width: 3),
+                    border: Border.all(color: context.kabukBackground, width: 3),
                   ),
                   child: CircleAvatar(
                     radius: 38,
@@ -315,8 +315,8 @@ class _ProfileHeader extends StatelessWidget {
                     Expanded(
                       child: Text(
                         name,
-                        style: const TextStyle(
-                          color: KabukTheme.textPrimary,
+                        style: TextStyle(
+                          color: context.kabukTextPrimary,
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
                           height: 1.2,
@@ -338,8 +338,8 @@ class _ProfileHeader extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     nip05!,
-                    style: const TextStyle(
-                      color: KabukTheme.textSecondary,
+                    style: TextStyle(
+                      color: context.kabukTextSecondary,
                       fontSize: 13,
                     ),
                   ),
@@ -348,8 +348,8 @@ class _ProfileHeader extends StatelessWidget {
                 if (about != null && about!.isNotEmpty) ...[
                   Text(
                     about!,
-                    style: const TextStyle(
-                      color: KabukTheme.textPrimary,
+                    style: TextStyle(
+                      color: context.kabukTextPrimary,
                       fontSize: 14,
                       height: 1.5,
                     ),
@@ -366,32 +366,32 @@ class _ProfileHeader extends StatelessWidget {
                       vertical: 5,
                     ),
                     decoration: BoxDecoration(
-                      color: KabukTheme.surfaceVariant,
+                      color: context.kabukSurfaceVariant,
                       borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.key_rounded,
                           size: 11,
-                          color: KabukTheme.textSecondary,
+                          color: context.kabukTextSecondary,
                         ),
                         const SizedBox(width: 4),
                         Text(
                           '${pubkeyHex.substring(0, 8)}…'
                           '${pubkeyHex.substring(pubkeyHex.length - 8)}',
-                          style: const TextStyle(
-                            color: KabukTheme.textSecondary,
+                          style: TextStyle(
+                            color: context.kabukTextSecondary,
                             fontSize: 11,
                             fontFamily: 'monospace',
                           ),
                         ),
                         const SizedBox(width: 4),
-                        const Icon(
+                        Icon(
                           Icons.copy_rounded,
                           size: 10,
-                          color: KabukTheme.textSecondary,
+                          color: context.kabukTextSecondary,
                         ),
                       ],
                     ),
@@ -399,7 +399,7 @@ class _ProfileHeader extends StatelessWidget {
                 ),
 
                 const SizedBox(height: KabukTheme.spacingMd),
-                const Divider(color: KabukTheme.divider, height: 1),
+                Divider(color: context.kabukDivider, height: 1),
               ],
             ),
           ),
@@ -436,9 +436,9 @@ class _NoteTile extends StatelessWidget {
       ),
       padding: const EdgeInsets.all(KabukTheme.spacingMd),
       decoration: BoxDecoration(
-        color: KabukTheme.cardColor,
+        color: context.kabukCardColor,
         borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
-        border: Border.all(color: KabukTheme.divider, width: 0.5),
+        border: Border.all(color: context.kabukDivider, width: 0.5),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -466,8 +466,8 @@ class _NoteTile extends StatelessWidget {
               Expanded(
                 child: Text(
                   name,
-                  style: const TextStyle(
-                    color: KabukTheme.textPrimary,
+                  style: TextStyle(
+                    color: context.kabukTextPrimary,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
@@ -476,8 +476,8 @@ class _NoteTile extends StatelessWidget {
               ),
               Text(
                 _formatTime(time),
-                style: const TextStyle(
-                  color: KabukTheme.textSecondary,
+                style: TextStyle(
+                  color: context.kabukTextSecondary,
                   fontSize: 11,
                 ),
               ),
@@ -486,8 +486,8 @@ class _NoteTile extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             event.content,
-            style: const TextStyle(
-              color: KabukTheme.textPrimary,
+            style: TextStyle(
+              color: context.kabukTextPrimary,
               fontSize: 14,
               height: 1.5,
             ),
@@ -525,12 +525,12 @@ class _EmptyNotes extends StatelessWidget {
           Icon(
             Icons.article_outlined,
             size: 36,
-            color: KabukTheme.textSecondary.withAlpha(80),
+            color: context.kabukTextSecondary.withAlpha(80),
           ),
           const SizedBox(height: KabukTheme.spacingSm),
-          const Text(
+          Text(
             'No public notes yet',
-            style: TextStyle(color: KabukTheme.textSecondary, fontSize: 14),
+            style: TextStyle(color: context.kabukTextSecondary, fontSize: 14),
           ),
         ],
       ),

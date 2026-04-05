@@ -179,6 +179,7 @@ class _ConversationDetailState extends ConsumerState<ConversationDetail> {
         }
       },
       child: Scaffold(
+        resizeToAvoidBottomInset: true,
         appBar: AppBar(title: Text(widget.title)),
         body: Column(
           children: [
@@ -218,8 +219,8 @@ class _ConversationDetailState extends ConsumerState<ConversationDetail> {
                       bottom: KabukTheme.spacingSm,
                       child: FloatingActionButton.small(
                         onPressed: _scrollToBottom,
-                        backgroundColor: KabukTheme.cardColor.withAlpha(230),
-                        foregroundColor: KabukTheme.textSecondary,
+                        backgroundColor: context.kabukCardColor.withAlpha(230),
+                        foregroundColor: context.kabukTextSecondary,
                         elevation: 2,
                         child: const Icon(Icons.keyboard_arrow_down),
                       ),
@@ -270,14 +271,14 @@ class _ConversationDetailState extends ConsumerState<ConversationDetail> {
                   vertical: KabukTheme.spacingSm + 2,
                 ),
                 decoration: BoxDecoration(
-                  color: KabukTheme.cardColor,
+                  color: context.kabukCardColor,
                   borderRadius: const BorderRadius.only(
                     topLeft: Radius.circular(KabukTheme.radiusMd),
                     topRight: Radius.circular(KabukTheme.radiusMd),
                     bottomLeft: Radius.circular(4),
                     bottomRight: Radius.circular(KabukTheme.radiusMd),
                   ),
-                  border: Border.all(color: KabukTheme.divider, width: 0.5),
+                  border: Border.all(color: context.kabukDivider, width: 0.5),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -348,7 +349,7 @@ class _ConversationDetailState extends ConsumerState<ConversationDetail> {
                 width: 200,
                 child: LinearProgressIndicator(
                   value: modelState.progress,
-                  backgroundColor: KabukTheme.surfaceVariant,
+                  backgroundColor: context.kabukSurfaceVariant,
                   valueColor: const AlwaysStoppedAnimation<Color>(
                     KabukTheme.accentGreen,
                   ),
@@ -410,7 +411,7 @@ class _ConversationDetailState extends ConsumerState<ConversationDetail> {
   void _showMessageInfo(BuildContext context, Message message) {
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: KabukTheme.surface,
+      backgroundColor: context.kabukSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
           top: Radius.circular(KabukTheme.radiusXl),
@@ -425,14 +426,17 @@ class _ConversationDetailState extends ConsumerState<ConversationDetail> {
     final merged = [...messages, ..._pendingOptimistic];
     if (merged.isEmpty) return _buildEmptyState(context);
 
-    return ListView.builder(
-      controller: _scrollController,
-      padding: const EdgeInsets.symmetric(
-        horizontal: KabukTheme.spacingMd,
-        vertical: KabukTheme.spacingSm,
-      ),
-      itemCount: merged.length,
-      itemBuilder: (context, index) {
+    return SafeArea(
+      top: true,
+      bottom: false,
+      child: ListView.builder(
+        controller: _scrollController,
+        padding: const EdgeInsets.symmetric(
+          horizontal: KabukTheme.spacingMd,
+          vertical: KabukTheme.spacingSm,
+        ),
+        itemCount: merged.length,
+        itemBuilder: (context, index) {
         final msg = merged[index];
         final isOptimistic = msg.id.startsWith('optimistic_');
         final bubble = MessageBubble(
@@ -454,6 +458,7 @@ class _ConversationDetailState extends ConsumerState<ConversationDetail> {
         }
         return bubble;
       },
+      ),
     );
   }
 }
@@ -546,7 +551,7 @@ class _ThinkingBubbleState extends State<_ThinkingBubble>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
-              color: KabukTheme.surfaceVariant,
+              color: context.kabukSurfaceVariant,
               borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
             ),
             child: Row(
@@ -580,8 +585,8 @@ class _ThinkingBubbleState extends State<_ThinkingBubble>
                 const SizedBox(width: 8),
                 Text(
                   label,
-                  style: const TextStyle(
-                    color: KabukTheme.textSecondary,
+                  style: TextStyle(
+                    color: context.kabukTextSecondary,
                     fontSize: 13,
                     fontStyle: FontStyle.italic,
                   ),

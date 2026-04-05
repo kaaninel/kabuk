@@ -171,17 +171,17 @@ class TopicChip extends ConsumerWidget {
         style: TextStyle(
           color: isFollowed
               ? KabukTheme.primaryGreen
-              : KabukTheme.textSecondary,
+              : context.kabukTextSecondary,
           fontSize: 13,
         ),
       ),
       backgroundColor: isFollowed
           ? KabukTheme.primaryGreen.withValues(alpha: 0.15)
-          : KabukTheme.surfaceVariant,
+          : context.kabukSurfaceVariant,
       side: BorderSide(
         color: isFollowed
             ? KabukTheme.primaryGreen.withValues(alpha: 0.4)
-            : KabukTheme.divider,
+            : context.kabukDivider,
       ),
       onPressed: () => toggleTopic(ref, hashtag),
     );
@@ -199,11 +199,11 @@ class TopicFeedView extends ConsumerWidget {
     final feedAsync = ref.watch(topicFeedProvider);
 
     return Scaffold(
-      backgroundColor: KabukTheme.background,
+      backgroundColor: context.kabukBackground,
       appBar: AppBar(
         title: const Text('Topics'),
-        backgroundColor: KabukTheme.surface,
-        foregroundColor: KabukTheme.textPrimary,
+        backgroundColor: context.kabukSurface,
+        foregroundColor: context.kabukTextPrimary,
         elevation: 0,
         actions: [
           IconButton(
@@ -218,11 +218,11 @@ class TopicFeedView extends ConsumerWidget {
           topicsAsync.when(
             data: (topics) {
               if (topics.isEmpty) {
-                return const Padding(
+                return Padding(
                   padding: EdgeInsets.all(KabukTheme.spacingMd),
                   child: Text(
                     'No followed topics yet. Tap + to add one.',
-                    style: TextStyle(color: KabukTheme.textSecondary),
+                    style: TextStyle(color: context.kabukTextSecondary),
                   ),
                 );
               }
@@ -252,17 +252,17 @@ class TopicFeedView extends ConsumerWidget {
             error: (_, _) => const SizedBox.shrink(),
           ),
 
-          const Divider(color: KabukTheme.divider, height: 1),
+          Divider(color: context.kabukDivider, height: 1),
 
           // Feed
           Expanded(
             child: feedAsync.when(
               data: (events) {
                 if (events.isEmpty) {
-                  return const Center(
+                  return Center(
                     child: Text(
                       'No posts in followed topics',
-                      style: TextStyle(color: KabukTheme.textSecondary),
+                      style: TextStyle(color: context.kabukTextSecondary),
                     ),
                   );
                 }
@@ -296,22 +296,22 @@ class TopicFeedView extends ConsumerWidget {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: KabukTheme.surface,
-        title: const Text(
+        backgroundColor: context.kabukSurface,
+        title: Text(
           'Follow Topic',
-          style: TextStyle(color: KabukTheme.textPrimary),
+          style: TextStyle(color: context.kabukTextPrimary),
         ),
         content: TextField(
           controller: controller,
           autofocus: true,
-          style: const TextStyle(color: KabukTheme.textPrimary),
+          style: TextStyle(color: context.kabukTextPrimary),
           decoration: InputDecoration(
             hintText: 'Enter hashtag (e.g. bitcoin)',
-            hintStyle: const TextStyle(color: KabukTheme.textTertiary),
+            hintStyle: TextStyle(color: context.kabukTextTertiary),
             prefixText: '# ',
             prefixStyle: const TextStyle(color: KabukTheme.purpleAccent),
             filled: true,
-            fillColor: KabukTheme.surfaceVariant,
+            fillColor: context.kabukSurfaceVariant,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
               borderSide: BorderSide.none,
@@ -321,9 +321,9 @@ class TopicFeedView extends ConsumerWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text(
+            child: Text(
               'Cancel',
-              style: TextStyle(color: KabukTheme.textSecondary),
+              style: TextStyle(color: context.kabukTextSecondary),
             ),
           ),
           FilledButton(
@@ -359,7 +359,7 @@ class _TopicNoteCard extends ConsumerWidget {
       margin: const EdgeInsets.only(bottom: KabukTheme.spacingSm),
       padding: const EdgeInsets.all(KabukTheme.spacingMd),
       decoration: BoxDecoration(
-        color: KabukTheme.cardColor,
+        color: context.kabukCardColor,
         borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
       ),
       child: Column(
@@ -387,8 +387,8 @@ class _TopicNoteCard extends ConsumerWidget {
           // Content
           Text(
             event.content,
-            style: const TextStyle(
-              color: KabukTheme.textPrimary,
+            style: TextStyle(
+              color: context.kabukTextPrimary,
               fontSize: 14,
               height: 1.5,
             ),

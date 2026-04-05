@@ -52,6 +52,8 @@ channels, or media sharing → route to "messaging"
 • If the user mentions files, photos, documents, media → route to "files"
 • If the user wants to find or search across all their data → route to "search"
 • If the user mentions Nostr, identity, public key, relays, social → route to "identity"
+• If the user mentions Usenet indexers, providers, NNTP servers, or NZB configuration → route to "feeds"
+• If the user wants to search Usenet, stream content, or play NZB files → route to "discover"
 • If the request is about Kabuk itself, settings, help, or general chat → route to "system"
 • For greetings, casual conversation, general knowledge questions, or anything that
 doesn't fit a domain agent, respond directly yourself.
@@ -214,6 +216,24 @@ and a brief reason for choosing it.
       ),
       'identity',
     ),
+    // Usenet intents — route to feeds for indexer/provider management.
+    (
+      RegExp(
+        r'(add|remove|configure|setup|list|show)\b.*\b(indexer|provider|usenet|nzb|nntp|news\s*server)',
+        caseSensitive: false,
+      ),
+      'feeds',
+    ),
+    // Usenet intents — route to discover for search/stream.
+    (
+      RegExp(
+        r'(search|find|stream|watch|play|download)\b.*\b(usenet|nzb|usenet\s*content)',
+        caseSensitive: false,
+      ),
+      'discover',
+    ),
+    (RegExp(r'\bnzb:', caseSensitive: false), 'discover'),
+    (RegExp(r'\busenet:', caseSensitive: false), 'discover'),
     // File intents.
     (
       RegExp(

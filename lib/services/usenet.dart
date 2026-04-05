@@ -371,6 +371,7 @@ class StreamSession {
     required this.bytesStreamed,
     required this.totalBytes,
     required this.state,
+    this.bytesDownloaded = 0,
   });
 
   /// Unique identifier for this streaming session.
@@ -391,6 +392,9 @@ class StreamSession {
 
   /// Current state of the streaming session.
   final StreamState state;
+
+  /// Bytes fetched from Usenet by the pipeline (download progress).
+  final int bytesDownloaded;
 
   @override
   String toString() =>

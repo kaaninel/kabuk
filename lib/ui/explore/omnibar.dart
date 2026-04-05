@@ -25,7 +25,9 @@ import 'package:kabuk/config/result.dart';
 import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/knowledge/types/saved_search.dart';
 import 'package:kabuk/knowledge/types/usenet.dart';
-import 'package:kabuk/platform/shared/tmdb_client.dart';
+import 'package:kabuk/plugins/content_item.dart';
+import 'package:kabuk/plugins/plugin.dart';
+import 'package:kabuk/plugins/registry.dart';
 import 'package:kabuk/services/media_metadata.dart';
 import 'package:kabuk/services/nip19.dart';
 import 'package:kabuk/services/nostr.dart';
@@ -45,6 +47,7 @@ import 'package:kabuk/ui/explore/usenet_detail_page.dart' show pushUsenetDetail;
 import 'package:kabuk/ui/explore/web_channel_view.dart';
 import 'package:kabuk/ui/shared/feed_image.dart';
 import 'package:kabuk/ui/theme.dart';
+import 'package:kabuk/ui/viewers/viewer_router.dart';
 
 // =============================================================================
 // Pattern detection helpers
@@ -454,6 +457,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
   Timer? _nostrDebounce;
   Timer? _usenetDebounce;
   Timer? _mediaDebounce;
+  Timer? _pluginDebounce;
   String _query = '';
 
   // Local (in-memory) search results.
@@ -473,6 +477,10 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
   List<MediaSearchResult> _mediaResults = [];
   bool _mediaSearching = false;
 
+  // Plugin search results — keyed by plugin name.
+  Map<String, List<ContentItem>> _pluginResults = {};
+  bool _pluginSearching = false;
+
   // Scope state — which feed are we searching in.
   String? _scope;
   String? _scopeName;
@@ -490,6 +498,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
     _nostrDebounce?.cancel();
     _usenetDebounce?.cancel();
     _mediaDebounce?.cancel();
+    _pluginDebounce?.cancel();
     super.dispose();
   }
 
@@ -534,6 +543,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
     }
 
     // TMDB media search — for default queries and `media:` prefix.
+    // Uses composite service (TVmaze + IMDbAPI.dev + optional TMDB).
     _mediaDebounce?.cancel();
     final isMedia = _isMediaQuery(q);
     if (q.isNotEmpty && (!_isBrowseableQuery(q) || isMedia) && !_isUrlQuery(q)) {
@@ -548,6 +558,20 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
       setState(() {
         _mediaResults = [];
         _mediaSearching = false;
+      });
+    }
+
+    // Plugin search — query all enabled plugins with search capability.
+    _pluginDebounce?.cancel();
+    if (q.isNotEmpty && !_isBrowseableQuery(q) && !_isUrlQuery(q)) {
+      _pluginDebounce = Timer(
+        const Duration(milliseconds: 500),
+        () => _searchPlugins(q),
+      );
+    } else {
+      setState(() {
+        _pluginResults = {};
+        _pluginSearching = false;
       });
     }
   }
@@ -714,7 +738,6 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
   Future<void> _searchMedia(String query) async {
     if (!mounted) return;
     final service = ref.read(mediaMetadataServiceProvider);
-    if (service == null) return;
     setState(() => _mediaSearching = true);
     try {
       final result = await service.search(query);
@@ -730,6 +753,34 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
       });
     } on Object {
       if (mounted) setState(() => _mediaSearching = false);
+    }
+  }
+
+  Future<void> _searchPlugins(String query) async {
+    if (!mounted) return;
+    setState(() => _pluginSearching = true);
+    try {
+      final registry = ref.read(pluginRegistryProvider);
+      final searchPlugins =
+          registry.pluginsForCapability(ContentCapability.search);
+      final results = <String, List<ContentItem>>{};
+      for (final plugin in searchPlugins) {
+        try {
+          final items = await plugin.search(query, perPage: 5);
+          if (items.isNotEmpty) {
+            results[plugin.name] = items;
+          }
+        } on Object catch (e) {
+          debugPrint('[Omnibar] Plugin ${plugin.id} search failed: $e');
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _pluginResults = results;
+        _pluginSearching = false;
+      });
+    } on Object {
+      if (mounted) setState(() => _pluginSearching = false);
     }
   }
 
@@ -862,6 +913,40 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
       return;
     }
 
+    // Try resolving via content plugins before falling back to web view.
+    try {
+      final registry = ref.read(pluginRegistryProvider);
+      final resolved = await registry.resolveUrl(feedUrl);
+      if (resolved != null && mounted) {
+        final (_, content) = resolved;
+        switch (content) {
+          case ResolvedContentItem(:final item):
+            if (mounted) {
+              Navigator.of(context).pop();
+              await ViewerRouter.open(context, item);
+            }
+            return;
+          case ResolvedChannel(:final entityUri):
+            if (mounted) {
+              await Navigator.of(context).pushReplacement(
+                MaterialPageRoute<void>(
+                  builder: (_) => WebChannelView(
+                    url: feedUrl,
+                    articleUris: [entityUri],
+                    isMultiArticle: false,
+                  ),
+                ),
+              );
+            }
+            return;
+          case ResolvedNotHandled():
+            break;
+        }
+      }
+    } on Object catch (e) {
+      debugPrint('[Omnibar] Plugin URL resolve failed: $e');
+    }
+
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Loading page…')),
@@ -917,7 +1002,13 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
   }
 
   void _selectFeedAndPop(String? feedUri) {
-    ref.read(selectedFeedProvider.notifier).state = feedUri;
+    final tab = ref.read(activeExploreTabProvider);
+    if (tab != null) {
+      ref.read(exploreTabsProvider.notifier).updateTab(
+        tab.id,
+        (t) => t.copyWith(selectedFeed: feedUri),
+      );
+    }
     Navigator.of(context).pop();
   }
 
@@ -1195,14 +1286,74 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
               ),
             if (_mediaResults.isNotEmpty)
               _buildMediaResultsSection(),
+            if (!_mediaSearching &&
+                _mediaResults.isEmpty &&
+                !_isBrowseableQuery(_query) &&
+                !_isUrlQuery(_query) &&
+                _query.isNotEmpty)
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.movie_outlined,
+                      size: 14,
+                      color: context.kabukTextTertiary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'No movies or TV shows found',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: context.kabukTextTertiary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            // Plugin search results.
+            if (_pluginSearching)
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: KabukTheme.accentGreen,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Searching plugins…',
+                        style: TextStyle(
+                          color: context.kabukTextSecondary,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            for (final entry in _pluginResults.entries)
+              _buildPluginResultsSection(entry.key, entry.value),
             if (!_nostrSearching &&
                 !_usenetSearching &&
                 !_mediaSearching &&
+                !_pluginSearching &&
                 !_isBrowseableQuery(_query) &&
                 _localResults.isEmpty &&
                 _nostrResults.isEmpty &&
                 _usenetResults.isEmpty &&
                 _mediaResults.isEmpty &&
+                _pluginResults.isEmpty &&
                 !_isUrlQuery(_query) &&
                 !_isHashtagQuery(_query))
               Padding(
@@ -2020,9 +2171,9 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
           _actionTile(
             icon: Icons.movie_outlined,
             iconColor: _mediaAccent,
-            title: 'Search TMDB for "$parsed"',
+            title: 'Search for "$parsed"',
             subtitle: 'Find movies and TV shows',
-            onTap: () {}, // Results are shown inline.
+            onTap: () => _searchMedia(parsed),
           ),
         );
       }
@@ -2154,8 +2305,13 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
             onTap: () {
               // Return to explore and select this feed if it has a source.
               if (article.feedSource != null) {
-                ref.read(selectedFeedProvider.notifier).state =
-                    article.feedSource;
+                final tab = ref.read(activeExploreTabProvider);
+                if (tab != null) {
+                  ref.read(exploreTabsProvider.notifier).updateTab(
+                    tab.id,
+                    (t) => t.copyWith(selectedFeed: article.feedSource),
+                  );
+                }
               }
               Navigator.of(context).pop();
             },
@@ -2398,20 +2554,20 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
   }
 
   // ---------------------------------------------------------------------------
-  // TMDB media search results
+  // Media search results (composite: TVmaze + IMDbAPI + optional TMDB)
   // ---------------------------------------------------------------------------
 
   Widget _buildMediaResultsSection() {
+    final mediaService = ref.read(mediaMetadataServiceProvider);
     return _section(
       label: 'TV & Movies (${_mediaResults.length})',
       icon: Icons.movie_outlined,
       iconColor: _mediaAccent,
       child: Column(
         children: _mediaResults.take(10).map((result) {
-          final posterUrl = TmdbImageHelper.url(
-            result.posterPath,
-            size: MediaImageSize.small,
-          );
+          final posterUrl = result.posterPath != null
+              ? mediaService.imageUrl(result.posterPath!, size: MediaImageSize.small)
+              : null;
           final yearText = result.releaseYear != null
               ? '${result.releaseYear}'
               : null;
@@ -2499,9 +2655,11 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
               color: context.kabukTextTertiary,
             ),
             onTap: () {
-              Navigator.of(context).pop();
+              final navigator = Navigator.of(context);
+              navigator.pop();
               pushMediaDetail(
                 context,
+                navigator: navigator,
                 tmdbId: result.id,
                 mediaType: result.mediaType,
                 title: result.title,
@@ -2526,6 +2684,77 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
         Icons.movie_outlined,
         size: 20,
         color: _mediaAccent,
+      ),
+    );
+  }
+
+  Widget _buildPluginResultsSection(String pluginName, List<ContentItem> items) {
+    return _section(
+      label: '$pluginName (${items.length})',
+      icon: Icons.extension_rounded,
+      iconColor: KabukTheme.accentGreen,
+      child: Column(
+        children: items.map((item) {
+          return ListTile(
+            dense: true,
+            leading: item.thumbnailUrl != null
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: Image.network(
+                      item.thumbnailUrl!,
+                      width: 40,
+                      height: 40,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: KabukTheme.accentGreen.withAlpha(20),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Icon(
+                          Icons.extension_rounded,
+                          size: 18,
+                          color: KabukTheme.accentGreen,
+                        ),
+                      ),
+                    ),
+                  )
+                : Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: KabukTheme.accentGreen.withAlpha(20),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Icon(
+                      Icons.extension_rounded,
+                      size: 18,
+                      color: KabukTheme.accentGreen,
+                    ),
+                  ),
+            title: Text(
+              item.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13),
+            ),
+            subtitle: item.description != null
+                ? Text(
+                    item.description!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: context.kabukTextSecondary,
+                    ),
+                  )
+                : null,
+            onTap: () {
+              ViewerRouter.open(context, item);
+            },
+          );
+        }).toList(),
       ),
     );
   }

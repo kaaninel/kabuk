@@ -10,6 +10,7 @@ library;
 
 import 'dart:developer' as dev;
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,6 +18,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kabuk/config/namespaces.dart';
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/types/article.dart';
+import 'package:kabuk/knowledge/types/media.dart';
 import 'package:kabuk/knowledge/types/webpage.dart';
 import 'package:kabuk/services/reader_mode.dart';
 import 'package:kabuk/services/web_extractor.dart';
@@ -81,6 +83,36 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
   String get _domain =>
       Uri.tryParse(widget.url)?.host.replaceFirst('www.', '') ?? widget.url;
 
+  /// Generic site navigation labels to filter out from navigation links.
+  static const _genericNavLabels = {
+    'home', 'random', 'nearby', 'watch', 'watchlist', 'about', 'contact',
+    'contact us', 'privacy', 'privacy policy', 'terms', 'terms of service',
+    'login', 'log in', 'sign in', 'sign up', 'register', 'help', 'faq',
+    'search', 'settings', 'preferences', 'donate', 'contributions',
+    'main page', 'special pages', 'upload', 'create account',
+    'what links here', 'related changes', 'printable version',
+    'permanent link', 'page information', 'cite this page',
+  };
+
+  /// Navigation links filtered to remove generic site navigation.
+  List<ExtractedLink> get _filteredNavLinks {
+    return widget.navigationLinks.where((link) {
+      final label = link.title.trim().toLowerCase();
+      if (label.isEmpty || label.length < 2) return false;
+      if (_genericNavLabels.contains(label)) return false;
+      // Filter links pointing to login/auth/special pages.
+      final url = link.url.toLowerCase();
+      if (url.contains('/login') ||
+          url.contains('/signup') ||
+          url.contains('/register') ||
+          url.contains('action=edit') ||
+          url.contains('special:')) {
+        return false;
+      }
+      return true;
+    }).toList();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -111,6 +143,39 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
     }
   }
 
+  /// Extracts a clean domain name from a URL (e.g. "theverge.com").
+  String _extractDomain(String url) {
+    try {
+      final uri = Uri.parse(url);
+      final host = uri.host;
+      return host.startsWith('www.') ? host.substring(4) : host;
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /// Returns true if an entity name is boilerplate for the given source URL.
+  ///
+  /// Filters out platform/hosting entities that appear on every page of a
+  /// site (e.g. Wikimedia on Wikipedia, Automattic on WordPress.com).
+  static bool _isBoilerplateEntity(String normName, String url) {
+    if (normName.isEmpty) return false;
+    // Wikipedia / Wikimedia boilerplate.
+    if (url.contains('wikipedia.org') || url.contains('wikimedia.org')) {
+      if (normName.contains('wikimedia') ||
+          normName.contains('wikipedia') ||
+          normName.contains('contributors to')) {
+        return true;
+      }
+    }
+    // Generic hosting/platform entities.
+    const boilerplate = {
+      'cloudflare', 'google analytics', 'facebook pixel',
+      'google tag manager', 'doubleclick', 'adsense',
+    };
+    return boilerplate.contains(normName);
+  }
+
   Future<void> _loadArticles() async {
     final store = ref.read(knowledgeStoreProvider);
     final loaded = <ArticleData>[];
@@ -128,6 +193,18 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
     // normalises and tries variants).
     final webPage = await store.findWebPageByUrl(widget.url);
 
+    // Helper to resolve entity type, checking kabuk:semanticType first.
+    Future<String> resolveType(String uri) async {
+      final semanticType = (await store
+              .query()
+              .subject(uri)
+              .predicate(NS.kabukSemanticType)
+              .execute())
+          .firstOrNull
+          ?.objectValue;
+      return semanticType ?? _entityTypeFromUri(uri);
+    }
+
     // Fallback: search for entities with kabuk:extractedFrom matching the
     // domain when no WebPage record was found.
     if (webPage == null) {
@@ -139,39 +216,276 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
       final domain =
           Uri.tryParse(widget.url)?.host.replaceFirst('www.', '') ?? '';
       if (domain.isNotEmpty) {
+        final seen = <String>{};
+        // Only load entities that were extracted from this specific URL —
+        // not all memberEntity triples in the entire knowledge store.
         final extracted = await store
             .query()
-            .predicate(NS.kabukMemberEntity)
+            .predicate(NS.kabukExtractedFrom)
             .execute();
         for (final t in extracted) {
-          final memberUri = t.objectValue;
-          if (articleUriSet.contains(memberUri)) continue;
-          final type = _entityTypeFromUri(memberUri);
+          final sourceUrl = t.objectValue;
+          // Only include entities extracted from URLs in the same domain.
+          final sourceDomain =
+              Uri.tryParse(sourceUrl)?.host.replaceFirst('www.', '') ?? '';
+          if (sourceDomain != domain) continue;
+          final entityUri = t.subject;
+          if (articleUriSet.contains(entityUri)) continue;
+          if (!seen.add(entityUri)) continue;
+          final type = await resolveType(entityUri);
           if (_supportedEntityTypes.contains(type)) {
-            entities.add(_EntityEntry(uri: memberUri, type: type));
+            entities.add(_EntityEntry(uri: entityUri, type: type));
           }
         }
       }
     } else {
+      final seen = <String>{};
       for (final memberUri in webPage.memberEntities) {
         if (articleUriSet.contains(memberUri)) continue;
-        final type = _entityTypeFromUri(memberUri);
+        if (!seen.add(memberUri)) continue; // skip duplicate URIs
+        final type = await resolveType(memberUri);
         if (_supportedEntityTypes.contains(type)) {
           entities.add(_EntityEntry(uri: memberUri, type: type));
         }
       }
     }
 
+    // Name-based dedup: same entity type + normalised name → keep first.
+    // Also handles aliases where one name contains another (e.g. "SpaceX" vs
+    // "Space Exploration Technologies Corporation").
+    final dedupedEntities = <_EntityEntry>[];
+    final entityNameMap = <String, String>{}; // uri → normalised name
+    final seenNames = <String, List<String>>{}; // type → list of normalised names
+    // Collect sameAs, URL, and description data for cross-reference dedup.
+    final entityUrls = <String, String>{}; // uri → url
+    final entitySameAs = <String, Set<String>>{}; // uri → sameAs set
+    final entityDescs = <String, String>{}; // uri → description
+    for (final entry in entities) {
+      final nameTriples =
+          await store.query().subject(entry.uri).predicate(NS.schemaName).execute();
+      final rawName = nameTriples.firstOrNull?.objectValue ?? '';
+      final normName = rawName.trim().toLowerCase();
+      entityNameMap[entry.uri] = normName;
+
+      // Load URL, sameAs, and description for cross-reference dedup.
+      final urlTriples =
+          await store.query().subject(entry.uri).predicate(NS.schemaUrl).execute();
+      entityUrls[entry.uri] = urlTriples.firstOrNull?.objectValue.toLowerCase().trim() ?? '';
+      final sameAsTriples =
+          await store.query().subject(entry.uri).predicate(NS.schemaSameAs).execute();
+      entitySameAs[entry.uri] =
+          sameAsTriples.map((t) => t.objectValue.toLowerCase().trim()).toSet();
+      final descTriples =
+          await store.query().subject(entry.uri).predicate(NS.schemaDescription).execute();
+      entityDescs[entry.uri] = descTriples.firstOrNull?.objectValue.toLowerCase().trim() ?? '';
+
+      final typeNames = seenNames.putIfAbsent(entry.type, () => <String>[]);
+      if (normName.isEmpty) {
+        dedupedEntities.add(entry);
+        continue;
+      }
+      // Check exact match, containment, or word-overlap for orgs (e.g. "SpaceX"
+      // vs "Space Exploration Technologies Corporation").
+      bool isDuplicate;
+      if (normName.length < 3) {
+        isDuplicate = typeNames.any((existing) => existing == normName);
+      } else {
+        final normWords = normName.split(RegExp(r'\s+')).toSet();
+        final normCompact = normName.replaceAll(' ', '');
+        isDuplicate = typeNames.any((existing) {
+          if (existing == normName) return true;
+          if (existing.contains(normName) || normName.contains(existing)) {
+            return true;
+          }
+          // Compact comparison: "theverge" == "the verge" compacted.
+          final existingCompact = existing.replaceAll(' ', '');
+          if (existingCompact == normCompact) return true;
+          // Word overlap: if all words of the shorter name appear in the longer
+          // name, treat as duplicate (e.g. "Wikimedia Foundation" in
+          // "Wikimedia Foundation, Inc.").
+          final existingWords = existing.split(RegExp(r'\s+')).toSet();
+          final shorter =
+              normWords.length <= existingWords.length ? normWords : existingWords;
+          final longer =
+              normWords.length > existingWords.length ? normWords : existingWords;
+          if (shorter.length >= 2 && shorter.every((w) => longer.contains(w))) {
+            return true;
+          }
+          // CamelCase brand vs expanded name: "SpaceX" vs "Space Exploration"
+          // Check if the shorter name (as one word) starts with or is a prefix
+          // of the first word of the longer name, combined with description
+          // cross-reference.
+          final desc = entityDescs[entry.uri] ?? '';
+          if (normName.length >= 4 && existingWords.length >= 2) {
+            // Check if shorter name appears in longer's description
+            final existingUri = dedupedEntities
+                .where((e) => entityNameMap[e.uri] == existing)
+                .firstOrNull?.uri;
+            if (existingUri != null) {
+              final existDesc = entityDescs[existingUri] ?? '';
+              if (existDesc.contains(normName)) return true;
+              if (desc.contains(existing)) return true;
+            }
+          } else if (existing.length >= 4 && normWords.length >= 2) {
+            final existingUri = dedupedEntities
+                .where((e) => entityNameMap[e.uri] == existing)
+                .firstOrNull?.uri;
+            if (existingUri != null) {
+              final existDesc = entityDescs[existingUri] ?? '';
+              if (desc.contains(existing)) return true;
+              if (existDesc.contains(normName)) return true;
+            }
+          }
+          // Brand-abbreviation pattern: single-token name whose leading
+          // portion matches the first word of a multi-word name after
+          // stripping corporate suffixes (e.g. "SpaceX" starts with "Space",
+          // first word of "Space Exploration" → 5/6 coverage → same entity).
+          const corpSuffixes = [
+            'inc', 'inc.', 'llc', 'ltd', 'corp', 'corp.', 'corporation',
+            'company', 'co', 'co.', 'group', 'holdings', 'technologies',
+            'technology', 'the',
+          ];
+          var sn = normName;
+          var se = existing;
+          for (final sfx in corpSuffixes) {
+            sn = sn.replaceAll(RegExp('\\b${RegExp.escape(sfx)}\\b'), '').trim();
+            se = se.replaceAll(RegExp('\\b${RegExp.escape(sfx)}\\b'), '').trim();
+          }
+          sn = sn.replaceAll(RegExp(r'[,.\s]+$'), '').trim();
+          se = se.replaceAll(RegExp(r'[,.\s]+$'), '').trim();
+          if (sn.isNotEmpty && se.isNotEmpty) {
+            // Re-check after stripping (catches cases missed earlier).
+            if (sn == se || sn.contains(se) || se.contains(sn)) return true;
+            final snW = sn.split(' ').where((w) => w.length >= 3).toList();
+            final seW = se.split(' ').where((w) => w.length >= 3).toList();
+            final single = snW.length == 1 && seW.length > 1
+                ? sn.replaceAll(' ', '')
+                : seW.length == 1 && snW.length > 1
+                    ? se.replaceAll(' ', '')
+                    : null;
+            final multiFirst = snW.length == 1 && seW.length > 1
+                ? seW.first
+                : seW.length == 1 && snW.length > 1
+                    ? snW.first
+                    : null;
+            if (single != null && multiFirst != null &&
+                multiFirst.length >= 4 &&
+                single.startsWith(multiFirst) &&
+                multiFirst.length >= (single.length * 0.7).ceil()) {
+              return true;
+            }
+          }
+          return false;
+        });
+      }
+      if (!isDuplicate) {
+        typeNames.add(normName);
+        dedupedEntities.add(entry);
+      }
+    }
+
+    // Second dedup pass: cross-reference via sameAs, URL, and description.
+    // This catches cases where names differ completely (e.g. brand name vs
+    // full legal name) but the entities are linked via sameAs or one entity's
+    // name appears in the other's description.
+    final crossRefDeduped = <_EntityEntry>[];
+    for (final entry in dedupedEntities) {
+      final entryUrl = entityUrls[entry.uri] ?? '';
+      final entrySameAs = entitySameAs[entry.uri] ?? const {};
+      final entryName = entityNameMap[entry.uri] ?? '';
+      final entryDesc = entityDescs[entry.uri] ?? '';
+
+      final isDup = crossRefDeduped.any((existing) {
+        if (existing.type != entry.type) return false;
+        final existingUrl = entityUrls[existing.uri] ?? '';
+        final existingSameAs = entitySameAs[existing.uri] ?? const {};
+
+        // Check if entry's URL is in existing's sameAs or vice versa.
+        if (existingUrl.isNotEmpty && entrySameAs.contains(existingUrl)) {
+          return true;
+        }
+        if (entryUrl.isNotEmpty && existingSameAs.contains(entryUrl)) {
+          return true;
+        }
+        // Check if their sameAs sets overlap.
+        if (existingSameAs.intersection(entrySameAs).isNotEmpty) return true;
+
+        // Description cross-reference: one entity's name in the other's
+        // description (e.g. "SpaceX" in desc of "Space Exploration
+        // Technologies Corporation").
+        final existingName = entityNameMap[existing.uri] ?? '';
+        final existingDesc = entityDescs[existing.uri] ?? '';
+        if (entryName.length >= 4 && existingDesc.contains(entryName)) {
+          return true;
+        }
+        if (existingName.length >= 4 && entryDesc.contains(existingName)) {
+          return true;
+        }
+
+        return false;
+      });
+      if (!isDup) crossRefDeduped.add(entry);
+    }
+
+    // Filter out platform/boilerplate entities that appear on every page of a
+    // site (e.g. "Contributors to Wikimedia projects", "Wikimedia Foundation").
+    final cleanedEntities = crossRefDeduped.where((entry) {
+      final name = entityNameMap[entry.uri] ?? '';
+      return !_isBoilerplateEntity(name, widget.url);
+    }).toList();
+
+    // Filter out articles that look like navigation categories, site-about
+    // pages, or other non-article content.
+    final siteDomain = _extractDomain(widget.url);
+    final filteredArticles = loaded.where((a) {
+      final title = (a.name ?? '').trim();
+      final desc = (a.description ?? '').trim();
+      // Must have a title.
+      if (title.isEmpty) return false;
+      // Title is a URL → failed extraction.
+      if (title.startsWith('http://') || title.startsWith('https://')) {
+        return false;
+      }
+      // Very short title with no description and no image → likely nav category.
+      if (title.length < 40 && desc.isEmpty && a.image == null) return false;
+      // Site-about page: title matches site/domain name and desc mentions
+      // "website", "online", "platform" → this is the site description, not an
+      // article.
+      if (siteDomain.isNotEmpty) {
+        final tLower = title.toLowerCase();
+        final tCompact = tLower.replaceAll(' ', '');
+        final dLower = desc.toLowerCase();
+        final domLower = siteDomain.toLowerCase();
+        final domBase = domLower.split('.').first; // e.g. "theverge"
+        final titleMatchesSite = tLower == domLower ||
+            tLower == domLower.replaceAll('.', ' ') ||
+            tCompact == domBase || // "the verge" → "theverge" == "theverge"
+            tLower.contains(domBase) ||
+            domBase.contains(tCompact);
+        if (titleMatchesSite &&
+            (dLower.contains('website') ||
+                dLower.contains('online') ||
+                dLower.contains('platform') ||
+                dLower.contains('founded in') ||
+                dLower.contains('news site') ||
+                dLower.contains('publication'))) {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
+
     dev.log(
       '[WebChannel] url=${widget.url} webPage=${webPage?.uri} '
-      'articles=${loaded.length} entities=${entities.length}',
+      'articles=${filteredArticles.length} (raw ${loaded.length}) '
+      'entities=${cleanedEntities.length} (raw ${entities.length})',
       name: 'WebChannelView',
     );
 
     if (mounted) {
       setState(() {
-        _articles = loaded;
-        _entityEntries = entities;
+        _articles = filteredArticles;
+        _entityEntries = cleanedEntities;
         _isLoading = false;
       });
     }
@@ -234,9 +548,21 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
         if (article != null) newArticles.add(article);
       }
 
+      // Filter out navigation-category articles (same as initial load).
+      final filtered = newArticles.where((a) {
+        final title = (a.name ?? '').trim();
+        final desc = (a.description ?? '').trim();
+        if (title.isEmpty) return false;
+        if (title.startsWith('http://') || title.startsWith('https://')) {
+          return false;
+        }
+        if (title.length < 40 && desc.isEmpty && a.image == null) return false;
+        return true;
+      }).toList();
+
       if (!mounted) return;
       setState(() {
-        _articles = [..._articles, ...newArticles];
+        _articles = [..._articles, ...filtered];
         _nextPageUrl = result.nextPageUrl;
         _isLoadingMore = false;
       });
@@ -257,7 +583,7 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
   void _browseLink(String url) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => _LinkLoader(url: url),
+        builder: (_) => WebChannelLoader(url: url),
       ),
     );
   }
@@ -377,6 +703,30 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
             ),
           ),
         ));
+      } else if (type == 'ImageObject') {
+        // Image objects get a masonry/grid gallery view.
+        final allUris = entries.map((e) => e.uri).toList();
+        slivers.add(SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          sliver: SliverGrid(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              childAspectRatio: 1.0,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                return _ImageEntityCard(
+                  uri: entries[index].uri,
+                  allUris: allUris,
+                  index: index,
+                );
+              },
+              childCount: entries.length,
+            ),
+          ),
+        ));
       } else {
         slivers.add(SliverList(
           delegate: SliverChildBuilderDelegate(
@@ -409,84 +759,105 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
     }
 
     // Multi-article page → channel-style card list.
+    final topPadding = MediaQuery.of(context).padding.top;
     return Scaffold(
       backgroundColor: context.kabukBackground,
       body: CustomScrollView(
         controller: _scrollController,
         slivers: [
-          // ── App bar ──
-          SliverAppBar(
-            expandedHeight: 100,
-            pinned: true,
-            backgroundColor: context.kabukSurface,
-            foregroundColor: context.kabukTextPrimary,
-            flexibleSpace: FlexibleSpaceBar(
-              background: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      KabukTheme.blueAccent.withAlpha(140),
-                      KabukTheme.blueAccent.withAlpha(40),
-                    ],
-                  ),
+          // ── Channel header (replaces separate app bar + info section) ──
+          SliverToBoxAdapter(
+            child: Container(
+              padding: EdgeInsets.fromLTRB(8, topPadding + 8, 12, 12),
+              decoration: BoxDecoration(
+                color: context.kabukSurface,
+                border: Border(
+                  bottom: BorderSide(color: context.kabukDivider, width: 0.5),
                 ),
               ),
-            ),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.copy_rounded, size: 20),
-                tooltip: 'Copy URL',
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: widget.url));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('URL copied')),
-                  );
-                },
-              ),
-            ],
-          ),
-
-          // ── Channel header ──
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(KabukTheme.spacingMd),
               child: Row(
                 children: [
-                  CircleAvatar(
-                    radius: 24,
-                    backgroundColor: KabukTheme.blueAccent.withAlpha(38),
-                    child: const Icon(
-                      Icons.language_rounded,
-                      size: 24,
-                      color: KabukTheme.blueAccent,
+                  // Back button.
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back_rounded, size: 22),
+                    onPressed: () => Navigator.of(context).pop(),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
                     ),
                   ),
-                  const SizedBox(width: KabukTheme.spacingMd),
+                  const SizedBox(width: 4),
+                  // Favicon.
+                  CircleAvatar(
+                    radius: 18,
+                    backgroundColor: KabukTheme.blueAccent.withAlpha(38),
+                    child: ClipOval(
+                      child: CachedNetworkImage(
+                        imageUrl: 'https://$_domain/favicon.ico',
+                        width: 22,
+                        height: 22,
+                        fit: BoxFit.contain,
+                        placeholder: (_, _) => const Icon(
+                          Icons.language_rounded,
+                          size: 18,
+                          color: KabukTheme.blueAccent,
+                        ),
+                        errorWidget: (_, _, _) => const Icon(
+                          Icons.language_rounded,
+                          size: 18,
+                          color: KabukTheme.blueAccent,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  // Domain + summary.
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
                           _domain,
                           style: TextStyle(
                             color: context.kabukTextPrimary,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: 2),
                         Text(
                           _summaryText,
                           style: TextStyle(
                             color: context.kabukTextTertiary,
-                            fontSize: 13,
+                            fontSize: 12,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  // Copy URL button.
+                  IconButton(
+                    icon: const Icon(Icons.copy_rounded, size: 18),
+                    tooltip: 'Copy URL',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: widget.url));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('URL copied')),
+                      );
+                    },
+                  ),
+                  // Subscribe button.
                   _SubscribeButton(
                     isSubscribed: _isSubscribed,
                     onToggle: _toggleSubscription,
@@ -497,7 +868,7 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
           ),
 
           // ── Navigation links (categories/sections) ──
-          if (widget.navigationLinks.isNotEmpty)
+          if (_filteredNavLinks.isNotEmpty)
             SliverToBoxAdapter(
               child: SizedBox(
                 height: 40,
@@ -506,10 +877,10 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
                   padding: const EdgeInsets.symmetric(
                     horizontal: KabukTheme.spacingMd,
                   ),
-                  itemCount: widget.navigationLinks.length,
+                  itemCount: _filteredNavLinks.length,
                   separatorBuilder: (_, _) => const SizedBox(width: 8),
                   itemBuilder: (context, index) {
-                    final link = widget.navigationLinks[index];
+                    final link = _filteredNavLinks[index];
                     return ActionChip(
                       avatar: const Icon(Icons.link_rounded, size: 14),
                       label: Text(
@@ -564,10 +935,13 @@ class _WebChannelViewState extends ConsumerState<WebChannelView> {
               SliverList(
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
-                    return ArticleCard(
-                      article: _articles[index],
-                      articles: _articles,
-                      index: index,
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: ArticleCard(
+                        article: _articles[index],
+                        articles: _articles,
+                        index: index,
+                      ),
                     );
                   },
                   childCount: _articles.length,
@@ -626,14 +1000,25 @@ class _EntityEntry {
 }
 
 /// Entity types that have dedicated card widgets.
-const _supportedEntityTypes = {'Person', 'Product', 'Place', 'Organization'};
+const _supportedEntityTypes = {
+  'Person',
+  'Product',
+  'Place',
+  'Organization',
+  'ImageObject',
+  'Article',
+  'WebPage',
+};
 
 /// Section config: emoji prefix, display label, and sort order.
 const _sectionConfig = <String, (String, String, int)>{
+  'Article': ('📰', 'Articles', 0),
   'Person': ('👤', 'People', 1),
   'Product': ('🛍️', 'Products', 2),
   'Place': ('📍', 'Places', 3),
   'Organization': ('🏢', 'Organizations', 4),
+  'ImageObject': ('🖼️', 'Gallery', 5),
+  'WebPage': ('🔗', 'Pages', 6),
 };
 
 /// Extracts the Schema.org type name from a Kabuk entity URI.
@@ -879,21 +1264,219 @@ class _SubscribeButton extends StatelessWidget {
   }
 }
 
+class _ImageEntityCard extends ConsumerWidget {
+  const _ImageEntityCard({
+    required this.uri,
+    required this.allUris,
+    required this.index,
+  });
+
+  final String uri;
+  final List<String> allUris;
+  final int index;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // We fetch media data directly since we don't have a provider yet.
+    // In a real app, we'd use a FutureProvider(family) or similar.
+    final store = ref.watch(knowledgeStoreProvider);
+
+    return FutureBuilder<MediaData?>(
+      future: store.getMediaData(uri),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return Container(
+            decoration: BoxDecoration(
+              color: context.kabukSurface.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(12),
+            ),
+          );
+        }
+        final media = snapshot.data;
+        if (media == null) return const SizedBox.shrink();
+
+        final url = media.contentUrl ?? media.thumbnail;
+        if (url == null) return const SizedBox.shrink();
+
+        return GestureDetector(
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => _FullScreenImageView(
+                  imageUris: allUris,
+                  initialIndex: index,
+                ),
+              ),
+            );
+          },
+          child: Hero(
+            tag: uri,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: CachedNetworkImage(
+                imageUrl: url,
+                fit: BoxFit.cover,
+                placeholder: (context, url) => Container(
+                  color: context.kabukSurface.withOpacity(0.5),
+                ),
+                errorWidget: (context, url, error) => Container(
+                  color: context.kabukSurface.withOpacity(0.5),
+                  child: Icon(
+                    Icons.broken_image_rounded,
+                    color: context.kabukTextTertiary,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _FullScreenImageView extends StatefulWidget {
+  const _FullScreenImageView({
+    required this.imageUris,
+    required this.initialIndex,
+  });
+
+  final List<String> imageUris;
+  final int initialIndex;
+
+  @override
+  State<_FullScreenImageView> createState() => _FullScreenImageViewState();
+}
+
+class _FullScreenImageViewState extends State<_FullScreenImageView> {
+  late PageController _controller;
+  late int _currentIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex;
+    _controller = PageController(initialPage: widget.initialIndex);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          PageView.builder(
+            controller: _controller,
+            itemCount: widget.imageUris.length,
+            onPageChanged: (index) => setState(() => _currentIndex = index),
+            itemBuilder: (context, index) {
+              return _FullScreenImagePage(uri: widget.imageUris[index]);
+            },
+          ),
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 16,
+            left: 16,
+            child: IconButton(
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(Icons.close_rounded, color: Colors.white),
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.black45,
+              ),
+            ),
+          ),
+          if (widget.imageUris.length > 1)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 16,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black45,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '${_currentIndex + 1} / ${widget.imageUris.length}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FullScreenImagePage extends ConsumerWidget {
+  const _FullScreenImagePage({required this.uri});
+
+  final String uri;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final store = ref.watch(knowledgeStoreProvider);
+
+    return FutureBuilder<MediaData?>(
+      future: store.getMediaData(uri),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          );
+        }
+        final media = snapshot.data;
+        if (media == null) return const SizedBox.shrink();
+
+        final url = media.contentUrl ?? media.thumbnail;
+        if (url == null) return const SizedBox.shrink();
+
+        return Center(
+          child: Hero(
+            tag: uri,
+            child: InteractiveViewer(
+              child: CachedNetworkImage(
+                imageUrl: url,
+                fit: BoxFit.contain,
+                placeholder: (context, url) => const Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                ),
+                errorWidget: (context, url, error) => const Icon(
+                  Icons.broken_image_rounded,
+                  color: Colors.white70,
+                  size: 48,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 // =============================================================================
 // Link loader — navigates to a URL and shows it as a WebChannelView
 // =============================================================================
 
 /// Loads a URL through the reader mode pipeline and displays it.
-class _LinkLoader extends ConsumerStatefulWidget {
-  const _LinkLoader({required this.url});
+class WebChannelLoader extends ConsumerStatefulWidget {
+  const WebChannelLoader({required this.url, super.key});
 
   final String url;
 
   @override
-  ConsumerState<_LinkLoader> createState() => _LinkLoaderState();
+  ConsumerState<WebChannelLoader> createState() => _WebChannelLoaderState();
 }
 
-class _LinkLoaderState extends ConsumerState<_LinkLoader> {
+class _WebChannelLoaderState extends ConsumerState<WebChannelLoader> {
   bool _isLoading = true;
   String? _error;
 
@@ -929,23 +1512,90 @@ class _LinkLoaderState extends ConsumerState<_LinkLoader> {
 
   @override
   Widget build(BuildContext context) {
+    final topPadding = MediaQuery.of(context).padding.top;
     return Scaffold(
       backgroundColor: context.kabukBackground,
-      appBar: AppBar(
-        backgroundColor: context.kabukSurface,
-        foregroundColor: context.kabukTextPrimary,
-        title: Text(
-          Uri.tryParse(widget.url)?.host ?? widget.url,
-          style: const TextStyle(fontSize: 14),
-        ),
-      ),
-      body: Center(
-        child: _isLoading
-            ? const CircularProgressIndicator(color: KabukTheme.blueAccent)
-            : Text(
-                _error ?? 'Failed to load',
-                style: TextStyle(color: context.kabukTextSecondary),
+      body: Column(
+        children: [
+          // Compact header matching WebChannelView style.
+          Container(
+            padding: EdgeInsets.fromLTRB(8, topPadding + 8, 12, 12),
+            decoration: BoxDecoration(
+              color: context.kabukSurface,
+              border: Border(
+                bottom: BorderSide(color: context.kabukDivider, width: 0.5),
               ),
+            ),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back_rounded, size: 22),
+                  onPressed: () => Navigator.of(context).pop(),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 36,
+                    minHeight: 36,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    Uri.tryParse(widget.url)?.host ?? widget.url,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: context.kabukTextSecondary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Center(
+              child: _isLoading
+                  ? const CircularProgressIndicator(
+                      color: KabukTheme.blueAccent)
+                  : Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.error_outline_rounded,
+                            size: 40,
+                            color: context.kabukTextTertiary,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            _error ?? 'Failed to load',
+                            style: TextStyle(
+                              color: context.kabukTextSecondary,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 16),
+                          FilledButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                _isLoading = true;
+                                _error = null;
+                              });
+                              _load();
+                            },
+                            icon: const Icon(Icons.refresh_rounded, size: 18),
+                            label: const Text('Retry'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: KabukTheme.blueAccent,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+            ),
+          ),
+        ],
       ),
     );
   }

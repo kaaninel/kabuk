@@ -212,6 +212,7 @@ extension KnowledgeStoreOrganizationExtension on KnowledgeStore {
             .where(NS.schemaName, contains: name)
             .execute();
     final lowerName = name.toLowerCase();
+    // First pass: exact case-insensitive match.
     for (final t in candidates) {
       final triples = await getEntity(t.subject);
       final entityName =
@@ -223,7 +224,65 @@ extension KnowledgeStoreOrganizationExtension on KnowledgeStore {
         return t.subject;
       }
     }
+    // Second pass: substring containment (e.g. "SpaceX" in
+    // "Space Exploration Technologies Corp" after stripping suffixes).
+    final strippedName = _stripCorpSuffixes(lowerName);
+    if (strippedName.length >= 3) {
+      final allOrgs =
+          await query().whereType(NS.schemaOrganization).execute();
+      for (final t in allOrgs) {
+        final triples = await getEntity(t.subject);
+        final entityName =
+            triples
+                .where((t) => t.predicate == NS.schemaName)
+                .firstOrNull
+                ?.objectValue;
+        if (entityName == null) continue;
+        final strippedEntity = _stripCorpSuffixes(entityName.toLowerCase());
+        if (strippedEntity.isNotEmpty &&
+            (strippedEntity.contains(strippedName) ||
+             strippedName.contains(strippedEntity))) {
+          return t.subject;
+        }
+        // Brand-abbreviation pattern: single-token name starting with the
+        // first word of a multi-word name (e.g. "SpaceX" starts with "Space",
+        // first word of "Space Exploration").
+        final snWords = strippedName.split(' ')
+            .where((w) => w.length >= 3).toList();
+        final seWords = strippedEntity.split(' ')
+            .where((w) => w.length >= 3).toList();
+        final single = snWords.length == 1 && seWords.length > 1
+            ? strippedName.replaceAll(' ', '')
+            : seWords.length == 1 && snWords.length > 1
+                ? strippedEntity.replaceAll(' ', '')
+                : null;
+        final multiFirst = snWords.length == 1 && seWords.length > 1
+            ? seWords.first
+            : seWords.length == 1 && snWords.length > 1
+                ? snWords.first
+                : null;
+        if (single != null && multiFirst != null &&
+            multiFirst.length >= 4 &&
+            single.startsWith(multiFirst) &&
+            multiFirst.length >= (single.length * 0.7).ceil()) {
+          return t.subject;
+        }
+      }
+    }
     return null;
+  }
+
+  /// Strips common corporate suffixes for fuzzy name comparison.
+  static String _stripCorpSuffixes(String name) {
+    var s = name;
+    for (final suffix in const [
+      'inc', 'inc.', 'llc', 'ltd', 'corp', 'corp.', 'corporation',
+      'company', 'co', 'co.', 'group', 'holdings', 'technologies',
+      'technology', 'the',
+    ]) {
+      s = s.replaceAll(RegExp('\\b${RegExp.escape(suffix)}\\b'), '');
+    }
+    return s.replaceAll(RegExp(r'[,.\s]+'), ' ').trim();
   }
 
   /// Finds an Organization whose `schema:url` or `schema:sameAs` matches [url].

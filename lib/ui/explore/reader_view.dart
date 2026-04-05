@@ -94,7 +94,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     final asyncContent = ref.watch(readerContentProvider(widget.articleUri));
 
     return Scaffold(
-      backgroundColor: KabukTheme.background,
+      backgroundColor: context.kabukBackground,
       body: asyncContent.when(
         loading: () => const _ReaderSkeleton(),
         error: (err, _) => ErrorRetryWidget.fromError(
@@ -199,13 +199,13 @@ class _ReaderBody extends StatelessWidget {
               ),
               child: article.description != null
                   ? KabukMarkdown(data: article.description!)
-                  : const Center(
+                  : Center(
                       child: Padding(
                         padding: EdgeInsets.all(KabukTheme.spacingXl),
                         child: Text(
                           'No content blocks available.',
                           style: TextStyle(
-                            color: KabukTheme.textTertiary,
+                            color: context.kabukTextTertiary,
                             fontSize: 14,
                           ),
                         ),
@@ -268,28 +268,28 @@ class _ReaderAppBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return SliverAppBar(
       pinned: true,
-      backgroundColor: KabukTheme.background,
+      backgroundColor: context.kabukBackground,
       surfaceTintColor: Colors.transparent,
       leading: IconButton(
         icon: const Icon(Icons.arrow_back_rounded),
-        color: KabukTheme.textPrimary,
+        color: context.kabukTextPrimary,
         onPressed: () => Navigator.of(context).pop(),
       ),
       title: Text(
         title,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 16,
           fontWeight: FontWeight.w600,
-          color: KabukTheme.textPrimary,
+          color: context.kabukTextPrimary,
         ),
       ),
       actions: [
         if (externalUrl != null)
           IconButton(
             icon: const Icon(Icons.open_in_new_rounded, size: 20),
-            color: KabukTheme.textSecondary,
+            color: context.kabukTextSecondary,
             tooltip: 'View original',
             onPressed: () => onOpenOriginal(externalUrl!),
           ),
@@ -329,12 +329,12 @@ class _ArticleHeader extends StatelessWidget {
           if (article.name != null)
             Text(
               article.name!,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 26,
                 fontWeight: FontWeight.w800,
                 height: 1.25,
                 letterSpacing: -0.5,
-                color: KabukTheme.textPrimary,
+                color: context.kabukTextPrimary,
               ),
             ),
 
@@ -370,7 +370,7 @@ class _ArticleHeader extends StatelessWidget {
           ),
 
           const SizedBox(height: KabukTheme.spacingMd),
-          const Divider(color: KabukTheme.divider, height: 1),
+          Divider(color: context.kabukDivider, height: 1),
         ],
       ),
     );
@@ -392,13 +392,13 @@ class _MetaChip extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 13, color: KabukTheme.textTertiary),
+        Icon(icon, size: 13, color: context.kabukTextTertiary),
         const SizedBox(width: 3),
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 12,
-            color: KabukTheme.textSecondary,
+            color: context.kabukTextSecondary,
           ),
         ),
       ],
@@ -412,9 +412,9 @@ class _MetaDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Text(
+    return Text(
       '·',
-      style: TextStyle(fontSize: 12, color: KabukTheme.textTertiary),
+      style: TextStyle(fontSize: 12, color: context.kabukTextTertiary),
     );
   }
 }
@@ -444,7 +444,7 @@ class _ContentBlockRenderer extends StatelessWidget {
         BlockType.audio => _buildAudio(context),
         BlockType.code => _buildCode(context),
         BlockType.quote => _buildQuote(context),
-        BlockType.divider => _buildDivider(),
+        BlockType.divider => _buildDivider(context),
         BlockType.checklist => _buildChecklist(context),
         BlockType.callout => _buildCallout(context),
       },
@@ -491,24 +491,24 @@ class _ContentBlockRenderer extends StatelessWidget {
 
     final level = block.level ?? 2;
     final style = switch (level) {
-      1 => const TextStyle(
+      1 => TextStyle(
         fontSize: 24,
         fontWeight: FontWeight.w800,
         height: 1.3,
         letterSpacing: -0.3,
-        color: KabukTheme.textPrimary,
+        color: context.kabukTextPrimary,
       ),
-      2 => const TextStyle(
+      2 => TextStyle(
         fontSize: 20,
         fontWeight: FontWeight.w700,
         height: 1.3,
-        color: KabukTheme.textPrimary,
+        color: context.kabukTextPrimary,
       ),
-      _ => const TextStyle(
+      _ => TextStyle(
         fontSize: 17,
         fontWeight: FontWeight.w600,
         height: 1.3,
-        color: KabukTheme.textPrimary,
+        color: context.kabukTextPrimary,
       ),
     };
 
@@ -541,9 +541,9 @@ class _ContentBlockRenderer extends StatelessWidget {
             padding: const EdgeInsets.only(top: KabukTheme.spacingXs),
             child: Text(
               block.caption!,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
-                color: KabukTheme.textTertiary,
+                color: context.kabukTextTertiary,
                 fontStyle: FontStyle.italic,
                 height: 1.4,
               ),
@@ -573,9 +573,9 @@ class _ContentBlockRenderer extends StatelessWidget {
             padding: const EdgeInsets.only(top: KabukTheme.spacingXs),
             child: Text(
               block.caption!,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
-                color: KabukTheme.textTertiary,
+                color: context.kabukTextTertiary,
                 fontStyle: FontStyle.italic,
                 height: 1.4,
               ),
@@ -592,9 +592,9 @@ class _ContentBlockRenderer extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(KabukTheme.spacingMd),
       decoration: BoxDecoration(
-        color: KabukTheme.surfaceVariant,
+        color: context.kabukSurfaceVariant,
         borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
-        border: Border.all(color: KabukTheme.divider, width: 0.5),
+        border: Border.all(color: context.kabukDivider, width: 0.5),
       ),
       child: Row(
         children: [
@@ -607,9 +607,9 @@ class _ContentBlockRenderer extends StatelessWidget {
           Expanded(
             child: Text(
               block.caption ?? block.mediaUri ?? 'Audio',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 14,
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
               ),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
@@ -638,15 +638,15 @@ class _ContentBlockRenderer extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                color: KabukTheme.surfaceVariant,
+                color: context.kabukSurfaceVariant,
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
                 language.toUpperCase(),
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
-                  color: KabukTheme.textTertiary,
+                  color: context.kabukTextTertiary,
                   letterSpacing: 0.5,
                 ),
               ),
@@ -657,19 +657,19 @@ class _ContentBlockRenderer extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(KabukTheme.spacingSm + 4),
           decoration: BoxDecoration(
-            color: KabukTheme.surfaceVariant,
+            color: context.kabukSurfaceVariant,
             borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
-            border: Border.all(color: KabukTheme.divider, width: 0.5),
+            border: Border.all(color: context.kabukDivider, width: 0.5),
           ),
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: SelectableText(
               content,
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: 'SF Mono',
                 fontSize: 13,
                 height: 1.5,
-                color: KabukTheme.textPrimary,
+                color: context.kabukTextPrimary,
               ),
             ),
           ),
@@ -709,8 +709,8 @@ class _ContentBlockRenderer extends StatelessWidget {
 
   // ── Divider ──────────────────────────────────────────────────────────────
 
-  Widget _buildDivider() {
-    return const Divider(color: KabukTheme.divider, height: 1);
+  Widget _buildDivider(BuildContext context) {
+    return Divider(color: context.kabukDivider, height: 1);
   }
 
   // ── Checklist ────────────────────────────────────────────────────────────
@@ -731,7 +731,7 @@ class _ContentBlockRenderer extends StatelessWidget {
             size: 20,
             color: isChecked
                 ? KabukTheme.accentGreen
-                : KabukTheme.textTertiary,
+                : context.kabukTextTertiary,
           ),
         ),
         const SizedBox(width: KabukTheme.spacingSm),
@@ -742,8 +742,8 @@ class _ContentBlockRenderer extends StatelessWidget {
               fontSize: 15,
               height: 1.6,
               color: isChecked
-                  ? KabukTheme.textTertiary
-                  : KabukTheme.textPrimary,
+                  ? context.kabukTextTertiary
+                  : context.kabukTextPrimary,
               decoration:
                   isChecked ? TextDecoration.lineThrough : TextDecoration.none,
             ),
@@ -829,9 +829,9 @@ class _ReaderBottomBar extends StatelessWidget {
         vertical: KabukTheme.spacingSm + 2,
       ),
       decoration: BoxDecoration(
-        color: KabukTheme.surfaceElevated,
+        color: context.kabukSurfaceElevated,
         borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
-        border: Border.all(color: KabukTheme.divider, width: 0.5),
+        border: Border.all(color: context.kabukDivider, width: 0.5),
       ),
       child: Row(
         children: [
@@ -868,7 +868,7 @@ class _ReaderBottomBar extends StatelessWidget {
           // Share button.
           IconButton(
             icon: const Icon(Icons.share_outlined, size: 20),
-            color: KabukTheme.textSecondary,
+            color: context.kabukTextSecondary,
             tooltip: 'Share',
             onPressed: () {
               Clipboard.setData(ClipboardData(text: url!));
@@ -908,12 +908,12 @@ class _ReaderSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: KabukTheme.background,
+      backgroundColor: context.kabukBackground,
       appBar: AppBar(
-        backgroundColor: KabukTheme.background,
+        backgroundColor: context.kabukBackground,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded),
-          color: KabukTheme.textPrimary,
+          color: context.kabukTextPrimary,
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
@@ -969,7 +969,7 @@ class _SkeletonBox extends StatelessWidget {
       width: width,
       height: height,
       decoration: BoxDecoration(
-        color: KabukTheme.surfaceVariant,
+        color: context.kabukSurfaceVariant,
         borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
       ),
     );

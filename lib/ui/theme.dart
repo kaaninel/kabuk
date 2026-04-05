@@ -299,4 +299,261 @@ abstract final class KabukTheme {
       ),
     ),
   );
+
+  // ---------------------------------------------------------------------------
+  // Light theme colors
+  // ---------------------------------------------------------------------------
+
+  /// Light surface color.
+  static const Color lightSurface = Color(0xFFFAFAFA);
+
+  /// Light elevated surface.
+  static const Color lightSurfaceElevated = Color(0xFFFFFFFF);
+
+  /// Light surface variant.
+  static const Color lightSurfaceVariant = Color(0xFFF0F0F0);
+
+  /// Light background.
+  static const Color lightBackground = Color(0xFFF5F5F5);
+
+  /// Light card color.
+  static const Color lightCardColor = Color(0xFFFFFFFF);
+
+  /// Light primary text.
+  static const Color lightTextPrimary = Color(0xFF1A1A1A);
+
+  /// Light secondary text.
+  static const Color lightTextSecondary = Color(0xFF666666);
+
+  /// Light tertiary text.
+  static const Color lightTextTertiary = Color(0xFF999999);
+
+  /// Light divider.
+  static const Color lightDivider = Color(0xFFE0E0E0);
+
+  /// The light [ThemeData] for the Kabuk app.
+  static ThemeData get lightTheme => ThemeData(
+    brightness: Brightness.light,
+    useMaterial3: true,
+    fontFamily: 'SF Pro Display',
+    colorScheme: const ColorScheme.light(
+      primary: primaryGreen,
+      secondary: accentGreen,
+      surface: lightSurface,
+      surfaceContainerHighest: lightSurfaceElevated,
+      error: Color(0xFFB00020),
+    ),
+    scaffoldBackgroundColor: lightBackground,
+    cardColor: lightCardColor,
+    dividerColor: lightDivider,
+    appBarTheme: const AppBarTheme(
+      backgroundColor: Colors.transparent,
+      foregroundColor: lightTextPrimary,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      centerTitle: false,
+      titleTextStyle: TextStyle(
+        color: lightTextPrimary,
+        fontSize: 28,
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.5,
+      ),
+    ),
+    bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+      backgroundColor: lightSurfaceElevated,
+      selectedItemColor: primaryGreen,
+      unselectedItemColor: lightTextSecondary,
+    ),
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: lightSurfaceElevated,
+      surfaceTintColor: Colors.transparent,
+      indicatorColor: primaryGreen.withAlpha(30),
+      height: 64,
+      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+      iconTheme: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return const IconThemeData(color: primaryGreen, size: 24);
+        }
+        return const IconThemeData(color: lightTextSecondary, size: 22);
+      }),
+      labelTextStyle: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return const TextStyle(
+            color: primaryGreen,
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          );
+        }
+        return const TextStyle(
+          color: lightTextSecondary,
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+        );
+      }),
+    ),
+    cardTheme: CardThemeData(
+      color: lightCardColor,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(radiusMd),
+        side: const BorderSide(color: lightDivider, width: 0.5),
+      ),
+      margin: EdgeInsets.zero,
+    ),
+    chipTheme: ChipThemeData(
+      backgroundColor: lightSurfaceVariant,
+      selectedColor: primaryGreen.withAlpha(25),
+      labelStyle: const TextStyle(fontSize: 12, color: lightTextPrimary),
+      side: const BorderSide(color: lightDivider, width: 0.5),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(radiusSm),
+      ),
+    ),
+    inputDecorationTheme: const InputDecorationTheme(
+      filled: true,
+      fillColor: lightSurfaceVariant,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.all(Radius.circular(radiusMd)),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.all(Radius.circular(radiusMd)),
+        borderSide: BorderSide(color: lightDivider, width: 0.5),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.all(Radius.circular(radiusMd)),
+        borderSide: BorderSide(color: primaryGreen, width: 1.5),
+      ),
+      hintStyle: TextStyle(color: lightTextTertiary, fontSize: 14),
+      contentPadding: EdgeInsets.symmetric(
+        horizontal: spacingMd,
+        vertical: spacingSm + 4,
+      ),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        backgroundColor: primaryGreen,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(
+          horizontal: spacingLg,
+          vertical: spacingMd,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(radiusMd),
+        ),
+        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: lightTextPrimary,
+        side: const BorderSide(color: lightDivider),
+        padding: const EdgeInsets.symmetric(
+          horizontal: spacingLg,
+          vertical: spacingMd,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(radiusMd),
+        ),
+      ),
+    ),
+    textTheme: const TextTheme(
+      headlineLarge: TextStyle(
+        color: lightTextPrimary,
+        fontWeight: FontWeight.w800,
+        fontSize: 32,
+        letterSpacing: -0.5,
+      ),
+      headlineMedium: TextStyle(
+        color: lightTextPrimary,
+        fontWeight: FontWeight.w700,
+        fontSize: 24,
+        letterSpacing: -0.3,
+      ),
+      headlineSmall: TextStyle(
+        color: lightTextPrimary,
+        fontWeight: FontWeight.w600,
+        fontSize: 20,
+      ),
+      titleLarge: TextStyle(
+        color: lightTextPrimary,
+        fontWeight: FontWeight.w600,
+        fontSize: 18,
+      ),
+      titleMedium: TextStyle(
+        color: lightTextPrimary,
+        fontWeight: FontWeight.w600,
+        fontSize: 16,
+      ),
+      titleSmall: TextStyle(
+        color: lightTextPrimary,
+        fontWeight: FontWeight.w600,
+        fontSize: 14,
+      ),
+      bodyLarge: TextStyle(color: lightTextPrimary, fontSize: 16, height: 1.5),
+      bodyMedium: TextStyle(color: lightTextSecondary, fontSize: 14, height: 1.5),
+      bodySmall: TextStyle(color: lightTextTertiary, fontSize: 12, height: 1.4),
+      labelLarge: TextStyle(
+        color: lightTextPrimary,
+        fontWeight: FontWeight.w600,
+        fontSize: 14,
+      ),
+      labelMedium: TextStyle(
+        color: lightTextSecondary,
+        fontWeight: FontWeight.w500,
+        fontSize: 12,
+      ),
+      labelSmall: TextStyle(
+        color: lightTextTertiary,
+        fontSize: 11,
+        fontWeight: FontWeight.w500,
+        letterSpacing: 0.5,
+      ),
+    ),
+  );
+}
+
+/// Extension on [BuildContext] for quick access to theme-aware Kabuk colors.
+///
+/// Use these instead of hardcoded [KabukTheme] static constants so that
+/// colors adapt to the current brightness (dark vs. light mode).
+extension KabukColors on BuildContext {
+  /// Whether the current theme is dark.
+  bool get isDark => Theme.of(this).brightness == Brightness.dark;
+
+  /// Surface color — cards, sheets, menus.
+  Color get kabukSurface =>
+      isDark ? KabukTheme.surface : KabukTheme.lightSurface;
+
+  /// Elevated surface — raised cards.
+  Color get kabukSurfaceElevated =>
+      isDark ? KabukTheme.surfaceElevated : KabukTheme.lightSurfaceElevated;
+
+  /// Surface variant — inputs, secondary containers.
+  Color get kabukSurfaceVariant =>
+      isDark ? KabukTheme.surfaceVariant : KabukTheme.lightSurfaceVariant;
+
+  /// Background color.
+  Color get kabukBackground =>
+      isDark ? KabukTheme.background : KabukTheme.lightBackground;
+
+  /// Card color.
+  Color get kabukCardColor =>
+      isDark ? KabukTheme.cardColor : KabukTheme.lightCardColor;
+
+  /// Primary text.
+  Color get kabukTextPrimary =>
+      isDark ? KabukTheme.textPrimary : KabukTheme.lightTextPrimary;
+
+  /// Secondary text.
+  Color get kabukTextSecondary =>
+      isDark ? KabukTheme.textSecondary : KabukTheme.lightTextSecondary;
+
+  /// Tertiary / hint text.
+  Color get kabukTextTertiary =>
+      isDark ? KabukTheme.textTertiary : KabukTheme.lightTextTertiary;
+
+  /// Divider color.
+  Color get kabukDivider =>
+      isDark ? KabukTheme.divider : KabukTheme.lightDivider;
 }

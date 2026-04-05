@@ -54,6 +54,12 @@ class Triples extends Table {
   /// Timestamp when this triple was last updated.
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
 
+  /// Monotonically increasing version counter for sync.
+  ///
+  /// Incremented on each mutation. Remote peers request changes
+  /// `WHERE sync_version > lastKnownVersion` to get deltas.
+  IntColumn get syncVersion => integer().withDefault(const Constant(0))();
+
   @override
   List<Set<Column>> get uniqueKeys => [
     {
@@ -218,19 +224,67 @@ class Conversations extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+/// Table storing paired devices for cross-device identity sync.
+///
+/// Each row represents a trusted pairing between this device and a remote
+/// device sharing the same Nostr identity. Devices are paired via QR code
+/// exchange and communicate over the local network or Nostr relays.
+class DevicePairs extends Table {
+  /// Unique identifier for the local device in this pairing.
+  TextColumn get localDeviceId => text()();
+
+  /// Unique identifier for the remote device.
+  TextColumn get remoteDeviceId => text()();
+
+  /// Human-readable name of the remote device.
+  TextColumn get remoteName => text()();
+
+  /// Last-known network address of the remote device (e.g. `http://ip:port`).
+  TextColumn get remoteAddress => text().nullable()();
+
+  /// Hex-encoded public key of the identity shared in this pairing.
+  TextColumn get sharedPublicKeyHex => text()();
+
+  /// HMAC-based pairing token for mutual authentication.
+  TextColumn get pairingToken => text()();
+
+  /// When this pairing was established.
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+
+  /// When the remote device was last seen (via beacon or sync).
+  DateTimeColumn get lastSeenAt => dateTime().withDefault(currentDateAndTime)();
+
+  /// Timestamp of the last successful sync with this device.
+  DateTimeColumn get lastSyncAt => dateTime().nullable()();
+
+  /// Whether this pairing has been verified on both sides.
+  BoolColumn get isVerified =>
+      boolean().withDefault(const Constant(false))();
+
+  @override
+  Set<Column> get primaryKey => {localDeviceId, remoteDeviceId};
+}
+
 /// The Drift database for the Kabuk knowledge store.
 ///
 /// This is the single SQLite database backing all persistent data in
 /// Kabuk: RDF triples, blobs, conversations, and messages.
 @DriftDatabase(
-  tables: [Triples, Blobs, Messages, Conversations, MessageReactions],
+  tables: [
+    Triples,
+    Blobs,
+    Messages,
+    Conversations,
+    MessageReactions,
+    DevicePairs,
+  ],
 )
 class KabukDatabase extends _$KabukDatabase {
   /// Creates a [KabukDatabase] with the provided [QueryExecutor].
   KabukDatabase(super.e);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -336,6 +390,34 @@ class KabukDatabase extends _$KabukDatabase {
         );
         await customStatement(
           'CREATE INDEX IF NOT EXISTS idx_reactions_message_id ON message_reactions(message_id)',
+        );
+      }
+      if (from < 4) {
+        // v4: Add device_pairs table for cross-device identity sync.
+        await customStatement(
+          'CREATE TABLE IF NOT EXISTS device_pairs ('
+          'local_device_id TEXT NOT NULL, '
+          'remote_device_id TEXT NOT NULL, '
+          'remote_name TEXT NOT NULL, '
+          'remote_address TEXT, '
+          'shared_public_key_hex TEXT NOT NULL, '
+          'pairing_token TEXT NOT NULL, '
+          'created_at INTEGER NOT NULL DEFAULT (strftime(\'%s\',\'now\')), '
+          'last_seen_at INTEGER NOT NULL DEFAULT (strftime(\'%s\',\'now\')), '
+          'last_sync_at INTEGER, '
+          'is_verified INTEGER NOT NULL DEFAULT 0, '
+          'PRIMARY KEY (local_device_id, remote_device_id)'
+          ')',
+        );
+        await customStatement(
+          'CREATE INDEX IF NOT EXISTS idx_device_pairs_shared_key ON device_pairs(shared_public_key_hex)',
+        );
+        // Add sync_version column to triples for change tracking.
+        await customStatement(
+          'ALTER TABLE triples ADD COLUMN sync_version INTEGER NOT NULL DEFAULT 0',
+        );
+        await customStatement(
+          'CREATE INDEX IF NOT EXISTS idx_triples_sync_version ON triples(sync_version)',
         );
       }
     },
@@ -787,5 +869,118 @@ class KabukDatabase extends _$KabukDatabase {
     await customStatement(
       "INSERT INTO triples_fts(triples_fts) VALUES('rebuild')",
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Device Pairs CRUD
+  // ---------------------------------------------------------------------------
+
+  /// Insert or update a device pairing.
+  Future<int> upsertDevicePair(DevicePairsCompanion pair) =>
+      into(devicePairs).insert(pair, mode: InsertMode.insertOrReplace);
+
+  /// Get all paired devices for this local device.
+  Future<List<DevicePair>> getPairedDevices(String localDeviceId) {
+    return (select(devicePairs)
+          ..where((p) => p.localDeviceId.equals(localDeviceId))
+          ..orderBy([(p) => OrderingTerm.desc(p.lastSeenAt)]))
+        .get();
+  }
+
+  /// Watch all paired devices reactively.
+  Stream<List<DevicePair>> watchPairedDevices(String localDeviceId) {
+    return (select(devicePairs)
+          ..where((p) => p.localDeviceId.equals(localDeviceId))
+          ..orderBy([(p) => OrderingTerm.desc(p.lastSeenAt)]))
+        .watch();
+  }
+
+  /// Get a specific device pairing.
+  Future<DevicePair?> getDevicePair(
+    String localDeviceId,
+    String remoteDeviceId,
+  ) {
+    return (select(devicePairs)..where(
+          (p) =>
+              p.localDeviceId.equals(localDeviceId) &
+              p.remoteDeviceId.equals(remoteDeviceId),
+        ))
+        .getSingleOrNull();
+  }
+
+  /// Delete a device pairing.
+  Future<int> deleteDevicePair(
+    String localDeviceId,
+    String remoteDeviceId,
+  ) {
+    return (delete(devicePairs)..where(
+          (p) =>
+              p.localDeviceId.equals(localDeviceId) &
+              p.remoteDeviceId.equals(remoteDeviceId),
+        ))
+        .go();
+  }
+
+  /// Update the last-seen timestamp for a remote device.
+  Future<void> touchDevicePair(
+    String localDeviceId,
+    String remoteDeviceId, {
+    String? address,
+  }) async {
+    final companion = DevicePairsCompanion(
+      lastSeenAt: Value(DateTime.now()),
+      remoteAddress: address != null ? Value(address) : const Value.absent(),
+    );
+    await (update(devicePairs)..where(
+          (p) =>
+              p.localDeviceId.equals(localDeviceId) &
+              p.remoteDeviceId.equals(remoteDeviceId),
+        ))
+        .write(companion);
+  }
+
+  /// Update the last-sync timestamp for a device pair.
+  Future<void> markSynced(
+    String localDeviceId,
+    String remoteDeviceId,
+  ) async {
+    await (update(devicePairs)..where(
+          (p) =>
+              p.localDeviceId.equals(localDeviceId) &
+              p.remoteDeviceId.equals(remoteDeviceId),
+        ))
+        .write(DevicePairsCompanion(lastSyncAt: Value(DateTime.now())));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sync helpers
+  // ---------------------------------------------------------------------------
+
+  /// Get the current maximum sync version across all triples.
+  Future<int> getMaxSyncVersion() async {
+    final result = await customSelect(
+      'SELECT MAX(sync_version) AS max_ver FROM triples',
+      readsFrom: {triples},
+    ).getSingleOrNull();
+    return (result?.data['max_ver'] as int?) ?? 0;
+  }
+
+  /// Fetch all triples with sync_version greater than [sinceVersion].
+  ///
+  /// Used to compute the delta for a sync payload.
+  Future<List<Triple>> getTriplesSince(int sinceVersion, {int limit = 1000}) {
+    return (select(triples)
+          ..where((t) => t.syncVersion.isBiggerThanValue(sinceVersion))
+          ..orderBy([(t) => OrderingTerm.asc(t.syncVersion)])
+          ..limit(limit))
+        .get();
+  }
+
+  /// Increment sync_version for a set of triple IDs.
+  ///
+  /// Called after local mutations to mark triples as needing sync.
+  Future<void> bumpSyncVersions(List<int> tripleIds, int newVersion) async {
+    await (update(triples)..where((t) => t.id.isIn(tripleIds)))
+        .write(TriplesCompanion(syncVersion: Value(newVersion)));
   }
 }

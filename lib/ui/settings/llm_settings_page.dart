@@ -334,8 +334,8 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
 
   Widget _buildSectionLabel(String label) => Text(
     label,
-    style: const TextStyle(
-      color: KabukTheme.textSecondary,
+    style: TextStyle(
+      color: context.kabukTextSecondary,
       fontSize: 12,
       fontWeight: FontWeight.w600,
       letterSpacing: 0.5,
@@ -365,7 +365,7 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
           if (states.contains(WidgetState.selected)) {
             return KabukTheme.accentGreen;
           }
-          return KabukTheme.textSecondary;
+          return context.kabukTextSecondary;
         }),
       ),
     );
@@ -377,15 +377,15 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
       obscureText: _obscureApiKey,
       autocorrect: false,
       enableSuggestions: false,
-      style: const TextStyle(color: KabukTheme.textPrimary, fontSize: 14),
+      style: TextStyle(color: context.kabukTextPrimary, fontSize: 14),
       decoration: InputDecoration(
         hintText: _provider == LlmProvider.anthropic ? 'sk-ant-...' : 'sk-...',
-        hintStyle: TextStyle(color: KabukTheme.textSecondary.withAlpha(100)),
+        hintStyle: TextStyle(color: context.kabukTextSecondary.withAlpha(100)),
         suffixIcon: IconButton(
           icon: Icon(
             _obscureApiKey ? Icons.visibility_off : Icons.visibility,
             size: 20,
-            color: KabukTheme.textSecondary,
+            color: context.kabukTextSecondary,
           ),
           onPressed: () => setState(() => _obscureApiKey = !_obscureApiKey),
         ),
@@ -402,10 +402,10 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
   Widget _buildModelField() {
     return TextFormField(
       controller: _modelController,
-      style: const TextStyle(color: KabukTheme.textPrimary, fontSize: 14),
+      style: TextStyle(color: context.kabukTextPrimary, fontSize: 14),
       decoration: InputDecoration(
         hintText: _defaultModelFor(_provider),
-        hintStyle: TextStyle(color: KabukTheme.textSecondary.withAlpha(100)),
+        hintStyle: TextStyle(color: context.kabukTextSecondary.withAlpha(100)),
       ),
     );
   }
@@ -413,11 +413,11 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
   Widget _buildBaseUrlField() {
     return TextFormField(
       controller: _baseUrlController,
-      style: const TextStyle(color: KabukTheme.textPrimary, fontSize: 14),
+      style: TextStyle(color: context.kabukTextPrimary, fontSize: 14),
       keyboardType: TextInputType.url,
       decoration: InputDecoration(
         hintText: _defaultBaseUrlFor(_provider),
-        hintStyle: TextStyle(color: KabukTheme.textSecondary.withAlpha(100)),
+        hintStyle: TextStyle(color: context.kabukTextSecondary.withAlpha(100)),
       ),
       validator: (value) {
         if (value == null || value.trim().isEmpty) {
@@ -436,7 +436,7 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
     return SliderTheme(
       data: SliderThemeData(
         activeTrackColor: KabukTheme.primaryGreen,
-        inactiveTrackColor: KabukTheme.surfaceVariant,
+        inactiveTrackColor: context.kabukSurfaceVariant,
         thumbColor: KabukTheme.accentGreen,
         overlayColor: KabukTheme.primaryGreen.withAlpha(40),
         valueIndicatorColor: KabukTheme.primaryGreen,
@@ -459,12 +459,12 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
   Widget _buildMaxTokensField() {
     return TextFormField(
       controller: _maxTokensController,
-      style: const TextStyle(color: KabukTheme.textPrimary, fontSize: 14),
+      style: TextStyle(color: context.kabukTextPrimary, fontSize: 14),
       keyboardType: TextInputType.number,
       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
       decoration: InputDecoration(
         hintText: '4096',
-        hintStyle: TextStyle(color: KabukTheme.textSecondary.withAlpha(100)),
+        hintStyle: TextStyle(color: context.kabukTextSecondary.withAlpha(100)),
       ),
       validator: (value) {
         if (value == null || value.trim().isEmpty) {
@@ -483,7 +483,7 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
     return SliderTheme(
       data: SliderThemeData(
         activeTrackColor: KabukTheme.primaryGreen,
-        inactiveTrackColor: KabukTheme.surfaceVariant,
+        inactiveTrackColor: context.kabukSurfaceVariant,
         thumbColor: KabukTheme.accentGreen,
         overlayColor: KabukTheme.primaryGreen.withAlpha(40),
         valueIndicatorColor: KabukTheme.primaryGreen,
@@ -509,7 +509,7 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
 
     switch (_testStatus) {
       case ConnectionTestStatus.testing:
-        color = KabukTheme.textSecondary;
+        color = context.kabukTextSecondary;
         icon = Icons.hourglass_top;
       case ConnectionTestStatus.success:
         color = KabukTheme.accentGreen;
@@ -564,8 +564,8 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
             icon: const Icon(Icons.wifi_tethering, size: 18),
             label: const Text('Test'),
             style: OutlinedButton.styleFrom(
-              foregroundColor: KabukTheme.textPrimary,
-              side: const BorderSide(color: KabukTheme.divider),
+              foregroundColor: context.kabukTextPrimary,
+              side: BorderSide(color: context.kabukDivider),
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(KabukTheme.radiusMd),

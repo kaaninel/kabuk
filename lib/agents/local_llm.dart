@@ -32,6 +32,7 @@ class LocalModelConfig {
   const LocalModelConfig({
     required this.modelPath,
     this.nGpuLayers = 0,
+    this.gpuBackend = 'auto',
     this.contextSize = 4096,
     this.maxTokens = 1024,
     this.threads = 0,
@@ -52,6 +53,15 @@ class LocalModelConfig {
   /// performance on supported hardware. Users can adjust this in
   /// Settings > Local Models.
   final int nGpuLayers;
+
+  /// Preferred GPU backend for inference.
+  ///
+  /// Accepted values: `'auto'`, `'cpu'`, `'vulkan'`, `'metal'`, `'cuda'`.
+  /// Defaults to `'auto'`, which lets llamadart pick the best available
+  /// backend. When [nGpuLayers] is `0` the engine forces `cpu` regardless
+  /// of this setting to avoid initialising GPU drivers unnecessarily
+  /// (and to prevent Vulkan device-lost crashes on some Android devices).
+  final String gpuBackend;
 
   /// Context window size in tokens.
   final int contextSize;
@@ -77,10 +87,27 @@ class LocalModelConfig {
   /// Optional path to a vision projector file (for multimodal models).
   final String? mmprojPath;
 
+  /// Resolves the [GpuBackend] enum value to pass to llamadart.
+  ///
+  /// When [nGpuLayers] is `0` the backend is forced to [GpuBackend.cpu]
+  /// to avoid loading GPU drivers (Vulkan on Android, Metal on iOS)
+  /// that may crash on certain devices.
+  GpuBackend get resolvedBackend {
+    if (nGpuLayers <= 0) return GpuBackend.cpu;
+    return switch (gpuBackend) {
+      'cpu' => GpuBackend.cpu,
+      'vulkan' => GpuBackend.vulkan,
+      'metal' => GpuBackend.metal,
+      'cuda' => GpuBackend.cuda,
+      _ => GpuBackend.auto,
+    };
+  }
+
   /// Serializes this config to a JSON-compatible map.
   Map<String, dynamic> toJson() => {
     'modelPath': modelPath,
     'nGpuLayers': nGpuLayers,
+    'gpuBackend': gpuBackend,
     'contextSize': contextSize,
     'maxTokens': maxTokens,
     'threads': threads,
@@ -99,6 +126,7 @@ class LocalModelConfig {
     return LocalModelConfig(
       modelPath: json['modelPath'] as String,
       nGpuLayers: (json['nGpuLayers'] as num?)?.toInt() ?? 0,
+      gpuBackend: json['gpuBackend'] as String? ?? 'auto',
       contextSize: (json['contextSize'] as num?)?.toInt() ?? 4096,
       maxTokens: (json['maxTokens'] as num?)?.toInt() ?? 1024,
       threads: (json['threads'] as num?)?.toInt() ?? 0,
@@ -172,6 +200,7 @@ class LocalLlmService implements LlmService {
 
       final modelParams = ModelParams(
         gpuLayers: config.nGpuLayers,
+        preferredBackend: config.resolvedBackend,
         contextSize: config.contextSize,
         numberOfThreads: config.threads,
         numberOfThreadsBatch: config.threads,
@@ -229,7 +258,7 @@ class LocalLlmService implements LlmService {
       // don't support native tool calling.
       final parsed = _tryParseToolCalls(text);
       return parsed ?? LlmResponse.text(text);
-    } on Exception catch (e) {
+    } on Object catch (e) {
       return LlmResponse.error('Local LLM error: $e');
     }
   }

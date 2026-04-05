@@ -230,10 +230,10 @@ class MarkdownToolbar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 44,
-      decoration: const BoxDecoration(
-        color: KabukTheme.surfaceVariant,
+      decoration: BoxDecoration(
+        color: context.kabukSurfaceVariant,
         border: Border(
-          bottom: BorderSide(color: KabukTheme.divider, width: 0.5),
+          bottom: BorderSide(color: context.kabukDivider, width: 0.5),
         ),
       ),
       child: Row(
@@ -256,7 +256,7 @@ class MarkdownToolbar extends StatelessWidget {
             ),
           ),
           if (showPreviewToggle) ...[
-            Container(width: 0.5, height: 28, color: KabukTheme.divider),
+            Container(width: 0.5, height: 28, color: context.kabukDivider),
             _ToolbarButton(
               action: MarkdownAction(
                 icon: isPreview ? Icons.edit_rounded : Icons.visibility_rounded,
@@ -360,7 +360,7 @@ class _ToolbarButton extends StatelessWidget {
               size: 18,
               color: isActive
                   ? KabukTheme.accentGreen
-                  : KabukTheme.textSecondary,
+                  : context.kabukTextSecondary,
             ),
           ),
         ),

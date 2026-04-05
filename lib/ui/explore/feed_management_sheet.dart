@@ -36,7 +36,7 @@ Future<bool> showUnsubscribeDialog(
   final result = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      backgroundColor: KabukTheme.surfaceElevated,
+      backgroundColor: context.kabukSurfaceElevated,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(KabukTheme.radiusLg),
       ),
@@ -82,8 +82,8 @@ class _FeedManagementSheetState extends ConsumerState<_FeedManagementSheet> {
       maxChildSize: 0.9,
       builder: (context, scrollController) {
         return Container(
-          decoration: const BoxDecoration(
-            color: KabukTheme.surfaceElevated,
+          decoration: BoxDecoration(
+            color: context.kabukSurfaceElevated,
             borderRadius: BorderRadius.vertical(
               top: Radius.circular(KabukTheme.radiusXl),
             ),
@@ -96,7 +96,7 @@ class _FeedManagementSheetState extends ConsumerState<_FeedManagementSheet> {
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: KabukTheme.divider,
+                  color: context.kabukDivider,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -111,31 +111,31 @@ class _FeedManagementSheetState extends ConsumerState<_FeedManagementSheet> {
                       size: 22,
                     ),
                     const SizedBox(width: 10),
-                    const Expanded(
+                    Expanded(
                       child: Text(
                         'Manage Feeds',
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w700,
-                          color: KabukTheme.textPrimary,
+                          color: context.kabukTextPrimary,
                         ),
                       ),
                     ),
                     IconButton(
                       icon: const Icon(Icons.close_rounded),
-                      color: KabukTheme.textTertiary,
+                      color: context.kabukTextTertiary,
                       onPressed: () => Navigator.of(context).pop(_changed),
                     ),
                   ],
                 ),
               ),
-              const Divider(height: 1, color: KabukTheme.divider),
+              Divider(height: 1, color: context.kabukDivider),
               // Feed list.
               Expanded(
                 child: subsAsync.when(
                   data: (subs) {
                     if (subs.isEmpty) {
-                      return const Center(
+                      return Center(
                         child: Padding(
                           padding: EdgeInsets.all(32),
                           child: Column(
@@ -144,7 +144,7 @@ class _FeedManagementSheetState extends ConsumerState<_FeedManagementSheet> {
                               Icon(
                                 Icons.inbox_rounded,
                                 size: 48,
-                                color: KabukTheme.textTertiary,
+                                color: context.kabukTextTertiary,
                               ),
                               SizedBox(height: 16),
                               Text(
@@ -152,7 +152,7 @@ class _FeedManagementSheetState extends ConsumerState<_FeedManagementSheet> {
                                 'Use the search bar to add feeds.',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
-                                  color: KabukTheme.textSecondary,
+                                  color: context.kabukTextSecondary,
                                   fontSize: 14,
                                 ),
                               ),
@@ -165,10 +165,10 @@ class _FeedManagementSheetState extends ConsumerState<_FeedManagementSheet> {
                       controller: scrollController,
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       itemCount: subs.length,
-                      separatorBuilder: (_, _) => const Divider(
+                      separatorBuilder: (_, _) => Divider(
                         height: 1,
                         indent: 68,
-                        color: KabukTheme.divider,
+                        color: context.kabukDivider,
                       ),
                       itemBuilder: (context, index) => _FeedTile(
                         feed: subs[index],
@@ -182,7 +182,7 @@ class _FeedManagementSheetState extends ConsumerState<_FeedManagementSheet> {
                   error: (e, _) => Center(
                     child: Text(
                       'Error: $e',
-                      style: const TextStyle(color: KabukTheme.textSecondary),
+                      style: TextStyle(color: context.kabukTextSecondary),
                     ),
                   ),
                 ),
@@ -271,10 +271,10 @@ class _FeedTile extends StatelessWidget {
       ),
       title: Text(
         feed.name ?? feed.feedUrl ?? 'Feed',
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 15,
           fontWeight: FontWeight.w600,
-          color: KabukTheme.textPrimary,
+          color: context.kabukTextPrimary,
         ),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
@@ -301,9 +301,9 @@ class _FeedTile extends StatelessWidget {
             const SizedBox(width: 8),
             Text(
               feed.category!,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
-                color: KabukTheme.textTertiary,
+                color: context.kabukTextTertiary,
               ),
             ),
           ],
@@ -311,21 +311,21 @@ class _FeedTile extends StatelessWidget {
             const SizedBox(width: 8),
             Text(
               _timeAgo(feed.lastFetched!),
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
-                color: KabukTheme.textTertiary,
+                color: context.kabukTextTertiary,
               ),
             ),
           ],
         ],
       ),
       trailing: PopupMenuButton<_FeedAction>(
-        icon: const Icon(
+        icon: Icon(
           Icons.more_vert_rounded,
-          color: KabukTheme.textTertiary,
+          color: context.kabukTextTertiary,
           size: 20,
         ),
-        color: KabukTheme.surface,
+        color: context.kabukSurface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         onSelected: (action) {
           switch (action) {
@@ -425,8 +425,8 @@ class _EditFeedSheetState extends ConsumerState<EditFeedSheet> {
 
     return Container(
       padding: EdgeInsets.only(bottom: bottomInset),
-      decoration: const BoxDecoration(
-        color: KabukTheme.surfaceElevated,
+      decoration: BoxDecoration(
+        color: context.kabukSurfaceElevated,
         borderRadius: BorderRadius.vertical(
           top: Radius.circular(KabukTheme.radiusXl),
         ),
@@ -443,7 +443,7 @@ class _EditFeedSheetState extends ConsumerState<EditFeedSheet> {
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: KabukTheme.divider,
+                  color: context.kabukDivider,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -458,21 +458,21 @@ class _EditFeedSheetState extends ConsumerState<EditFeedSheet> {
                   size: 20,
                 ),
                 const SizedBox(width: 10),
-                const Text(
+                Text(
                   'Edit Feed',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
-                    color: KabukTheme.textPrimary,
+                    color: context.kabukTextPrimary,
                   ),
                 ),
                 const Spacer(),
                 Text(
                   (widget.feed.feedType ?? 'rss').toUpperCase(),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: KabukTheme.textTertiary,
+                    color: context.kabukTextTertiary,
                     letterSpacing: 0.5,
                   ),
                 ),
@@ -482,9 +482,9 @@ class _EditFeedSheetState extends ConsumerState<EditFeedSheet> {
             // Feed URL (read-only).
             Text(
               widget.feed.feedUrl ?? '',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
-                color: KabukTheme.textTertiary,
+                color: context.kabukTextTertiary,
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -546,10 +546,10 @@ class _EditFeedSheetState extends ConsumerState<EditFeedSheet> {
   Widget _label(String text) {
     return Text(
       text,
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w600,
-        color: KabukTheme.textSecondary,
+        color: context.kabukTextSecondary,
       ),
     );
   }
@@ -557,23 +557,23 @@ class _EditFeedSheetState extends ConsumerState<EditFeedSheet> {
   Widget _textField(TextEditingController controller, String hint) {
     return TextField(
       controller: controller,
-      style: const TextStyle(color: KabukTheme.textPrimary, fontSize: 15),
+      style: TextStyle(color: context.kabukTextPrimary, fontSize: 15),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: KabukTheme.textTertiary),
+        hintStyle: TextStyle(color: context.kabukTextTertiary),
         filled: true,
-        fillColor: KabukTheme.surface,
+        fillColor: context.kabukSurface,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 14,
           vertical: 12,
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
-          borderSide: const BorderSide(color: KabukTheme.divider),
+          borderSide: BorderSide(color: context.kabukDivider),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
-          borderSide: const BorderSide(color: KabukTheme.divider),
+          borderSide: BorderSide(color: context.kabukDivider),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
@@ -606,12 +606,12 @@ class _EditFeedSheetState extends ConsumerState<EditFeedSheet> {
             decoration: BoxDecoration(
               color: isSelected
                   ? KabukTheme.accentGreen.withAlpha(20)
-                  : KabukTheme.surface,
+                  : context.kabukSurface,
               borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
               border: Border.all(
                 color: isSelected
                     ? KabukTheme.accentGreen.withAlpha(80)
-                    : KabukTheme.divider,
+                    : context.kabukDivider,
               ),
             ),
             child: Text(
@@ -621,7 +621,7 @@ class _EditFeedSheetState extends ConsumerState<EditFeedSheet> {
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                 color: isSelected
                     ? KabukTheme.accentGreen
-                    : KabukTheme.textSecondary,
+                    : context.kabukTextSecondary,
               ),
             ),
           ),

@@ -90,7 +90,7 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
     final isFollowingAsync = ref.watch(isFollowingProvider(widget.pubkey));
 
     return Scaffold(
-      backgroundColor: KabukTheme.background,
+      backgroundColor: context.kabukBackground,
       body: profileAsync.when(
         data: (profile) =>
             _buildProfile(context, profile, notesAsync, isFollowingAsync),
@@ -114,164 +114,169 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
     AsyncValue<bool> isFollowingAsync,
   ) {
     final name = profile?.displayName ?? '${widget.pubkey.substring(0, 8)}...';
+    final topPadding = MediaQuery.of(context).padding.top;
 
     return CustomScrollView(
       slivers: [
-        // --- Banner + back button ---
-        SliverAppBar(
-          expandedHeight: 180,
-          pinned: true,
-          backgroundColor: KabukTheme.surface,
-          foregroundColor: KabukTheme.textPrimary,
-          flexibleSpace: FlexibleSpaceBar(
-            background: profile?.banner != null
-                ? FeedImage(imageUrl: profile!.banner!, fit: BoxFit.cover)
-                : Container(
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          KabukTheme.primaryGreen,
-                          KabukTheme.purpleAccent,
-                        ],
+        // --- Merged header (back + avatar + name + follow) ---
+        SliverToBoxAdapter(
+          child: Container(
+            padding: EdgeInsets.fromLTRB(8, topPadding + 8, 12, 12),
+            decoration: BoxDecoration(
+              color: context.kabukSurface,
+              border: Border(
+                bottom: BorderSide(color: context.kabukDivider, width: 0.5),
+              ),
+            ),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back_rounded, size: 22),
+                  onPressed: () => Navigator.of(context).pop(),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 36, minHeight: 36,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                // Avatar.
+                profile?.picture != null
+                    ? ClipOval(
+                        child: FeedImage(
+                          imageUrl: profile!.picture!,
+                          width: 36,
+                          height: 36,
+                          fit: BoxFit.cover,
+                        ),
+                      )
+                    : CircleAvatar(
+                        radius: 18,
+                        backgroundColor: context.kabukSurfaceVariant,
+                        child: Text(
+                          name.isNotEmpty ? name[0].toUpperCase() : '?',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: context.kabukTextPrimary,
+                          ),
+                        ),
                       ),
+                const SizedBox(width: 10),
+                // Name + NIP-05.
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        name,
+                        style: TextStyle(
+                          color: context.kabukTextPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (profile?.nip05 != null)
+                        Text(
+                          profile!.nip05!,
+                          style: TextStyle(
+                            color: KabukTheme.primaryGreen,
+                            fontSize: 12,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        )
+                      else
+                        Text(
+                          '${widget.pubkey.substring(0, 12)}…',
+                          style: TextStyle(
+                            color: context.kabukTextTertiary,
+                            fontSize: 12,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // Follow button.
+                isFollowingAsync.when(
+                  data: (following) => _FollowButton(
+                    isFollowing: following,
+                    isLoading: _isToggling,
+                    onPressed: () => _toggleFollow(following),
+                  ),
+                  loading: () => const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: KabukTheme.primaryGreen,
                     ),
                   ),
+                  error: (_, _) => const SizedBox.shrink(),
+                ),
+              ],
+            ),
           ),
         ),
 
-        // --- Profile header ---
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.all(KabukTheme.spacingMd),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Avatar + Follow button
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    // Avatar — overlapping the banner
-                    Transform.translate(
-                      offset: const Offset(0, -32),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: KabukTheme.background,
-                            width: 3,
+        // --- Profile details (bio, lightning address) ---
+        if ((profile?.about != null && profile!.about!.isNotEmpty) ||
+            profile?.lud16 != null)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (profile?.about != null && profile!.about!.isNotEmpty)
+                    Text(
+                      profile.about!,
+                      style: TextStyle(
+                        color: context.kabukTextSecondary,
+                        fontSize: 14,
+                        height: 1.5,
+                      ),
+                    ),
+                  if (profile?.lud16 != null) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.bolt_rounded,
+                          size: 14,
+                          color: Color(0xFFFFC107),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          profile!.lud16!,
+                          style: TextStyle(
+                            color: context.kabukTextTertiary,
+                            fontSize: 12,
                           ),
                         ),
-                        child: profile?.picture != null
-                            ? ClipOval(
-                                child: FeedImage(
-                                  imageUrl: profile!.picture!,
-                                  width: 72,
-                                  height: 72,
-                                  fit: BoxFit.cover,
-                                ),
-                              )
-                            : CircleAvatar(
-                                radius: 36,
-                                backgroundColor: KabukTheme.surfaceVariant,
-                                child: Text(
-                                  name.isNotEmpty ? name[0].toUpperCase() : '?',
-                                  style: const TextStyle(
-                                    fontSize: 28,
-                                    color: KabukTheme.textPrimary,
-                                  ),
-                                ),
-                              ),
-                      ),
-                    ),
-                    const Spacer(),
-
-                    // Follow / Unfollow button
-                    isFollowingAsync.when(
-                      data: (following) => _FollowButton(
-                        isFollowing: following,
-                        isLoading: _isToggling,
-                        onPressed: () => _toggleFollow(following),
-                      ),
-                      loading: () => const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: KabukTheme.primaryGreen,
-                        ),
-                      ),
-                      error: (_, _) => const SizedBox.shrink(),
+                      ],
                     ),
                   ],
-                ),
-
-                // Name
-                Text(
-                  name,
-                  style: const TextStyle(
-                    color: KabukTheme.textPrimary,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-
-                // NIP-05
-                if (profile?.nip05 != null) ...[
-                  const SizedBox(height: KabukTheme.spacingXs),
-                  _Nip05Badge(nip05: profile!.nip05!, pubkey: widget.pubkey),
+                  const SizedBox(height: 8),
+                  Divider(color: context.kabukDivider, height: 1),
                 ],
+              ),
+            ),
+          ),
 
-                // Bio
-                if (profile?.about != null && profile!.about!.isNotEmpty) ...[
-                  const SizedBox(height: KabukTheme.spacingSm),
-                  Text(
-                    profile.about!,
-                    style: const TextStyle(
-                      color: KabukTheme.textSecondary,
-                      fontSize: 14,
-                      height: 1.5,
-                    ),
-                  ),
-                ],
-
-                // Lightning address
-                if (profile?.lud16 != null) ...[
-                  const SizedBox(height: KabukTheme.spacingSm),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.bolt_rounded,
-                        size: 14,
-                        color: Color(0xFFFFC107),
-                      ),
-                      const SizedBox(width: KabukTheme.spacingXs),
-                      Text(
-                        profile!.lud16!,
-                        style: const TextStyle(
-                          color: KabukTheme.textTertiary,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-
-                const SizedBox(height: KabukTheme.spacingMd),
-                const Divider(color: KabukTheme.divider, height: 1),
-                const SizedBox(height: KabukTheme.spacingSm),
-
-                // Notes header
-                const Text(
-                  'Notes',
-                  style: TextStyle(
-                    color: KabukTheme.textPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
+        // --- Notes header ---
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: Text(
+              'Notes',
+              style: TextStyle(
+                color: context.kabukTextPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ),
@@ -280,12 +285,12 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
         notesAsync.when(
           data: (notes) {
             if (notes.isEmpty) {
-              return const SliverFillRemaining(
+              return SliverFillRemaining(
                 hasScrollBody: false,
                 child: Center(
                   child: Text(
                     'No notes yet',
-                    style: TextStyle(color: KabukTheme.textSecondary),
+                    style: TextStyle(color: context.kabukTextSecondary),
                   ),
                 ),
               );
@@ -366,9 +371,9 @@ class _FollowButton extends StatelessWidget {
       onPressed: isLoading ? null : onPressed,
       style: FilledButton.styleFrom(
         backgroundColor: isFollowing
-            ? KabukTheme.surfaceVariant
+            ? context.kabukSurfaceVariant
             : KabukTheme.primaryGreen,
-        foregroundColor: isFollowing ? KabukTheme.textSecondary : Colors.white,
+        foregroundColor: isFollowing ? context.kabukTextSecondary : Colors.white,
         padding: const EdgeInsets.symmetric(
           horizontal: KabukTheme.spacingMd,
           vertical: KabukTheme.spacingSm,
@@ -378,54 +383,15 @@ class _FollowButton extends StatelessWidget {
         ),
       ),
       child: isLoading
-          ? const SizedBox(
+          ? SizedBox(
               width: 16,
               height: 16,
               child: CircularProgressIndicator(
                 strokeWidth: 2,
-                color: KabukTheme.textPrimary,
+                color: context.kabukTextPrimary,
               ),
             )
           : Text(isFollowing ? 'Unfollow' : 'Follow'),
-    );
-  }
-}
-
-/// NIP-05 verification badge.
-class _Nip05Badge extends ConsumerWidget {
-  const _Nip05Badge({required this.nip05, required this.pubkey});
-
-  final String nip05;
-  final String pubkey;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final verifiedAsync = ref.watch(
-      nip05VerifiedProvider((nip05: nip05, pubkey: pubkey)),
-    );
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          verifiedAsync.when(
-            data: (v) => v ? Icons.verified_rounded : Icons.help_outline,
-            loading: () => Icons.hourglass_empty,
-            error: (_, _) => Icons.error_outline,
-          ),
-          size: 14,
-          color: verifiedAsync.when(
-            data: (v) => v ? KabukTheme.purpleAccent : KabukTheme.textTertiary,
-            loading: () => KabukTheme.textTertiary,
-            error: (_, _) => KabukTheme.error,
-          ),
-        ),
-        const SizedBox(width: KabukTheme.spacingXs),
-        Text(
-          nip05,
-          style: const TextStyle(color: KabukTheme.textSecondary, fontSize: 13),
-        ),
-      ],
     );
   }
 }
@@ -457,7 +423,7 @@ class _UserNoteCard extends StatelessWidget {
         ),
         padding: const EdgeInsets.all(KabukTheme.spacingMd),
         decoration: BoxDecoration(
-          color: KabukTheme.cardColor,
+          color: context.kabukCardColor,
           borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
         ),
         child: Column(
@@ -466,8 +432,8 @@ class _UserNoteCard extends StatelessWidget {
             // Timestamp
             Text(
               formatDate(event.createdAt),
-              style: const TextStyle(
-                color: KabukTheme.textTertiary,
+              style: TextStyle(
+                color: context.kabukTextTertiary,
                 fontSize: 12,
               ),
             ),
@@ -476,8 +442,8 @@ class _UserNoteCard extends StatelessWidget {
             // Content (truncated)
             Text(
               event.content,
-              style: const TextStyle(
-                color: KabukTheme.textPrimary,
+              style: TextStyle(
+                color: context.kabukTextPrimary,
                 fontSize: 14,
                 height: 1.5,
               ),

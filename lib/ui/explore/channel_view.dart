@@ -75,6 +75,7 @@ IconData _sourceIcon(FeedSourceType source) {
     FeedSourceType.fourchan => Icons.forum_rounded,
     FeedSourceType.rss => Icons.rss_feed_rounded,
     FeedSourceType.atom => Icons.rss_feed_rounded,
+    FeedSourceType.usenet => Icons.newspaper_rounded,
   };
 }
 
@@ -437,71 +438,66 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
         ? 'r/${widget.channel}'
         : _authorDisplayName(widget.author!, widget.sourceType);
 
+    final topPadding = MediaQuery.of(context).padding.top;
     return Scaffold(
-      backgroundColor: KabukTheme.background,
+      backgroundColor: context.kabukBackground,
       body: RefreshIndicator(
         onRefresh: _loadChannel,
         color: color,
         child: CustomScrollView(
         controller: _scrollController,
         slivers: [
-          // --- Header ---
-          SliverAppBar(
-            expandedHeight: 120,
-            pinned: true,
-            backgroundColor: KabukTheme.surface,
-            foregroundColor: KabukTheme.textPrimary,
-            flexibleSpace: FlexibleSpaceBar(
-              background: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      color.withAlpha(180),
-                      color.withAlpha(60),
-                    ],
-                  ),
+          // --- Merged header (back + icon + name + follow) ---
+          SliverToBoxAdapter(
+            child: Container(
+              padding: EdgeInsets.fromLTRB(8, topPadding + 8, 12, 12),
+              decoration: BoxDecoration(
+                color: context.kabukSurface,
+                border: Border(
+                  bottom: BorderSide(color: context.kabukDivider, width: 0.5),
                 ),
               ),
-            ),
-          ),
-
-          // --- Author info ---
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(KabukTheme.spacingMd),
               child: Row(
                 children: [
-                  // Avatar
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back_rounded, size: 22),
+                    onPressed: () => Navigator.of(context).pop(),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 36, minHeight: 36,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
                   CircleAvatar(
-                    radius: 28,
+                    radius: 18,
                     backgroundColor: color.withAlpha(38),
                     child: Icon(
                       _sourceIcon(widget.sourceType),
-                      size: 28,
+                      size: 18,
                       color: color,
                     ),
                   ),
-                  const SizedBox(width: KabukTheme.spacingMd),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
                           displayName,
-                          style: const TextStyle(
-                            color: KabukTheme.textPrimary,
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
+                          style: TextStyle(
+                            color: context.kabukTextPrimary,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: 2),
                         Text(
                           '${_articles.length} posts · ${widget.sourceType.name}',
-                          style: const TextStyle(
-                            color: KabukTheme.textTertiary,
-                            fontSize: 13,
+                          style: TextStyle(
+                            color: context.kabukTextTertiary,
+                            fontSize: 12,
                           ),
                         ),
                       ],
@@ -516,10 +512,6 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
                 ],
               ),
             ),
-          ),
-
-          const SliverToBoxAdapter(
-            child: Divider(color: KabukTheme.divider, height: 1),
           ),
 
           // --- Content ---
@@ -537,16 +529,16 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.error_outline_rounded,
                       size: 48,
-                      color: KabukTheme.textTertiary,
+                      color: context.kabukTextTertiary,
                     ),
                     const SizedBox(height: KabukTheme.spacingMd),
-                    const Text(
+                    Text(
                       'Could not load content',
                       style: TextStyle(
-                        color: KabukTheme.textSecondary,
+                        color: context.kabukTextSecondary,
                         fontSize: 16,
                       ),
                     ),
@@ -561,12 +553,12 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
               ),
             )
           else if (_articles.isEmpty)
-            const SliverFillRemaining(
+            SliverFillRemaining(
               hasScrollBody: false,
               child: Center(
                 child: Text(
                   'No posts found',
-                  style: TextStyle(color: KabukTheme.textSecondary),
+                  style: TextStyle(color: context.kabukTextSecondary),
                 ),
               ),
             )
@@ -575,10 +567,13 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
                   final article = _articles[index];
-                  return ArticleCard(
-                    article: article,
-                    articles: _articles,
-                    index: index,
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: ArticleCard(
+                      article: article,
+                      articles: _articles,
+                      index: index,
+                    ),
                   );
                 },
                 childCount: _articles.length,

@@ -22,6 +22,7 @@ import 'package:kabuk/knowledge/store.dart';
 import 'package:kabuk/knowledge/triple.dart';
 import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/knowledge/types/content_block.dart';
+import 'package:kabuk/knowledge/types/media.dart';
 import 'package:kabuk/knowledge/types/organization.dart';
 import 'package:kabuk/knowledge/types/person.dart';
 import 'package:kabuk/knowledge/types/place.dart';
@@ -230,10 +231,21 @@ class ReaderModeService {
 
     final articleLinks = extraction.articleLinks;
 
+    // Check if structured data indicates a specific non-index entity type
+    // (Product, Person, Place, etc.). If so, prefer semantic extraction
+    // even when the page looks like an index (e.g. Amazon product pages
+    // with many related product links).
+    final hasSpecificStructuredType = _hasNonIndexStructuredType(extraction);
+    if (hasSpecificStructuredType) {
+      debugPrint('[ReaderMode] Structured data indicates specific entity type '
+          '— skipping multi-article path');
+    }
+
     // Determine if this is an index/listing page or a single article.
     // An index page has many links but little body text. A single article
     // page has substantial text even if it links to related articles.
-    final isLikelyIndex = articleLinks.isNotEmpty &&
+    final isLikelyIndex = !hasSpecificStructuredType &&
+        articleLinks.isNotEmpty &&
         (extraction.textContent.length < 500 ||
             (articleLinks.length >= 8 &&
                 extraction.textContent.length <
@@ -241,7 +253,8 @@ class ReaderModeService {
 
     debugPrint('[ReaderMode] articleLinks=${articleLinks.length}, '
         'textLen=${extraction.textContent.length}, '
-        'isLikelyIndex=$isLikelyIndex');
+        'isLikelyIndex=$isLikelyIndex, '
+        'hasSpecificStructuredType=$hasSpecificStructuredType');
 
     // --- Multi-article path: index/listing page ---
     if (isLikelyIndex) {
@@ -487,12 +500,30 @@ class ReaderModeService {
     for (var i = 0; i < result.entities.length; i++) {
       final entity = result.entities[i];
       try {
+        // For the primary article entity, prefer extraction.title over the
+        // entity's name property — LLMs sometimes place the description in
+        // the name field (e.g. "American private aerospace company" instead
+        // of "SpaceX").
+        final isPrimaryArticle = i == result.primaryEntityIndex &&
+            const {
+              'Article',
+              'NewsArticle',
+              'BlogPosting',
+              'Report',
+              'TechArticle',
+            }.contains(entity.type);
+        final titleOverride =
+            isPrimaryArticle && extraction.title.isNotEmpty
+                ? extraction.title
+                : null;
+
         final uri = await _storeEntity(
           entity,
           result.sourceUrl,
           feedSource,
           domain,
           personImageUrls: personImageUrls,
+          titleOverride: titleOverride,
         );
         debugPrint('[ReaderMode] Stored entity[$i] ${entity.type} '
             '"${entity.properties['name']}" → $uri');
@@ -514,6 +545,24 @@ class ReaderModeService {
     // Second pass: store entity relationships as RDF triples
     await _storeEntityRelationships(result.entities, entityUriMap);
 
+    // Collect images used by entities (e.g. author photos, logos) to prevent
+    // them from being appended to the content gallery.
+    final entityImages = <String>{};
+    for (final e in result.entities) {
+      // Don't filter out actual content images (ImageObjects)
+      if (e.type == 'ImageObject') continue;
+
+      final img = e.properties['image'];
+      if (img is String) entityImages.add(img);
+
+      final logo = e.properties['logo'];
+      if (logo is String) entityImages.add(logo);
+    }
+
+    final contentImages = extraction.images
+        .where((url) => !entityImages.contains(url))
+        .toList();
+
     // Create content blocks for the primary entity (usually an Article)
     if (result.primaryEntityIndex != null) {
       final primaryUri = entityUriMap[result.primaryEntityIndex!];
@@ -522,7 +571,7 @@ class ReaderModeService {
           await _createContentBlocks(
             primaryUri,
             result.markdownContent,
-            extraction.images,
+            contentImages,
             extraction.videos,
           );
         } else if (extraction.description?.isNotEmpty == true) {
@@ -604,13 +653,29 @@ class ReaderModeService {
   /// namespace URIs defined in [NS].
   static const _predicateToNs = <String, String>{
     'schema:author': NS.schemaAuthor,
+    'author': NS.schemaAuthor,
     'schema:publisher': NS.schemaPublisher,
+    'publisher': NS.schemaPublisher,
     'schema:brand': NS.schemaBrand,
+    'brand': NS.schemaBrand,
     'schema:offers': NS.schemaOffers,
+    'offers': NS.schemaOffers,
     'schema:location': NS.schemaLocation,
+    'location': NS.schemaLocation,
     'schema:worksFor': NS.schemaWorksFor,
+    'worksFor': NS.schemaWorksFor,
     'schema:memberOf': NS.schemaMemberOf,
+    'memberOf': NS.schemaMemberOf,
     'schema:organizer': NS.schemaOrganizer,
+    'organizer': NS.schemaOrganizer,
+    'schema:mainEntity': NS.schemaMainEntity,
+    'mainEntity': NS.schemaMainEntity,
+    'schema:hasPart': NS.schemaHasPart,
+    'hasPart': NS.schemaHasPart,
+    'schema:mentions': NS.schemaMentions,
+    'mentions': NS.schemaMentions,
+    'schema:associatedMedia': NS.schemaAssociatedMedia,
+    'associatedMedia': NS.schemaAssociatedMedia,
   };
 
   /// Stores cross-entity relationships as RDF triples.
@@ -670,9 +735,12 @@ class ReaderModeService {
     String? feedSource,
     String domain, {
     Set<String> personImageUrls = const {},
+    String? titleOverride,
   }) async {
     final p = entity.properties;
-    final name = (p['name'] ?? p['headline'] ?? '').toString();
+    final name = titleOverride?.isNotEmpty == true
+        ? titleOverride!
+        : (p['name'] ?? p['headline'] ?? '').toString();
     if (name.isEmpty && entity.type != 'ImageObject') return null;
 
     final String? uri;
@@ -763,8 +831,25 @@ class ReaderModeService {
         );
 
       case 'ImageObject':
-        // Images are stored as gallery on the article, not as separate entities
-        uri = null;
+        final contentUrl = _str(p['contentUrl']) ?? _str(p['url']);
+        if (contentUrl != null) {
+          uri = await _store.createMediaObject(
+            name: name.isNotEmpty ? name : 'Image from $sourceUrl',
+            type: MediaType.image,
+            contentUrl: contentUrl,
+            width: _tryInt(p['width']),
+            height: _tryInt(p['height']),
+            encodingFormat: _str(p['encodingFormat']),
+            thumbnail: _str(p['thumbnailUrl']),
+          );
+          // Explicitly set semantic type and source for channel view filtering.
+          await _store.mutate((ctx) async {
+            await ctx.set(uri!, NS.kabukSemanticType, 'ImageObject');
+            await ctx.set(uri, NS.kabukExtractedFrom, sourceUrl);
+          });
+        } else {
+          uri = null;
+        }
 
       case 'WebPage' || 'CollectionPage' || 'WebSite':
         uri = await _store.createWebPage(
@@ -1380,6 +1465,80 @@ class ReaderModeService {
   // -------------------------------------------------------------------------
   // Helpers
   // -------------------------------------------------------------------------
+
+  /// Checks if the extraction's structured data (JSON-LD, OG, schemaTypes)
+  /// indicates a specific entity type that should not be treated as an
+  /// index/listing page.
+  ///
+  /// Returns `true` when the page contains Product, Person, Place,
+  /// Organization, Recipe, Event, or similar typed entities — signalling
+  /// that semantic extraction should be preferred over the multi-article
+  /// path.
+  static bool _hasNonIndexStructuredType(WebExtraction extraction) {
+    const specificTypes = {
+      'Product', 'IndividualProduct', 'ProductModel',
+      'Person', 'ProfilePage',
+      'Place', 'LocalBusiness', 'Restaurant', 'Hotel',
+      'Organization', 'Corporation',
+      'Recipe', 'HowTo',
+      'Event', 'MusicEvent', 'SportsEvent',
+      'Book', 'Movie', 'TVSeries',
+      'VideoObject', 'MusicRecording',
+      'SoftwareApplication', 'MobileApplication',
+      'Course', 'JobPosting',
+      'ItemPage',
+    };
+
+    // Check JSON-LD @type fields
+    for (final ld in extraction.jsonLd) {
+      final rawType = ld['@type'];
+      final types = <String>[];
+      if (rawType is String) {
+        types.add(rawType);
+      } else if (rawType is List) {
+        types.addAll(rawType.whereType<String>());
+      }
+      // Also check @graph items
+      final graph = ld['@graph'];
+      if (graph is List) {
+        for (final item in graph) {
+          if (item is Map<String, dynamic>) {
+            final gt = item['@type'];
+            if (gt is String) types.add(gt);
+            if (gt is List) types.addAll(gt.whereType<String>());
+          }
+        }
+      }
+      for (final t in types) {
+        if (specificTypes.contains(t)) return true;
+      }
+    }
+
+    // Check schemaTypes from microdata
+    for (final t in extraction.schemaTypes) {
+      // Strip URL prefix: "https://schema.org/Product" → "Product"
+      final shortType = t.contains('/') ? t.split('/').last : t;
+      if (specificTypes.contains(shortType)) return true;
+    }
+
+    // Check OG type
+    final ogType = extraction.openGraph['og:type'];
+    if (ogType != null) {
+      switch (ogType) {
+        case 'product':
+        case 'profile':
+        case 'place':
+        case 'music.song':
+        case 'music.album':
+        case 'video.movie':
+        case 'video.episode':
+        case 'book':
+          return true;
+      }
+    }
+
+    return false;
+  }
 
   /// Extracts the domain (host) from a URL string.
   ///

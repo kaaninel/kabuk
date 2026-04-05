@@ -52,10 +52,10 @@ class _CollectionManagerViewState extends ConsumerState<CollectionManagerView> {
           ),
           child: Row(
             children: [
-              const Text(
+              Text(
                 'Collections',
                 style: TextStyle(
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
@@ -104,7 +104,7 @@ class _CollectionManagerViewState extends ConsumerState<CollectionManagerView> {
               if (collections.isEmpty) return const _CollectionEmptyState();
               return RefreshIndicator(
                 color: KabukTheme.accentGreen,
-                backgroundColor: KabukTheme.surface,
+                backgroundColor: context.kabukSurface,
                 onRefresh: () async {
                   ref.invalidate(collectionsListProvider);
                   widget.onRefresh();
@@ -200,21 +200,21 @@ class _CollectionManagerViewState extends ConsumerState<CollectionManagerView> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: KabukTheme.surfaceElevated,
-        title: const Text(
+        backgroundColor: context.kabukSurfaceElevated,
+        title: Text(
           'Delete collection?',
-          style: TextStyle(color: KabukTheme.textPrimary),
+          style: TextStyle(color: context.kabukTextPrimary),
         ),
-        content: const Text(
+        content: Text(
           'Documents inside will not be deleted, but will become uncategorized.',
-          style: TextStyle(color: KabukTheme.textSecondary),
+          style: TextStyle(color: context.kabukTextSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text(
+            child: Text(
               'Cancel',
-              style: TextStyle(color: KabukTheme.textSecondary),
+              style: TextStyle(color: context.kabukTextSecondary),
             ),
           ),
           TextButton(
@@ -244,20 +244,20 @@ class _CollectionManagerViewState extends ConsumerState<CollectionManagerView> {
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: KabukTheme.surfaceElevated,
+        backgroundColor: context.kabukSurfaceElevated,
         title: Text(
           title,
-          style: const TextStyle(color: KabukTheme.textPrimary),
+          style: TextStyle(color: context.kabukTextPrimary),
         ),
         content: TextField(
           controller: controller,
           autofocus: true,
-          style: const TextStyle(color: KabukTheme.textPrimary),
+          style: TextStyle(color: context.kabukTextPrimary),
           decoration: InputDecoration(
             hintText: 'Collection name',
-            hintStyle: const TextStyle(color: KabukTheme.textTertiary),
+            hintStyle: TextStyle(color: context.kabukTextTertiary),
             filled: true,
-            fillColor: KabukTheme.surface,
+            fillColor: context.kabukSurface,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(KabukTheme.radiusSm),
               borderSide: BorderSide.none,
@@ -268,9 +268,9 @@ class _CollectionManagerViewState extends ConsumerState<CollectionManagerView> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(null),
-            child: const Text(
+            child: Text(
               'Cancel',
-              style: TextStyle(color: KabukTheme.textSecondary),
+              style: TextStyle(color: context.kabukTextSecondary),
             ),
           ),
           TextButton(
@@ -332,7 +332,7 @@ class _CollectionTile extends StatelessWidget {
               decoration: BoxDecoration(
                 border: Border(
                   bottom: BorderSide(
-                    color: KabukTheme.divider.withAlpha(60),
+                    color: context.kabukDivider.withAlpha(60),
                     width: 0.5,
                   ),
                 ),
@@ -350,7 +350,7 @@ class _CollectionTile extends StatelessWidget {
                             ? Icons.keyboard_arrow_down_rounded
                             : Icons.keyboard_arrow_right_rounded,
                         size: 18,
-                        color: KabukTheme.textTertiary,
+                        color: context.kabukTextTertiary,
                       ),
                     ),
                   ),
@@ -363,12 +363,12 @@ class _CollectionTile extends StatelessWidget {
                       child: Text(icon, style: const TextStyle(fontSize: 16)),
                     )
                   else
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.only(right: 8),
                       child: Icon(
                         Icons.folder_outlined,
                         size: 18,
-                        color: KabukTheme.textTertiary,
+                        color: context.kabukTextTertiary,
                       ),
                     ),
 
@@ -376,8 +376,8 @@ class _CollectionTile extends StatelessWidget {
                   Expanded(
                     child: Text(
                       name,
-                      style: const TextStyle(
-                        color: KabukTheme.textPrimary,
+                      style: TextStyle(
+                        color: context.kabukTextPrimary,
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
                       ),
@@ -409,47 +409,47 @@ class _CollectionTile extends StatelessWidget {
                           onDelete();
                       }
                     },
-                    color: KabukTheme.surfaceElevated,
-                    icon: const Icon(
+                    color: context.kabukSurfaceElevated,
+                    icon: Icon(
                       Icons.more_horiz_rounded,
                       size: 16,
-                      color: KabukTheme.textTertiary,
+                      color: context.kabukTextTertiary,
                     ),
                     itemBuilder: (_) => [
-                      const PopupMenuItem(
+                      PopupMenuItem(
                         value: 'subfolder',
                         child: Row(
                           children: [
                             Icon(
                               Icons.create_new_folder_outlined,
                               size: 14,
-                              color: KabukTheme.textPrimary,
+                              color: context.kabukTextPrimary,
                             ),
                             SizedBox(width: 8),
                             Text(
                               'New subfolder',
                               style: TextStyle(
-                                color: KabukTheme.textPrimary,
+                                color: context.kabukTextPrimary,
                                 fontSize: 13,
                               ),
                             ),
                           ],
                         ),
                       ),
-                      const PopupMenuItem(
+                      PopupMenuItem(
                         value: 'rename',
                         child: Row(
                           children: [
                             Icon(
                               Icons.edit_outlined,
                               size: 14,
-                              color: KabukTheme.textPrimary,
+                              color: context.kabukTextPrimary,
                             ),
                             SizedBox(width: 8),
                             Text(
                               'Rename',
                               style: TextStyle(
-                                color: KabukTheme.textPrimary,
+                                color: context.kabukTextPrimary,
                                 fontSize: 13,
                               ),
                             ),
@@ -506,13 +506,13 @@ class _CollectionEmptyState extends StatelessWidget {
             Icon(
               Icons.folder_open_rounded,
               size: 64,
-              color: KabukTheme.textSecondary.withAlpha(128),
+              color: context.kabukTextSecondary.withAlpha(128),
             ),
             const SizedBox(height: KabukTheme.spacingMd),
-            const Text(
+            Text(
               'Organize with collections',
               style: TextStyle(
-                color: KabukTheme.textSecondary,
+                color: context.kabukTextSecondary,
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
               ),
@@ -521,7 +521,7 @@ class _CollectionEmptyState extends StatelessWidget {
             Text(
               'Group your notes and media into folders\nfor easy access',
               style: TextStyle(
-                color: KabukTheme.textSecondary.withAlpha(180),
+                color: context.kabukTextSecondary.withAlpha(180),
                 fontSize: 14,
               ),
               textAlign: TextAlign.center,

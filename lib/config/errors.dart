@@ -156,6 +156,86 @@ final class ValidationError extends ServiceError {
   const ValidationError(super.message);
 }
 
+/// A Usenet operation failed.
+///
+/// Base class for all Usenet-specific errors. Use the named constructors
+/// on [ServiceError] or match subtypes directly:
+///
+/// ```dart
+/// switch (error) {
+///   case UsenetConnectionFailed(:final message):
+///     print('Connection issue: $message');
+///   case UsenetArticleNotFound(:final messageId):
+///     print('Missing article: $messageId');
+///   // ...
+/// }
+/// ```
+sealed class UsenetError extends ServiceError {
+  /// Creates a [UsenetError] with the given [message].
+  const UsenetError(super.message);
+}
+
+/// Failed to establish a connection to a Usenet server or indexer API.
+final class UsenetConnectionFailed extends UsenetError {
+  /// Creates a [UsenetConnectionFailed] with the given [message].
+  const UsenetConnectionFailed(super.message);
+}
+
+/// Authentication was rejected by a Usenet server or indexer.
+final class UsenetAuthenticationFailed extends UsenetError {
+  /// Creates a [UsenetAuthenticationFailed] with the given [message].
+  const UsenetAuthenticationFailed(super.message);
+}
+
+/// The requested NNTP article could not be found on any provider.
+final class UsenetArticleNotFound extends UsenetError {
+  /// Creates a [UsenetArticleNotFound] for the given [messageId].
+  const UsenetArticleNotFound(this.messageId)
+    : super('Article not found: $messageId');
+
+  /// The NNTP Message-ID that could not be resolved.
+  final String messageId;
+}
+
+/// An NZB file could not be parsed (malformed XML, missing segments, etc.).
+final class UsenetNzbParseFailed extends UsenetError {
+  /// Creates a [UsenetNzbParseFailed] with the given [reason].
+  const UsenetNzbParseFailed(this.reason) : super('NZB parse failed: $reason');
+
+  /// Description of why parsing failed.
+  final String reason;
+}
+
+/// An indexer-specific error occurred (e.g. rate limit, API error).
+final class UsenetIndexerError extends UsenetError {
+  /// Creates a [UsenetIndexerError] for the given [indexerId].
+  const UsenetIndexerError(this.indexerId, String message)
+    : super('Indexer $indexerId: $message');
+
+  /// The indexer identifier that produced the error.
+  final String indexerId;
+}
+
+/// A provider-specific error occurred (e.g. quota exceeded).
+final class UsenetProviderError extends UsenetError {
+  /// Creates a [UsenetProviderError] for the given [providerId].
+  const UsenetProviderError(this.providerId, String message)
+    : super('Provider $providerId: $message');
+
+  /// The provider identifier that produced the error.
+  final String providerId;
+}
+
+/// A Usenet streaming session encountered an unrecoverable error.
+final class UsenetStreamError extends UsenetError {
+  /// Creates a [UsenetStreamError] for the given [sessionId].
+  const UsenetStreamError(this.sessionId, String message)
+    : super('Stream $sessionId: $message');
+
+  /// The streaming session identifier that encountered the error.
+  final String sessionId;
+}
+
 /// An unexpected or uncategorized error occurred.
 ///
 /// Wraps an optional [cause] and [stackTrace] for debugging.

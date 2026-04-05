@@ -593,10 +593,10 @@ class _CameraLoadingState extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: KabukTheme.surfaceElevated,
+        color: context.kabukSurfaceElevated,
         borderRadius: BorderRadius.circular(KabukTheme.radiusLg),
       ),
-      child: const Center(
+      child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -607,7 +607,7 @@ class _CameraLoadingState extends StatelessWidget {
             SizedBox(height: KabukTheme.spacingMd),
             Text(
               'Starting camera...',
-              style: TextStyle(color: KabukTheme.textSecondary, fontSize: 14),
+              style: TextStyle(color: context.kabukTextSecondary, fontSize: 14),
             ),
           ],
         ),
@@ -627,7 +627,7 @@ class _CameraErrorState extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: KabukTheme.surfaceElevated,
+        color: context.kabukSurfaceElevated,
         borderRadius: BorderRadius.circular(KabukTheme.radiusLg),
       ),
       child: Center(
@@ -650,8 +650,8 @@ class _CameraErrorState extends StatelessWidget {
             const SizedBox(height: KabukTheme.spacingMd),
             Text(
               error,
-              style: const TextStyle(
-                color: KabukTheme.textSecondary,
+              style: TextStyle(
+                color: context.kabukTextSecondary,
                 fontSize: 14,
               ),
             ),
@@ -694,7 +694,7 @@ class _CameraUnavailableFallback extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: KabukTheme.surfaceElevated,
+        color: context.kabukSurfaceElevated,
         borderRadius: BorderRadius.circular(KabukTheme.radiusLg),
       ),
       child: Center(
@@ -717,20 +717,20 @@ class _CameraUnavailableFallback extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: KabukTheme.spacingLg),
-              const Text(
+              Text(
                 'Camera unavailable',
                 style: TextStyle(
-                  color: KabukTheme.textPrimary,
+                  color: context.kabukTextPrimary,
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                 ),
               ),
               const SizedBox(height: KabukTheme.spacingSm),
-              const Text(
+              Text(
                 'No camera was found on this device.\nYou can still choose a photo from your library.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                   fontSize: 13,
                   height: 1.5,
                 ),

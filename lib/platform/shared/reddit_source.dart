@@ -107,12 +107,11 @@ class RedditFeedSource implements FeedSource {
     final score = post['score'] as int?;
     final numComments = post['num_comments'] as int?;
 
-    // Build description from selftext or meta info.
+    // Build description from selftext. Store the full text so article
+    // detail view doesn't need to re-fetch from the Reddit HTML page.
     final descParts = <String>[];
     if (selfText != null && selfText.isNotEmpty) {
-      descParts.add(
-        selfText.length > 500 ? '${selfText.substring(0, 500)}...' : selfText,
-      );
+      descParts.add(selfText);
     }
     if (score != null) descParts.add('⬆ $score');
     if (numComments != null) descParts.add('💬 $numComments');
@@ -177,9 +176,11 @@ class RedditFeedSource implements FeedSource {
       }
     }
 
-    // If we have gallery images, use the first as the main image.
-    if (galleryImages.isNotEmpty && imageUrl == null) {
-      imageUrl = galleryImages.first;
+    // If we have gallery images, use the first gallery image as the main image
+    // (full quality from media_metadata source) instead of the lower-quality
+    // preview thumbnail. Remove it from the gallery list to avoid duplication.
+    if (galleryImages.isNotEmpty) {
+      imageUrl = galleryImages.removeAt(0);
     }
 
     // Extract video URL for video posts.
@@ -188,10 +189,12 @@ class RedditFeedSource implements FeedSource {
     //   - `media.reddit_video.fallback_url`  → DASH MP4 (lacks byte-range headers)
     // iOS AVPlayer requires proper Content-Length / byte-range support, so we
     // prefer the HLS stream which is natively supported.
+    // Some posts use `secure_media` instead of `media`, so check both.
     String? videoUrl;
     final isVideo = post['is_video'] as bool? ?? false;
     if (isVideo) {
-      final media = post['media'] as Map<String, dynamic>?;
+      final media = post['media'] as Map<String, dynamic>? ??
+          post['secure_media'] as Map<String, dynamic>?;
       final redditVideo = media?['reddit_video'] as Map<String, dynamic>?;
       // Prefer HLS for iOS compatibility.
       final hlsUrl = redditVideo?['hls_url'] as String?;
@@ -201,6 +204,28 @@ class RedditFeedSource implements FeedSource {
         final fallback = redditVideo?['fallback_url'] as String?;
         if (fallback != null) {
           videoUrl = fallback.replaceAll('&amp;', '&');
+        }
+      }
+    }
+    // Check crosspost parent for video data.
+    if (videoUrl == null) {
+      final crossposts = post['crosspost_parent_list'] as List<dynamic>?;
+      if (crossposts != null && crossposts.isNotEmpty) {
+        final parent = crossposts[0] as Map<String, dynamic>;
+        final parentIsVideo = parent['is_video'] as bool? ?? false;
+        if (parentIsVideo) {
+          final pMedia = parent['media'] as Map<String, dynamic>? ??
+              parent['secure_media'] as Map<String, dynamic>?;
+          final rv = pMedia?['reddit_video'] as Map<String, dynamic>?;
+          final hlsUrl = rv?['hls_url'] as String?;
+          if (hlsUrl != null) {
+            videoUrl = hlsUrl.replaceAll('&amp;', '&');
+          } else {
+            final fallback = rv?['fallback_url'] as String?;
+            if (fallback != null) {
+              videoUrl = fallback.replaceAll('&amp;', '&');
+            }
+          }
         }
       }
     }
@@ -217,6 +242,18 @@ class RedditFeedSource implements FeedSource {
         // Convert Imgur .gifv → .mp4 for playback.
         if (raw.toLowerCase().endsWith('.gifv')) {
           raw = '${raw.substring(0, raw.length - 5)}.mp4';
+        }
+        // Bare v.redd.it URLs are landing pages, not direct video files.
+        // Append HLS playlist path to make them playable.
+        if (raw.toLowerCase().contains('v.redd.it') &&
+            !raw.contains('HLSPlaylist') &&
+            !raw.contains('DASHPlaylist') &&
+            !raw.contains('DASH_') &&
+            !raw.toLowerCase().endsWith('.mp4') &&
+            !raw.toLowerCase().endsWith('.m3u8')) {
+          // Strip trailing slash if present.
+          if (raw.endsWith('/')) raw = raw.substring(0, raw.length - 1);
+          raw = '$raw/HLSPlaylist.m3u8';
         }
         videoUrl = raw;
       }

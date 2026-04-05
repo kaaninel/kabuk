@@ -240,7 +240,7 @@ class _AudioCaptureState extends ConsumerState<AudioCapture>
     const bottomPadding = 0.0;
 
     return Container(
-      color: KabukTheme.background,
+      color: context.kabukBackground,
       child: Column(
         children: [
           // Top bar.
@@ -252,7 +252,7 @@ class _AudioCaptureState extends ConsumerState<AudioCapture>
                 IconButton(
                   onPressed: _isRecording ? _cancelRecording : widget.onClose,
                   icon: const Icon(Icons.close_rounded),
-                  color: KabukTheme.textSecondary,
+                  color: context.kabukTextSecondary,
                   tooltip: _isRecording ? 'Cancel recording' : 'Close',
                 ),
                 // Mode label.
@@ -307,7 +307,7 @@ class _AudioCaptureState extends ConsumerState<AudioCapture>
                         shape: BoxShape.circle,
                         color:
                             (_isPaused
-                                    ? KabukTheme.textTertiary
+                                    ? context.kabukTextTertiary
                                     : KabukTheme.warmAccent)
                                 .withAlpha(
                                   (255 * _pulseAnimation.value).round(),
@@ -327,8 +327,8 @@ class _AudioCaptureState extends ConsumerState<AudioCapture>
                     color: _isRecording
                         ? KabukTheme.warmAccent
                         : _recordedPath != null
-                        ? KabukTheme.textPrimary
-                        : KabukTheme.textTertiary,
+                        ? context.kabukTextPrimary
+                        : context.kabukTextTertiary,
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
@@ -357,8 +357,8 @@ class _AudioCaptureState extends ConsumerState<AudioCapture>
                                     : _recordedPath != null
                                     ? 'Recording complete'
                                     : 'Tap the button to start',
-                                style: const TextStyle(
-                                  color: KabukTheme.textTertiary,
+                                style: TextStyle(
+                                  color: context.kabukTextTertiary,
                                   fontSize: 14,
                                 ),
                               ),
@@ -369,7 +369,7 @@ class _AudioCaptureState extends ConsumerState<AudioCapture>
                                 painter: _WaveformPainter(
                                   amplitudes: _amplitudes,
                                   color: _isPaused
-                                      ? KabukTheme.textTertiary
+                                      ? context.kabukTextTertiary
                                       : KabukTheme.warmAccent,
                                 ),
                               ),
@@ -385,7 +385,7 @@ class _AudioCaptureState extends ConsumerState<AudioCapture>
                     _isPaused ? 'Paused' : 'Recording',
                     style: TextStyle(
                       color: _isPaused
-                          ? KabukTheme.textTertiary
+                          ? context.kabukTextTertiary
                           : KabukTheme.warmAccent,
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
@@ -460,7 +460,7 @@ class _AudioCaptureState extends ConsumerState<AudioCapture>
           _ControlButton(
             icon: _isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
             label: _isPaused ? 'Resume' : 'Pause',
-            color: KabukTheme.textSecondary,
+            color: context.kabukTextSecondary,
             onTap: _pauseRecording,
           ),
           _ControlButton(
@@ -481,23 +481,23 @@ class _AudioCaptureState extends ConsumerState<AudioCapture>
         // Name field.
         Container(
           decoration: BoxDecoration(
-            color: KabukTheme.surfaceVariant,
+            color: context.kabukSurfaceVariant,
             borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
           ),
           child: TextField(
             controller: _nameController,
-            style: const TextStyle(fontSize: 15, color: KabukTheme.textPrimary),
+            style: TextStyle(fontSize: 15, color: context.kabukTextPrimary),
             textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               hintText: 'Name this recording...',
               hintStyle: TextStyle(
-                color: KabukTheme.textTertiary,
+                color: context.kabukTextTertiary,
                 fontSize: 15,
               ),
               prefixIcon: Icon(
                 Icons.label_outline_rounded,
                 size: 20,
-                color: KabukTheme.textTertiary,
+                color: context.kabukTextTertiary,
               ),
               border: InputBorder.none,
               contentPadding: EdgeInsets.symmetric(
@@ -517,13 +517,13 @@ class _AudioCaptureState extends ConsumerState<AudioCapture>
                   height: 52,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    border: Border.all(color: KabukTheme.divider),
+                    border: Border.all(color: context.kabukDivider),
                     borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
                   ),
-                  child: const Text(
+                  child: Text(
                     'Discard',
                     style: TextStyle(
-                      color: KabukTheme.textSecondary,
+                      color: context.kabukTextSecondary,
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
                     ),

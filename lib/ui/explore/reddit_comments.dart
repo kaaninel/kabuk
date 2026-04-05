@@ -220,10 +220,10 @@ class RedditCommentThread extends ConsumerWidget {
                 button: true,
                 child: GestureDetector(
                   onTap: () => ref.invalidate(redditCommentsProvider(postUrl)),
-                  child: const Icon(
+                  child: Icon(
                     Icons.refresh_rounded,
                     size: 18,
-                    color: KabukTheme.textTertiary,
+                    color: context.kabukTextTertiary,
                     semanticLabel: '',
                   ),
                 ),
@@ -235,13 +235,13 @@ class RedditCommentThread extends ConsumerWidget {
         commentsAsync.when(
           data: (comments) {
             if (comments.isEmpty) {
-              return const Padding(
+              return Padding(
                 padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
                 child: Text(
                   'No Reddit comments yet.',
                   style: TextStyle(
                     fontSize: 13,
-                    color: KabukTheme.textTertiary,
+                    color: context.kabukTextTertiary,
                     fontStyle: FontStyle.italic,
                   ),
                 ),
@@ -265,11 +265,11 @@ class RedditCommentThread extends ConsumerWidget {
               ),
             ),
           ),
-          error: (_, _) => const Padding(
+          error: (_, _) => Padding(
             padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
             child: Text(
               'Could not load Reddit comments.',
-              style: TextStyle(fontSize: 13, color: KabukTheme.textTertiary),
+              style: TextStyle(fontSize: 13, color: context.kabukTextTertiary),
             ),
           ),
         ),
@@ -326,9 +326,9 @@ class _CommentTileState extends State<_CommentTile> {
                   const SizedBox(width: 8),
                   Text(
                     _timeAgo(c.createdUtc),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
-                      color: KabukTheme.textTertiary,
+                      color: context.kabukTextTertiary,
                     ),
                   ),
                   const Spacer(),
@@ -340,9 +340,9 @@ class _CommentTileState extends State<_CommentTile> {
                   const SizedBox(width: 2),
                   Text(
                     _fmtScore(c.score),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
-                      color: KabukTheme.textSecondary,
+                      color: context.kabukTextSecondary,
                     ),
                   ),
                 ],
@@ -351,10 +351,10 @@ class _CommentTileState extends State<_CommentTile> {
               // Comment body.
               Text(
                 c.body,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
                   height: 1.5,
-                  color: KabukTheme.textPrimary,
+                  color: context.kabukTextPrimary,
                 ),
                 maxLines: 10,
                 overflow: TextOverflow.ellipsis,
@@ -374,10 +374,10 @@ class _CommentTileState extends State<_CommentTile> {
                       _showReplies
                           ? 'Hide replies'
                           : '${c.replies.length} repl${c.replies.length == 1 ? 'y' : 'ies'}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
-                        color: KabukTheme.textTertiary,
+                        color: context.kabukTextTertiary,
                       ),
                     ),
                   ),
@@ -387,11 +387,11 @@ class _CommentTileState extends State<_CommentTile> {
           ),
         ),
         if (c.depth == 0)
-          const Divider(
+          Divider(
             height: 1,
             indent: 16,
             endIndent: 16,
-            color: KabukTheme.divider,
+            color: context.kabukDivider,
           ),
         if (_showReplies)
           ...c.replies

@@ -204,6 +204,13 @@ class _ContentVideoPageState extends State<ContentVideoPage> {
     });
     _errorSub = player.stream.error.listen((e) {
       if (mounted && e.isNotEmpty && !_hasError) {
+        // Ignore non-fatal audio device warnings (common on simulators).
+        final lower = e.toLowerCase();
+        if (lower.contains('audio device') ||
+            lower.contains('no sound') ||
+            lower.contains('ao init')) {
+          return;
+        }
         setState(() {
           _hasError = true;
           _errorMessage = e;

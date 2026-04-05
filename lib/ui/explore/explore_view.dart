@@ -8,6 +8,7 @@ library;
 
 import 'dart:async';
 import 'dart:developer' as dev;
+import 'dart:math' as math;
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
@@ -21,8 +22,11 @@ import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/services/feed.dart';
 import 'package:kabuk/services/media_cache.dart';
 import 'package:kabuk/ui/explore/browse_session.dart';
+import 'package:kabuk/ui/explore/classic_web_view.dart';
+import 'package:kabuk/ui/explore/explore_tab.dart';
 import 'package:kabuk/ui/explore/explore_widgets.dart';
 import 'package:kabuk/ui/explore/nostr_providers.dart';
+import 'package:kabuk/ui/explore/tab_sidebar.dart';
 import 'package:kabuk/ui/shared/identity_quick_switcher.dart';
 import 'package:kabuk/ui/theme.dart';
 
@@ -118,11 +122,60 @@ List<ArticleData> applyContentFilters(
   bool hideNsfw,
   Set<String> mutedSources,
 ) {
-  if (blockedKeywords.isEmpty && !hideNsfw && mutedSources.isEmpty) {
-    return articles;
-  }
   final lowerKeywords = blockedKeywords.map((k) => k.toLowerCase()).toList();
   return articles.where((a) {
+    // Filter out empty/broken articles.
+    final title = (a.name ?? '').trim();
+    final desc = (a.description ?? '').trim();
+    final hasTitle = title.isNotEmpty;
+    final hasDesc = desc.isNotEmpty;
+    if (!hasTitle && !hasDesc) return false;
+
+    // Filter articles where the title is a URL (failed extraction stored name
+    // as URI) or just the domain name.
+    if (hasTitle) {
+      final titleLower = title.toLowerCase();
+      // Title is a full URL — definitely failed extraction.
+      if (titleLower.startsWith('http://') ||
+          titleLower.startsWith('https://')) {
+        return false;
+      }
+
+      final domain = _extractDomain(a.feedSource ?? a.url ?? '');
+      final domainLower = domain.toLowerCase();
+
+      // Title is just the domain name or site name.
+      if (domainLower.isNotEmpty && !hasDesc) {
+        if (titleLower == domainLower) return false;
+        // Strip TLD to get site name (e.g. "theverge" from "theverge.com").
+        final dotIdx = domainLower.indexOf('.');
+        final siteName = dotIdx > 0 ? domainLower.substring(0, dotIdx) : '';
+        if (siteName.isNotEmpty &&
+            titleLower.replaceAll(' ', '') == siteName) {
+          return false;
+        }
+      }
+
+      // Short title with no description and no image → likely a navigation
+      // category ("technology", "gaming news") rather than a real article.
+      if (title.length < 40 && !hasDesc && a.image == null) return false;
+
+      // Title matches domain/site name with a site-about description → skip
+      // the "about this website" card (e.g. "The Verge" with "The Verge is
+      // a technology and science news website…").
+      if (hasDesc && domainLower.isNotEmpty) {
+        final dotIdx = domainLower.indexOf('.');
+        final siteName = dotIdx > 0 ? domainLower.substring(0, dotIdx) : '';
+        if (siteName.isNotEmpty) {
+          final titleNorm = titleLower.replaceAll(RegExp(r'[^a-z0-9]'), '');
+          if (titleNorm == siteName &&
+              desc.toLowerCase().contains('website')) {
+            return false;
+          }
+        }
+      }
+    }
+
     // Muted sources.
     if (a.feedSource != null && mutedSources.contains(a.feedSource)) {
       return false;
@@ -145,6 +198,17 @@ List<ArticleData> applyContentFilters(
     }
     return true;
   }).toList();
+}
+
+/// Extracts domain from a feed source or URL.
+String _extractDomain(String source) {
+  // Handle "web:domain.com" feed source format.
+  if (source.startsWith('web:')) return source.substring(4);
+  final uri = Uri.tryParse(source);
+  if (uri != null && uri.host.isNotEmpty) {
+    return uri.host.replaceFirst('www.', '');
+  }
+  return '';
 }
 
 /// Whether a network refresh is currently in progress.
@@ -323,6 +387,9 @@ class _ExploreViewState extends ConsumerState<ExploreView>
   final _scrollController = ScrollController();
   bool _didAutoRefresh = false;
 
+  /// Key to access ClassicWebView's navigation methods.
+  final _classicWebViewKey = GlobalKey<ClassicWebViewState>();
+
   @override
   bool get wantKeepAlive => true;
 
@@ -337,6 +404,10 @@ class _ExploreViewState extends ConsumerState<ExploreView>
 
   /// Per-article GlobalKeys for scroll restoration after navigation.
   final Map<String, GlobalKey> _itemKeys = {};
+
+  /// Last successfully loaded articles — used as fallback during transient
+  /// provider errors so the feed never flashes an error screen on refresh.
+  List<ArticleData>? _cachedArticles;
 
   /// URI of the article the user last opened; used to scroll back on return.
   String? _lastOpenedUri;
@@ -419,7 +490,7 @@ class _ExploreViewState extends ConsumerState<ExploreView>
   /// For non-Reddit sources (RSS / Nostr) there is nothing to page through.
   Future<void> _loadMore() async {
     if (_isLoadingMore || !mounted) return;
-    final selectedFeed = ref.read(selectedFeedProvider);
+    final selectedFeed = ref.read(activeExploreTabProvider)?.selectedFeed;
     // Determine which subscriptions are currently visible.
     final subs = ref.read(subscriptionsProvider).valueOrNull ?? [];
     final FeedSubscriptionData? sub;
@@ -618,9 +689,18 @@ class _ExploreViewState extends ConsumerState<ExploreView>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+
+    // Clear global browse session when the active tab changes.
+    ref.listen<ExploreTab?>(activeExploreTabProvider, (prev, next) {
+      if (prev?.id != next?.id) {
+        ref.read(browseSessionProvider.notifier).clear();
+      }
+    });
+
     final articlesAsync = ref.watch(articlesProvider);
     final subsAsync = ref.watch(subscriptionsProvider);
-    final selectedFeed = ref.watch(selectedFeedProvider);
+    final activeTab = ref.watch(activeExploreTabProvider);
+    final selectedFeed = activeTab?.selectedFeed;
     final browseSession = ref.watch(browseSessionProvider);
     final connectivity =
         ref.watch(connectivityProvider).valueOrNull ?? const [];
@@ -637,118 +717,257 @@ class _ExploreViewState extends ConsumerState<ExploreView>
         : _resolveSelectedFeedType(subsAsync, selectedFeed);
 
     return Scaffold(
-      body: NestedScrollView(
-        key: const PageStorageKey('explore-scroll'),
-        controller: _scrollController,
-        headerSliverBuilder: (context, innerBoxScrolled) => [
-          SliverAppBar(
-            floating: true,
-            snap: true,
-            backgroundColor: context.kabukBackground,
-            surfaceTintColor: Colors.transparent,
-            titleSpacing: 12,
-            title: OmniBar(
-              selectedFeed: browseSession != null
-                  ? 'browse:${browseSession.url}'
-                  : selectedFeed,
-              selectedFeedName: selectedFeedName,
-              selectedFeedType: selectedFeedType,
-              onTap: () => _openOmnibarSearch(context),
-              onScopeClear: browseSession != null
-                  ? () => ref.read(browseSessionProvider.notifier).clear()
-                  : () => ref.read(selectedFeedProvider.notifier).state = null,
-            ),
-            actions: [const IdentityQuickSwitcher(radius: 15)],
-          ),
-          // Feed filter chips — hidden during browse mode.
-          if (browseSession == null)
-            SliverToBoxAdapter(
-              child: FilterBar(
-                subscriptions: subsAsync.valueOrNull ?? const [],
-                selected: selectedFeed,
-                onSelected: (uri) =>
-                    ref.read(selectedFeedProvider.notifier).state = uri,
-                onUnsubscribed: () {
-                  ref.invalidate(subscriptionsProvider);
-                  ref.invalidate(articlesProvider);
-                },
-              ),
-            ),
-        ],
-        body: browseSession != null
-            ? _buildBrowseView(context, browseSession, isOffline: isOffline)
-            : AnimatedSwitcher(
-                duration: const Duration(milliseconds: 300),
-                child: articlesAsync.when(
-                  skipLoadingOnRefresh: true,
-                  data: (articles) {
-                    if (articles.isEmpty) {
-                      return RefreshIndicator(
-                        key: const ValueKey('empty'),
-                        onRefresh: _refreshFeed,
-                        color: KabukTheme.accentGreen,
-                        child: CustomScrollView(
-                          slivers: [
-                            if (isOffline) _buildOfflineBanner(),
-                            SliverFillRemaining(
-                              child: EmptyFeedState(
-                                onSearchTap: () => _openOmnibarSearch(context),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }
-                    return KeyedSubtree(
-                      key: const ValueKey('feed'),
-                      child: _buildFeed(
-                        context,
-                        articles,
-                        subsAsync,
-                        selectedFeed,
-                        isOffline: isOffline,
-                        isWifi: isWifiConn,
-                      ),
-                    );
-                  },
-                  loading: () => const KeyedSubtree(
-                      key: ValueKey('skeleton'),
-                      child: _FeedSkeleton(),
-                    ),
-                  error: (e, _) => Center(
-                    key: const ValueKey('error'),
+      body: Column(
+        children: [
+          // Fixed omnibar — always visible, like Chrome's address bar.
+          SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 8, 0),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => ref
+                        .read(exploreDrawerOpenProvider.notifier)
+                        .state = true,
                     child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.cloud_off_rounded,
-                            size: 48,
-                            color: context.kabukTextSecondary,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            friendlyError(e),
-                            style: TextStyle(
-                              color: context.kabukTextSecondary,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 16),
-                          FilledButton.icon(
-                            onPressed: () {
-                              ref.invalidate(articlesProvider);
-                            },
-                            icon: const Icon(Icons.refresh_rounded),
-                            label: const Text('Try again'),
-                          ),
-                        ],
+                      padding: const EdgeInsets.only(left: 4, right: 4),
+                      child: Icon(
+                        Icons.menu_rounded,
+                        size: 22,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurfaceVariant,
                       ),
                     ),
                   ),
+                  Expanded(
+                    child: OmniBar(
+                      selectedFeed: browseSession != null
+                          ? 'browse:${browseSession.url}'
+                          : selectedFeed,
+                      selectedFeedName: selectedFeedName,
+                      selectedFeedType: selectedFeedType,
+                      onTap: () => _openOmnibarSearch(context),
+                      onScopeClear: browseSession != null
+                          ? () => ref
+                              .read(browseSessionProvider.notifier)
+                              .clear()
+                          : () {
+                              final tab = ref.read(activeExploreTabProvider);
+                              if (tab != null) {
+                                ref.read(exploreTabsProvider.notifier).updateTab(
+                                  tab.id,
+                                  (t) => t.copyWith(selectedFeed: null),
+                                );
+                              }
+                            },
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const IdentityQuickSwitcher(radius: 15),
+                  const SizedBox(width: 4),
+                ],
+              ),
+            ),
+          ),
+          // Tab sidebar + content area.
+          Expanded(
+            child: GestureDetector(
+              onHorizontalDragUpdate: (details) {
+                // Swipe from left edge to open drawer.
+                if (details.globalPosition.dx < 40 &&
+                    details.delta.dx > 3) {
+                  ref.read(exploreDrawerOpenProvider.notifier).state =
+                      true;
+                }
+              },
+              behavior: HitTestBehavior.translucent,
+              child: Stack(
+                children: [
+                  _buildTabContent(
+                    context,
+                    ref.watch(activeExploreTabProvider),
+                    browseSession: browseSession,
+                    articlesAsync: articlesAsync,
+                    subsAsync: subsAsync,
+                    selectedFeed: selectedFeed,
+                    isOffline: isOffline,
+                    isWifi: isWifiConn,
+                  ),
+                  TabSidebar(
+                    onBack: () =>
+                        _classicWebViewKey.currentState?.goBack(),
+                    onForward: () =>
+                        _classicWebViewKey.currentState?.goForward(),
+                    onRefresh: () =>
+                        _classicWebViewKey.currentState?.reload(),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Tab content dispatcher — semantic feed vs. classic WebView
+  // ---------------------------------------------------------------------------
+
+  /// Selects the appropriate content widget based on the active tab's mode.
+  ///
+  /// In [ExploreTabMode.classic] the tab renders a [ClassicWebView] browser.
+  /// In [ExploreTabMode.semantic] (the default) the existing feed / browse
+  /// session layout is displayed.
+  Widget _buildTabContent(
+    BuildContext context,
+    ExploreTab? activeTab, {
+    required BrowseSession? browseSession,
+    required AsyncValue<List<ArticleData>> articlesAsync,
+    required AsyncValue<List<FeedSubscriptionData>> subsAsync,
+    required String? selectedFeed,
+    required bool isOffline,
+    required bool isWifi,
+  }) {
+    // Classic mode → full WebView browser.
+    if (activeTab?.mode == ExploreTabMode.classic) {
+      final tab = activeTab!;
+      return ClassicWebView(
+        key: _classicWebViewKey,
+        initialUrl: tab.url ?? 'https://www.google.com',
+        onUrlChanged: (url) {
+          ref.read(exploreTabsProvider.notifier).updateActiveUrl(url);
+        },
+        onTitleChanged: (title) {
+          ref.read(exploreTabsProvider.notifier).updateTab(
+                tab.id,
+                (t) => t.copyWith(title: title),
+              );
+        },
+      );
+    }
+
+    // Semantic mode → existing feed / browse content.
+    return NestedScrollView(
+      key: PageStorageKey('explore-scroll-${activeTab?.id}'),
+      controller: _scrollController,
+      headerSliverBuilder: (context, innerBoxScrolled) => [
+        if (browseSession == null)
+          SliverToBoxAdapter(
+            child: FilterBar(
+              subscriptions: subsAsync.valueOrNull ?? const [],
+              selected: selectedFeed,
+              onSelected: (uri) {
+                final tab = ref.read(activeExploreTabProvider);
+                if (tab != null) {
+                  ref.read(exploreTabsProvider.notifier).updateTab(
+                    tab.id,
+                    (t) => t.copyWith(selectedFeed: uri),
+                  );
+                }
+              },
+              onUnsubscribed: () {
+                ref.invalidate(subscriptionsProvider);
+                ref.invalidate(articlesProvider);
+              },
+            ),
+          ),
+      ],
+      body: browseSession != null
+          ? _buildBrowseView(context, browseSession, isOffline: isOffline)
+          : _buildArticlesBody(
+              context,
+              articlesAsync,
+              subsAsync,
+              selectedFeed,
+              isOffline: isOffline,
+              isWifi: isWifi,
+            ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Articles body — uses cached data to avoid error flash on refresh
+  // ---------------------------------------------------------------------------
+
+  Widget _buildArticlesBody(
+    BuildContext context,
+    AsyncValue<List<ArticleData>> articlesAsync,
+    AsyncValue<List<FeedSubscriptionData>> subsAsync,
+    String? selectedFeed, {
+    bool isOffline = false,
+    bool isWifi = true,
+  }) {
+    // Update cache whenever provider has data.
+    final freshData = articlesAsync.valueOrNull;
+    if (freshData != null) {
+      _cachedArticles = freshData;
+    }
+
+    // Prefer fresh data, fall back to cache, then show loading/error.
+    final articles = freshData ?? _cachedArticles;
+
+    if (articles != null) {
+      if (articles.isEmpty && !articlesAsync.isLoading) {
+        return RefreshIndicator(
+          key: const ValueKey('empty'),
+          onRefresh: _refreshFeed,
+          color: KabukTheme.accentGreen,
+          child: CustomScrollView(
+            slivers: [
+              if (isOffline) _buildOfflineBanner(),
+              SliverFillRemaining(
+                child: EmptyFeedState(
+                  onSearchTap: () => _openOmnibarSearch(context),
                 ),
               ),
+            ],
+          ),
+        );
+      }
+      return _buildFeed(
+        context,
+        articles,
+        subsAsync,
+        selectedFeed,
+        isOffline: isOffline,
+        isWifi: isWifi,
+      );
+    }
+
+    // No cached data at all — first load.
+    if (articlesAsync.isLoading) {
+      return const _FeedSkeleton();
+    }
+
+    // True error with no data ever loaded.
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.cloud_off_rounded,
+              size: 48,
+              color: context.kabukTextSecondary,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              friendlyError(articlesAsync.error ?? 'Unknown error'),
+              style: TextStyle(color: context.kabukTextSecondary),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: () => ref.invalidate(articlesProvider),
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Try again'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1079,7 +1298,7 @@ class _ExploreViewState extends ConsumerState<ExploreView>
 
   /// Opens the full-screen OmniBar search page.
   void _openOmnibarSearch(BuildContext context) {
-    final selectedFeed = ref.read(selectedFeedProvider);
+    final selectedFeed = ref.read(activeExploreTabProvider)?.selectedFeed;
     final subsAsync = ref.read(subscriptionsProvider);
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -1467,35 +1686,61 @@ class _ExploreViewState extends ConsumerState<ExploreView>
         }),
       FeedSort.hot =>
         articles..sort((a, b) {
-          final aScore = _engagementScore(a);
-          final bScore = _engagementScore(b);
+          final aScore = _hotScore(a);
+          final bScore = _hotScore(b);
           return bScore.compareTo(aScore);
         }),
       FeedSort.top =>
         articles..sort((a, b) {
-          final aUp = _parseUpvotes(a.description);
-          final bUp = _parseUpvotes(b.description);
-          return bUp.compareTo(aUp);
+          final cmp = _topScore(b).compareTo(_topScore(a));
+          if (cmp != 0) return cmp;
+          // Tiebreaker: newest first.
+          final aDate = a.datePublished ?? DateTime(2000);
+          final bDate = b.datePublished ?? DateTime(2000);
+          return bDate.compareTo(aDate);
         }),
     };
   }
 
-  /// Computes a simple engagement score from upvotes + comments in description.
-  int _engagementScore(ArticleData a) {
-    final upvotes = _parseUpvotes(a.description);
-    final comments = _parseComments(a.description);
-    return upvotes + (comments * 2);
+  /// Total engagement across all sources (Reddit description text + Nostr stats).
+  int _totalEngagement(ArticleData a) {
+    // Reddit / RSS — parsed from description emoji text.
+    final upvotes = _parseDescriptionInt(a.description, '⬆');
+    final comments = _parseDescriptionInt(a.description, '💬');
+    // Nostr social stats.
+    final nostr = a.nostrStats;
+    return upvotes +
+        comments +
+        nostr.reactionCount +
+        nostr.replyCount +
+        nostr.repostCount;
   }
 
-  int _parseUpvotes(String? desc) {
-    if (desc == null) return 0;
-    final m = RegExp('⬆\\s*([\\d,]+)').firstMatch(desc);
-    return m != null ? int.tryParse(m.group(1)!.replaceAll(',', '')) ?? 0 : 0;
+  /// Hacker-News-style hot score: engagement / (age_hours + 2)^1.5.
+  ///
+  /// For articles with zero engagement the formula naturally degrades to a
+  /// recency sort (smaller age → higher score).
+  double _hotScore(ArticleData a) {
+    final reactions = _parseDescriptionInt(a.description, '⬆') +
+        a.nostrStats.reactionCount;
+    final comments =
+        _parseDescriptionInt(a.description, '💬') + a.nostrStats.replyCount;
+    final reposts = a.nostrStats.repostCount;
+    final engagement = reactions + (comments * 2) + reposts;
+
+    final age =
+        DateTime.now().difference(a.datePublished ?? DateTime.now());
+    final hoursAge = age.inMinutes / 60.0;
+    return engagement / math.pow(hoursAge + 2, 1.5);
   }
 
-  int _parseComments(String? desc) {
+  /// Aggregate engagement score used by Top sort.
+  int _topScore(ArticleData a) => _totalEngagement(a);
+
+  /// Extracts the integer after [emoji] (e.g. `⬆ 1,234`) from [desc].
+  int _parseDescriptionInt(String? desc, String emoji) {
     if (desc == null) return 0;
-    final m = RegExp('💬\\s*([\\d,]+)').firstMatch(desc);
+    final m = RegExp('$emoji\\s*([\\d,]+)').firstMatch(desc);
     return m != null ? int.tryParse(m.group(1)!.replaceAll(',', '')) ?? 0 : 0;
   }
 

@@ -43,6 +43,7 @@ class FilterBar extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         children: [
           _chip(
+            context: context,
             label: 'All',
             icon: Icons.public_rounded,
             color: KabukTheme.accentGreen,
@@ -50,6 +51,7 @@ class FilterBar extends StatelessWidget {
             onTap: () => onSelected(null),
           ),
           _chip(
+            context: context,
             label: 'Nostr',
             icon: Icons.bolt_rounded,
             color: KabukTheme.purpleAccent,
@@ -61,6 +63,7 @@ class FilterBar extends StatelessWidget {
             final isNostr = sub.feedType == 'nostr';
             final isWeb = sub.feedType == 'web';
             return _chip(
+              context: context,
               label: sub.name ?? sub.feedUrl ?? 'Feed',
               icon: isNostr
                   ? Icons.bolt_rounded
@@ -87,6 +90,7 @@ class FilterBar extends StatelessWidget {
   }
 
   Widget _chip({
+    required BuildContext context,
     required String label,
     required IconData icon,
     required Color color,
@@ -110,7 +114,7 @@ class FilterBar extends StatelessWidget {
             style: TextStyle(
               fontSize: 13,
               fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-              color: isSelected ? Colors.white : KabukTheme.textSecondary,
+              color: isSelected ? Colors.white : context.kabukTextSecondary,
             ),
           ),
           selected: isSelected,
@@ -118,12 +122,12 @@ class FilterBar extends StatelessWidget {
             HapticFeedback.selectionClick();
             onTap();
           },
-          backgroundColor: KabukTheme.surface,
+          backgroundColor: context.kabukSurface,
           selectedColor: color.withAlpha(180),
           checkmarkColor: Colors.white,
           showCheckmark: false,
           side: BorderSide(
-            color: isSelected ? color : KabukTheme.divider,
+            color: isSelected ? color : context.kabukDivider,
             width: isSelected ? 0 : 1,
           ),
           padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -144,7 +148,7 @@ class FilterBar extends StatelessWidget {
 
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: KabukTheme.surfaceElevated,
+      backgroundColor: context.kabukSurfaceElevated,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
           top: Radius.circular(KabukTheme.radiusLg),
@@ -183,10 +187,10 @@ class FilterBar extends StatelessWidget {
                           children: [
                             Text(
                               sub.name ?? sub.feedUrl ?? 'Feed',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
-                                color: KabukTheme.textPrimary,
+                                color: context.kabukTextPrimary,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -194,9 +198,9 @@ class FilterBar extends StatelessWidget {
                             if (sub.feedUrl != null)
                               Text(
                                 sub.feedUrl!,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 12,
-                                  color: KabukTheme.textTertiary,
+                                  color: context.kabukTextTertiary,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -207,7 +211,7 @@ class FilterBar extends StatelessWidget {
                     ],
                   ),
                 ),
-                const Divider(height: 1, color: KabukTheme.divider),
+                Divider(height: 1, color: context.kabukDivider),
                 // Unsubscribe action.
                 ListTile(
                   leading: const Icon(
@@ -218,11 +222,11 @@ class FilterBar extends StatelessWidget {
                     'Unsubscribe',
                     style: TextStyle(color: KabukTheme.error),
                   ),
-                  subtitle: const Text(
+                  subtitle: Text(
                     'Remove feed and all its articles',
                     style: TextStyle(
                       fontSize: 12,
-                      color: KabukTheme.textTertiary,
+                      color: context.kabukTextTertiary,
                     ),
                   ),
                   onTap: () {
