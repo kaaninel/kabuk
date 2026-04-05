@@ -20,6 +20,7 @@ import 'package:kabuk/knowledge/types/usenet.dart';
 import 'package:kabuk/platform/shared/tmdb_client.dart';
 import 'package:kabuk/services/media_metadata.dart';
 import 'package:kabuk/services/usenet.dart';
+import 'package:kabuk/ui/explore/entity_player.dart';
 import 'package:kabuk/ui/explore/usenet_detail_page.dart';
 import 'package:kabuk/ui/theme.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -343,6 +344,9 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
                             episode: ep,
                             seriesName: series.name,
                             tvdbId: series.externalIds?.tvdbId,
+                            imdbId: series.externalIds?.imdbId,
+                            seriesPosterUrl: posterUrl,
+                            seriesBackdropUrl: backdropUrl,
                           )),
               ],
 
@@ -943,11 +947,17 @@ class _EpisodeCard extends StatelessWidget {
     required this.episode,
     required this.seriesName,
     this.tvdbId,
+    this.imdbId,
+    this.seriesPosterUrl,
+    this.seriesBackdropUrl,
   });
 
   final TvEpisode episode;
   final String seriesName;
   final int? tvdbId;
+  final String? imdbId;
+  final String? seriesPosterUrl;
+  final String? seriesBackdropUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -1036,25 +1046,32 @@ class _EpisodeCard extends StatelessWidget {
                 ),
               ),
 
-              // Usenet download button.
+              // Play button.
               Padding(
                 padding: const EdgeInsets.only(
                   right: KabukTheme.spacingXs,
                   top: KabukTheme.spacingXs,
                 ),
                 child: IconButton(
-                  icon: const Icon(Icons.download_rounded, size: 22),
-                  color: context.kabukTextSecondary,
-                  tooltip: 'Find on Usenet',
+                  icon: const Icon(
+                    Icons.play_circle_fill_rounded,
+                    size: 32,
+                    color: KabukTheme.accentGreen,
+                  ),
+                  tooltip: 'Play',
                   onPressed: () {
-                    _showUsenetSearchSheet(
+                    pushEntityPlayer(
                       context,
-                      title: '$seriesName ${episode.episodeCode}',
-                      tvdbId: tvdbId,
-                      season: episode.seasonNumber,
-                      episode: episode.episodeNumber,
-                      fallbackQuery:
-                          '"$seriesName" ${episode.episodeCode}',
+                      PlayableEntity(
+                        title: seriesName,
+                        posterUrl: seriesPosterUrl,
+                        backdropUrl: seriesBackdropUrl,
+                        imdbId: imdbId,
+                        tvdbId: tvdbId,
+                        season: episode.seasonNumber,
+                        episode: episode.episodeNumber,
+                        episodeTitle: episode.name,
+                      ),
                     );
                   },
                 ),
@@ -1165,7 +1182,7 @@ void _showUsenetSearchSheet(
   );
 }
 
-/// Full-width movie button that triggers a Usenet movie search.
+/// Netflix-style Play button + secondary Browse Sources for movies.
 class _UsenetMovieButton extends StatelessWidget {
   const _UsenetMovieButton({required this.movie});
 
@@ -1173,35 +1190,85 @@ class _UsenetMovieButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: OutlinedButton.icon(
-        onPressed: () {
-          final year = movie.releaseDate?.year;
-          final fallback = year != null
-              ? '"${movie.title}" $year'
-              : '"${movie.title}"';
+    final posterUrl = TmdbImageHelper.url(
+      movie.posterPath,
+      size: MediaImageSize.medium,
+    );
+    final backdropUrl = TmdbImageHelper.url(
+      movie.backdropPath,
+      size: MediaImageSize.large,
+    );
+    final year = movie.releaseDate?.year;
 
-          _showUsenetSearchSheet(
-            context,
-            title: movie.title,
-            imdbId: movie.externalIds?.imdbId,
-            fallbackQuery: fallback,
-          );
-        },
-        icon: const Icon(Icons.download_rounded),
-        label: const Text('Find on Usenet'),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: KabukTheme.accentGreen,
-          side: const BorderSide(color: KabukTheme.accentGreen),
-          padding: const EdgeInsets.symmetric(
-            vertical: KabukTheme.spacingSm + 4,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
+    return Column(
+      children: [
+        // Primary Play button.
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: () => pushEntityPlayer(
+              context,
+              PlayableEntity(
+                title: movie.title,
+                year: year,
+                posterUrl: posterUrl,
+                backdropUrl: backdropUrl,
+                overview: movie.overview,
+                imdbId: movie.externalIds?.imdbId,
+              ),
+            ),
+            icon: const Icon(Icons.play_arrow_rounded, size: 28),
+            label: const Text('Play'),
+            style: FilledButton.styleFrom(
+              backgroundColor: KabukTheme.accentGreen,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(
+                vertical: KabukTheme.spacingSm + 4,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
+              ),
+              textStyle: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ),
-      ),
+        const SizedBox(height: KabukTheme.spacingSm),
+
+        // Secondary Browse Sources button.
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: () {
+              final fallback = year != null
+                  ? '"${movie.title}" $year'
+                  : '"${movie.title}"';
+              _showUsenetSearchSheet(
+                context,
+                title: movie.title,
+                imdbId: movie.externalIds?.imdbId,
+                fallbackQuery: fallback,
+              );
+            },
+            icon: const Icon(Icons.search_rounded, size: 20),
+            label: const Text('Browse Sources'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: context.kabukTextSecondary,
+              side: BorderSide(
+                color: context.kabukTextSecondary.withValues(alpha: 0.3),
+              ),
+              padding: const EdgeInsets.symmetric(
+                vertical: KabukTheme.spacingSm,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

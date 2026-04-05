@@ -870,6 +870,37 @@ abstract final class NS {
   static const String kabukPluginInstalledAt = '${kabuk}pluginInstalledAt';
 
   // ---------------------------------------------------------------------------
+  // Kabuk streaming quality preference predicates
+  // ---------------------------------------------------------------------------
+
+  /// `kabuk:StreamingPrefs` entity type — user's streaming quality defaults.
+  static const String kabukStreamingPrefs = '${kabuk}StreamingPrefs';
+
+  /// `kabuk:preferredResolution` — preferred video resolution (2160p, 1080p, etc.).
+  static const String kabukPreferredResolution = '${kabuk}preferredResolution';
+
+  /// `kabuk:preferredCodec` — preferred video codec (x265, x264, AV1, any).
+  static const String kabukPreferredCodec = '${kabuk}preferredCodec';
+
+  /// `kabuk:preferredSource` — preferred release source (BluRay, WEB-DL, any).
+  static const String kabukPreferredSource = '${kabuk}preferredSource';
+
+  /// `kabuk:preferredAudio` — preferred audio format (Atmos, DTS-HD MA, any).
+  static const String kabukPreferredAudio = '${kabuk}preferredAudio';
+
+  /// `kabuk:preferredLanguage` — preferred content language (English, Multi, etc.).
+  static const String kabukPreferredLanguage = '${kabuk}preferredLanguage';
+
+  /// `kabuk:hdrPreference` — HDR preference (required, preferred, any, none).
+  static const String kabukHdrPreference = '${kabuk}hdrPreference';
+
+  /// `kabuk:maxFileSizeMb` — maximum file size in megabytes (0 = no limit).
+  static const String kabukMaxFileSizeMb = '${kabuk}maxFileSizeMb';
+
+  /// `kabuk:maxRetries` — maximum NZB sources to try before giving up.
+  static const String kabukMaxRetries = '${kabuk}maxRetries';
+
+  // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
 

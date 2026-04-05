@@ -28,6 +28,7 @@ import 'package:kabuk/agents/tiered_llm.dart';
 import 'package:kabuk/knowledge/database.dart';
 import 'package:kabuk/knowledge/drift_store.dart';
 import 'package:kabuk/knowledge/store.dart';
+import 'package:kabuk/knowledge/types/streaming_prefs.dart';
 import 'package:kabuk/knowledge/types/person.dart';
 import 'package:kabuk/platform/android/auth_service_impl.dart' as android_auth;
 import 'package:kabuk/platform/android/mesh_service_impl.dart' as android_mesh;
@@ -55,6 +56,7 @@ import 'package:kabuk/platform/shared/imdbapi_client.dart';
 import 'package:kabuk/platform/shared/tmdb_client.dart';
 import 'package:kabuk/platform/shared/tvdb_client.dart';
 import 'package:kabuk/platform/shared/tvmaze_client.dart';
+import 'package:kabuk/platform/shared/usenet/usenet_resolver.dart';
 import 'package:kabuk/platform/shared/usenet/usenet_service_impl.dart';
 import 'package:kabuk/platform/shared/vault_service_impl.dart';
 import 'package:kabuk/rfw/built_in_libraries.dart';
@@ -318,6 +320,35 @@ final usenetServiceProvider = Provider<UsenetService>((ref) {
     cachePath: cachePath,
   );
 });
+
+/// User's streaming quality preferences (auto-selection defaults).
+final streamingPrefsProvider =
+    FutureProvider<StreamingPrefs>((ref) async {
+  final store = ref.watch(knowledgeStoreProvider);
+  return store.getStreamingPrefs();
+});
+
+/// Usenet source resolver — ranks NZB results against user preferences.
+final usenetResolverProvider = Provider<UsenetResolver>((ref) {
+  final usenet = ref.watch(usenetServiceProvider);
+  return UsenetResolver(usenetService: usenet);
+});
+
+/// Stream orchestrator — automatic source selection with fallback chain.
+///
+/// Each consumer gets its own instance (use `.autoDispose` in widgets).
+final streamOrchestratorProvider = Provider.autoDispose<StreamOrchestrator>(
+  (ref) {
+    final usenet = ref.watch(usenetServiceProvider);
+    final resolver = ref.watch(usenetResolverProvider);
+    final orchestrator = StreamOrchestrator(
+      usenetService: usenet,
+      resolver: resolver,
+    );
+    ref.onDispose(orchestrator.dispose);
+    return orchestrator;
+  },
+);
 
 // =============================================================================
 // Media Metadata API Keys

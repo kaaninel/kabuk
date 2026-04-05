@@ -29,6 +29,7 @@ import 'package:kabuk/ui/settings/my_profile_page.dart';
 import 'package:kabuk/ui/settings/relay_settings_page.dart';
 import 'package:kabuk/ui/settings/service_providers_page.dart';
 import 'package:kabuk/ui/settings/settings_shared.dart';
+import 'package:kabuk/ui/settings/streaming_prefs_page.dart';
 import 'package:kabuk/ui/settings/usenet_settings_page.dart';
 import 'package:kabuk/ui/theme.dart';
 
@@ -400,6 +401,23 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) => const UsenetSettingsPage(),
+              ),
+            ),
+          ),
+          const SizedBox(height: KabukTheme.spacingXs),
+          SettingsTile(
+            icon: Icons.high_quality_rounded,
+            iconColor: KabukTheme.blueAccent,
+            title: 'Streaming Quality',
+            subtitle: 'Auto-selection defaults for resolution, codec & more',
+            trailing: Icon(
+              Icons.chevron_right,
+              color: context.kabukTextSecondary,
+              size: 20,
+            ),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const StreamingPrefsPage(),
               ),
             ),
           ),
