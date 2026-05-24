@@ -103,11 +103,17 @@ class _EntityPlayerPageState extends ConsumerState<EntityPlayerPage> {
   bool _isBuffering = true;
   bool _isFullscreen = false;
   bool _isLandscapeVideo = false;
-  Duration _position = Duration.zero;
-  Duration _duration = Duration.zero;
-  Duration _bufferPosition = Duration.zero;
   bool _controlsVisible = true;
   Timer? _hideControlsTimer;
+
+  // Use ValueNotifiers for high-frequency updates to avoid full rebuilds.
+  final _positionNotifier = ValueNotifier<Duration>(Duration.zero);
+  final _bufferNotifier = ValueNotifier<Duration>(Duration.zero);
+  final _durationNotifier = ValueNotifier<Duration>(Duration.zero);
+
+  // Throttle position updates to ~4 Hz so we don't rebuild 60× per second.
+  DateTime _lastPositionUpdate = DateTime(0);
+  static const _positionThrottle = Duration(milliseconds: 250);
 
   // -- Subscriptions --
   StreamSubscription<Duration>? _positionSub;
@@ -148,11 +154,31 @@ class _EntityPlayerPageState extends ConsumerState<EntityPlayerPage> {
     _errorSub?.cancel();
     _widthSub?.cancel();
     _orchestratorSub?.cancel();
-    _player?.dispose();
-    // Restore orientation on exit.
-    SystemChrome.setPreferredOrientations([]);
+    _positionNotifier.dispose();
+    _bufferNotifier.dispose();
+    _durationNotifier.dispose();
+    // Fire-and-forget but ensure cleanup actually runs.
+    _disposeAsync();
+    // Restore portrait orientation and system UI on exit.
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
+  }
+
+  Future<void> _disposeAsync() async {
+    try {
+      await _player?.dispose();
+    } catch (e) {
+      debugPrint('[EntityPlayer] player dispose error: $e');
+    }
+    _player = null;
+    _videoController = null;
+    try {
+      await _orchestrator?.dispose();
+    } catch (e) {
+      debugPrint('[EntityPlayer] orchestrator dispose error: $e');
+    }
+    _orchestrator = null;
   }
 
   // ---------------------------------------------------------------------------
@@ -160,31 +186,64 @@ class _EntityPlayerPageState extends ConsumerState<EntityPlayerPage> {
   // ---------------------------------------------------------------------------
 
   Future<void> _startOrchestrator() async {
-    final orchestrator = ref.read(streamOrchestratorProvider);
-    _orchestrator = orchestrator;
+    try {
+      if (!mounted) return;
+      setState(() => _statusMessage = 'Initializing...');
+      debugPrint('[EntityPlayer] Initializing orchestrator');
 
-    // Listen to orchestrator events.
-    _orchestratorSub = orchestrator.events.listen(_onOrchestratorEvent);
-
-    // Load preferences.
-    final prefsAsync = await ref.read(streamingPrefsProvider.future);
-    final prefs = prefsAsync;
-
-    if (_entity.isTvEpisode) {
-      await orchestrator.playTvEpisode(
-        tvdbId: _entity.tvdbId,
-        seriesTitle: _entity.title,
-        season: _entity.season,
-        episode: _entity.episode,
-        prefs: prefs,
+      // Create orchestrator directly — NOT through autoDispose provider,
+      // because ref.read() doesn't keep the provider alive and it gets
+      // disposed before the async search completes.
+      final usenet = ref.read(usenetServiceProvider);
+      final resolver = ref.read(usenetResolverProvider);
+      final orchestrator = StreamOrchestrator(
+        usenetService: usenet,
+        resolver: resolver,
       );
-    } else {
-      await orchestrator.playMovie(
-        imdbId: _entity.imdbId,
-        title: _entity.title,
-        year: _entity.year,
-        prefs: prefs,
-      );
+      _orchestrator = orchestrator;
+
+      // Listen to orchestrator events.
+      _orchestratorSub = orchestrator.events.listen(_onOrchestratorEvent);
+
+      if (!mounted) return;
+      setState(() => _statusMessage = 'Loading preferences...');
+      debugPrint('[EntityPlayer] Loading preferences...');
+
+      // Load preferences.
+      final prefs = await ref.read(streamingPrefsProvider.future);
+      debugPrint('[EntityPlayer] Prefs loaded: res=${prefs.resolution} lang=${prefs.language}');
+
+      if (!mounted) return;
+      setState(() => _statusMessage = 'Starting search...');
+      debugPrint('[EntityPlayer] Starting search: imdbId=${_entity.imdbId} title=${_entity.title} year=${_entity.year}');
+
+      if (_entity.isTvEpisode) {
+        await orchestrator.playTvEpisode(
+          tvdbId: _entity.tvdbId,
+          seriesTitle: _entity.title,
+          season: _entity.season,
+          episode: _entity.episode,
+          prefs: prefs,
+        );
+      } else {
+        await orchestrator.playMovie(
+          imdbId: _entity.imdbId,
+          title: _entity.title,
+          year: _entity.year,
+          prefs: prefs,
+        );
+      }
+      debugPrint('[EntityPlayer] Orchestrator completed');
+    } catch (e) {
+      debugPrint('[EntityPlayer] ERROR: $e');
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _errorMessage = 'Error: $e';
+          _phase = _OrchestratorPhase.failed;
+          _statusMessage = 'Error: $e';
+        });
+      }
     }
   }
 
@@ -262,15 +321,24 @@ class _EntityPlayerPageState extends ConsumerState<EntityPlayerPage> {
     _player = player;
     _videoController = videoController;
 
+    // Position updates: throttle to ~4 Hz — no setState needed, just notifier.
     _positionSub = player.stream.position.listen((p) {
-      if (mounted) setState(() => _position = p);
+      if (!mounted) return;
+      final now = DateTime.now();
+      if (now.difference(_lastPositionUpdate) >= _positionThrottle) {
+        _lastPositionUpdate = now;
+        _positionNotifier.value = p;
+      }
     });
+    // Duration rarely changes — update notifier directly.
     _durationSub = player.stream.duration.listen((d) {
-      if (mounted) setState(() => _duration = d);
+      if (mounted) _durationNotifier.value = d;
     });
+    // Buffer position: throttle same as position.
     _bufferSub = player.stream.buffer.listen((b) {
-      if (mounted) setState(() => _bufferPosition = b);
+      if (mounted) _bufferNotifier.value = b;
     });
+    // Playing/buffering change infrequently — setState is fine.
     _playingSub = player.stream.playing.listen((p) {
       if (mounted) setState(() => _isPlaying = p);
     });
@@ -293,6 +361,7 @@ class _EntityPlayerPageState extends ConsumerState<EntityPlayerPage> {
         final h = player.state.height ?? 1;
         if (h > 0 && w / h > 1.2) {
           _isLandscapeVideo = true;
+          // Rotate device to landscape for immersive playback.
           SystemChrome.setPreferredOrientations([
             DeviceOrientation.landscapeLeft,
             DeviceOrientation.landscapeRight,
@@ -321,6 +390,7 @@ class _EntityPlayerPageState extends ConsumerState<EntityPlayerPage> {
   // ---------------------------------------------------------------------------
 
   void _toggleControls() {
+    debugPrint('[EntityPlayer] _toggleControls fired, was=${_controlsVisible}');
     setState(() => _controlsVisible = !_controlsVisible);
     if (_controlsVisible) _scheduleHideControls();
   }
@@ -344,7 +414,7 @@ class _EntityPlayerPageState extends ConsumerState<EntityPlayerPage> {
   void _seekRelative(Duration offset) {
     final player = _player;
     if (player == null) return;
-    final target = _position + offset;
+    final target = _positionNotifier.value + offset;
     player.seek(target);
     _scheduleHideControls();
   }
@@ -400,9 +470,17 @@ class _EntityPlayerPageState extends ConsumerState<EntityPlayerPage> {
       maxFileSizeMb: 0,
     );
 
-    final orchestrator = ref.read(streamOrchestratorProvider);
-    _orchestrator = orchestrator;
+    // Dispose old orchestrator to stop its stream and free resources.
     _orchestratorSub?.cancel();
+    await _orchestrator?.dispose();
+
+    final usenet = ref.read(usenetServiceProvider);
+    final resolver = ref.read(usenetResolverProvider);
+    final orchestrator = StreamOrchestrator(
+      usenetService: usenet,
+      resolver: resolver,
+    );
+    _orchestrator = orchestrator;
     _orchestratorSub = orchestrator.events.listen(_onOrchestratorEvent);
 
     if (_entity.isTvEpisode) {
@@ -434,32 +512,54 @@ class _EntityPlayerPageState extends ConsumerState<EntityPlayerPage> {
 
     // Playing state — show video.
     if (_initialized && _videoController != null) {
+      Widget playerContent = Stack(
+        fit: StackFit.expand,
+        children: [
+          // Video surface — isolated from overlay rebuilds.
+          Positioned.fill(
+            child: RepaintBoundary(
+              child: Video(
+                controller: _videoController!,
+                controls: (state) => const SizedBox.shrink(),
+              ),
+            ),
+          ),
+
+          // Full-screen tap catcher — always present, absorbs taps on
+          // the video area. Controls are rendered ABOVE and naturally
+          // receive their own taps first via Stack hit-test order.
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _toggleControls,
+            ),
+          ),
+
+          // Controls overlay — rendered ABOVE the tap catcher.
+          // Their interactive widgets (buttons, sliders) absorb taps
+          // before the GestureDetector below.
+          if (_controlsVisible) ...[
+            _buildGradientOverlay(),
+            _buildTopBar(theme, cs),
+            _buildCenterControls(cs),
+            _buildBottomControls(theme, cs),
+          ],
+
+          // Buffering indicator over video.
+          if (_isBuffering)
+            const Center(
+              child: CircularProgressIndicator(color: Colors.white70),
+            ),
+          ],
+        );
+
+      // For landscape videos, the device is rotated via
+      // SystemChrome.setPreferredOrientations — no RotatedBox needed.
+      // The Video widget fills the available space naturally.
+
       return Scaffold(
         backgroundColor: Colors.black,
-        body: GestureDetector(
-          onTap: _toggleControls,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // Video surface.
-              Center(child: Video(controller: _videoController!)),
-
-              // Controls overlay.
-              if (_controlsVisible) ...[
-                _buildGradientOverlay(),
-                _buildTopBar(theme, cs),
-                _buildCenterControls(cs),
-                _buildBottomControls(theme, cs),
-              ],
-
-              // Buffering indicator over video.
-              if (_isBuffering)
-                const Center(
-                  child: CircularProgressIndicator(color: Colors.white70),
-                ),
-            ],
-          ),
-        ),
+        body: playerContent,
       );
     }
 
@@ -634,30 +734,32 @@ class _EntityPlayerPageState extends ConsumerState<EntityPlayerPage> {
   // ---------------------------------------------------------------------------
 
   Widget _buildGradientOverlay() {
-    return Column(
-      children: [
-        Container(
-          height: 100,
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Colors.black54, Colors.transparent],
+    return IgnorePointer(
+      child: Column(
+        children: [
+          Container(
+            height: 100,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Colors.black54, Colors.transparent],
+              ),
             ),
           ),
-        ),
-        const Spacer(),
-        Container(
-          height: 120,
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.bottomCenter,
-              end: Alignment.topCenter,
-              colors: [Colors.black54, Colors.transparent],
+          const Spacer(),
+          Container(
+            height: 120,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.bottomCenter,
+                end: Alignment.topCenter,
+                colors: [Colors.black54, Colors.transparent],
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -673,7 +775,10 @@ class _EntityPlayerPageState extends ConsumerState<EntityPlayerPage> {
             children: [
               IconButton(
                 icon: const Icon(Icons.arrow_back, color: Colors.white),
-                onPressed: () => Navigator.of(context).pop(),
+                onPressed: () {
+                  debugPrint('[EntityPlayer] BACK BUTTON pressed!');
+                  Navigator.of(context).pop();
+                },
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -769,10 +874,6 @@ class _EntityPlayerPageState extends ConsumerState<EntityPlayerPage> {
   }
 
   Widget _buildBottomControls(ThemeData theme, ColorScheme cs) {
-    final posMs = _position.inMilliseconds.toDouble();
-    final durMs = _duration.inMilliseconds.toDouble();
-    final bufMs = _bufferPosition.inMilliseconds.toDouble();
-
     return Positioned(
       bottom: 0,
       left: 0,
@@ -783,67 +884,95 @@ class _EntityPlayerPageState extends ConsumerState<EntityPlayerPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Progress bar.
-              Stack(
-                children: [
-                  // Buffer progress.
-                  SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      trackHeight: 3,
-                      thumbShape: SliderComponentShape.noThumb,
-                      overlayShape: SliderComponentShape.noOverlay,
-                      activeTrackColor: Colors.white24,
-                      inactiveTrackColor: Colors.white10,
-                    ),
-                    child: Slider(
-                      value: durMs > 0
-                          ? (bufMs / durMs).clamp(0.0, 1.0)
-                          : 0.0,
-                      onChanged: (_) {},
-                    ),
-                  ),
-                  // Playback progress.
-                  SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      trackHeight: 3,
-                      thumbShape:
-                          const RoundSliderThumbShape(enabledThumbRadius: 6),
-                      overlayShape: SliderComponentShape.noOverlay,
-                      activeTrackColor: cs.primary,
-                      inactiveTrackColor: Colors.transparent,
-                    ),
-                    child: Slider(
-                      value: durMs > 0
-                          ? (posMs / durMs).clamp(0.0, 1.0)
-                          : 0.0,
-                      onChanged: (v) {
-                        final target =
-                            Duration(milliseconds: (v * durMs).toInt());
-                        _player?.seek(target);
-                        _scheduleHideControls();
-                      },
-                    ),
-                  ),
-                ],
+              // Progress bar — driven by ValueNotifiers, NOT setState.
+              ValueListenableBuilder<Duration>(
+                valueListenable: _durationNotifier,
+                builder: (_, dur, __) {
+                  final durMs = dur.inMilliseconds.toDouble();
+                  return Stack(
+                    children: [
+                      // Buffer progress.
+                      ValueListenableBuilder<Duration>(
+                        valueListenable: _bufferNotifier,
+                        builder: (_, buf, __) {
+                          final bufMs = buf.inMilliseconds.toDouble();
+                          return SliderTheme(
+                            data: SliderTheme.of(context).copyWith(
+                              trackHeight: 3,
+                              thumbShape: SliderComponentShape.noThumb,
+                              overlayShape: SliderComponentShape.noOverlay,
+                              activeTrackColor: Colors.white24,
+                              inactiveTrackColor: Colors.white10,
+                            ),
+                            child: Slider(
+                              value: durMs > 0
+                                  ? (bufMs / durMs).clamp(0.0, 1.0)
+                                  : 0.0,
+                              onChanged: (_) {},
+                            ),
+                          );
+                        },
+                      ),
+                      // Playback progress.
+                      ValueListenableBuilder<Duration>(
+                        valueListenable: _positionNotifier,
+                        builder: (_, pos, __) {
+                          final posMs = pos.inMilliseconds.toDouble();
+                          return SliderTheme(
+                            data: SliderTheme.of(context).copyWith(
+                              trackHeight: 3,
+                              thumbShape: const RoundSliderThumbShape(
+                                  enabledThumbRadius: 6),
+                              overlayShape: SliderComponentShape.noOverlay,
+                              activeTrackColor: cs.primary,
+                              inactiveTrackColor: Colors.transparent,
+                            ),
+                            child: Slider(
+                              value: durMs > 0
+                                  ? (posMs / durMs).clamp(0.0, 1.0)
+                                  : 0.0,
+                              onChanged: (v) {
+                                final target = Duration(
+                                    milliseconds: (v * durMs).toInt());
+                                _player?.seek(target);
+                                _scheduleHideControls();
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  );
+                },
               ),
               // Time + quality info.
-              Row(
-                children: [
-                  Text(
-                    '${_formatDuration(_position)} / ${_formatDuration(_duration)}',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: Colors.white70,
-                    ),
-                  ),
-                  const Spacer(),
-                  if (_activeSource != null)
-                    Text(
-                      _activeSource!.label,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: Colors.white54,
-                      ),
-                    ),
-                ],
+              ValueListenableBuilder<Duration>(
+                valueListenable: _positionNotifier,
+                builder: (_, pos, __) {
+                  return ValueListenableBuilder<Duration>(
+                    valueListenable: _durationNotifier,
+                    builder: (_, dur, __) {
+                      return Row(
+                        children: [
+                          Text(
+                            '${_formatDuration(pos)} / ${_formatDuration(dur)}',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: Colors.white70,
+                            ),
+                          ),
+                          const Spacer(),
+                          if (_activeSource != null)
+                            Text(
+                              _activeSource!.label,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: Colors.white54,
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  );
+                },
               ),
             ],
           ),

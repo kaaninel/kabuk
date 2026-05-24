@@ -1,8 +1,8 @@
 /// Composite media metadata service — always-available search via free APIs,
 /// enhanced with TMDB when an API key is configured.
 ///
-/// **Free tier (no API key):** TVmaze for TV series, IMDbAPI.dev for movies.
-/// **Enhanced tier:** TMDB for all media with fallback to the free sources.
+/// **Free tier (no API key):** TVmaze for TV series, IMDb search proxy for
+/// movies. **Enhanced tier:** TMDB for all media with fallback to free sources.
 ///
 /// The service uses synthetic IDs to route detail requests to the correct
 /// backend:
@@ -196,6 +196,9 @@ class CompositeMediaService implements MediaMetadataService {
           }
         }
       }
+
+      // Sort by relevance: exact matches first, then close matches.
+      _sortByRelevance(merged, query);
 
       return Result.success(merged);
     } on Exception catch (e, st) {
@@ -516,6 +519,7 @@ class CompositeMediaService implements MediaMetadataService {
           : MediaType.movie,
       posterPath: item.posterUrl,
       releaseYear: item.year,
+      imdbId: item.id,
     );
   }
 
@@ -601,5 +605,52 @@ class CompositeMediaService implements MediaMetadataService {
   static String _dedupeKey(String title, int? year) {
     final normalised = title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
     return '$normalised:${year ?? ''}';
+  }
+
+  // -------------------------------------------------------------------------
+  // Relevance sorting
+  // -------------------------------------------------------------------------
+
+  /// Sorts [results] in-place so exact title matches appear first, then
+  /// prefix matches, then substring matches, then the rest.
+  static void _sortByRelevance(
+    List<MediaSearchResult> results,
+    String query,
+  ) {
+    final q = query.toLowerCase().trim();
+    results.sort((a, b) {
+      final scoreA = _relevanceScore(a, q);
+      final scoreB = _relevanceScore(b, q);
+      return scoreB.compareTo(scoreA); // Higher = better.
+    });
+  }
+
+  /// Returns a relevance score for sorting. Higher is more relevant.
+  static int _relevanceScore(MediaSearchResult r, String query) {
+    final title = r.title.toLowerCase();
+    var score = 0;
+
+    // Exact match is best.
+    if (title == query) {
+      score += 1000;
+    } else if (title.startsWith(query)) {
+      score += 500;
+    } else if (title.contains(query)) {
+      score += 200;
+    }
+
+    // Prefer movies over TV for generic queries (movies are rarer in
+    // free-tier results, so boost them).
+    if (r.mediaType == MediaType.movie) score += 50;
+
+    // Prefer results with posters (indicates higher data quality).
+    if (r.posterPath != null) score += 30;
+
+    // Prefer results with ratings.
+    if (r.voteAverage != null && r.voteAverage! > 0) {
+      score += (r.voteAverage! * 5).toInt();
+    }
+
+    return score;
   }
 }

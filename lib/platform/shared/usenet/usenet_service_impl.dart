@@ -12,6 +12,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as dev;
 
+import 'package:flutter/foundation.dart';
 import 'package:kabuk/config/errors.dart';
 import 'package:kabuk/config/result.dart';
 import 'package:kabuk/knowledge/store.dart';
@@ -577,42 +578,41 @@ class UsenetServiceImpl implements UsenetService {
   @override
   Future<Result<StreamSession>> startStream(NzbFile nzb) async {
     try {
-      dev.log(
-        'startStream: loading providers…',
-        name: 'UsenetService',
-      );
+      print('[STREAM] startStream: "${nzb.title}" files=${nzb.files.length}');
+      for (final f in nzb.files) {
+        print('[STREAM]   file: "${f.subject}" segs=${f.segments.length}');
+      }
       await _ensureProvidersInPool();
-      dev.log(
-        'startStream: providers loaded, initialising cache…',
-        name: 'UsenetService',
-      );
+      print('[STREAM] providers loaded');
       await _initCacheOnce();
-      dev.log(
-        'startStream: cache ready, building pipeline…',
-        name: 'UsenetService',
-      );
+      print('[STREAM] cache ready');
 
-      // Convert to parser-layer types for the pipeline.
       final doc = _documentFromNzbFile(nzb);
+      print('[STREAM] doc files=${doc.files.length}');
+      for (final f in doc.files) {
+        print('[STREAM]   parsed: fn="${f.filename}" '
+            'bytes=${f.totalBytes} mime=${f.detectedContentType} '
+            'isPar2=${f.isPar2} isRar=${f.isRar} isNfo=${f.isNfo} '
+            'isSample=${f.isSample}');
+      }
 
       final pipeline = StreamPipeline(
         pool: _ensurePool,
         cache: _ensureCache,
       );
 
+      print('[STREAM] calling pipeline.start()…');
       await pipeline.start(doc);
+      print('[STREAM] pipeline.start() returned — '
+          'isReady=${pipeline.isReady} totalBytes=${pipeline.totalBytes} '
+          'mime=${pipeline.mimeType}');
 
       if (!pipeline.isReady) {
+        print('[STREAM] pipeline NOT ready — returning failure');
         return const Result.failure(
           UsenetStreamError('', 'Pipeline failed to become ready'),
         );
       }
-
-      dev.log(
-        'startStream: pipeline ready — ${pipeline.totalBytes} bytes, '
-        'mime=${pipeline.mimeType}',
-        name: 'UsenetService',
-      );
 
       final sessionId = 'stream_${DateTime.now().millisecondsSinceEpoch}';
 
@@ -623,10 +623,11 @@ class UsenetServiceImpl implements UsenetService {
       );
 
       _pipelines[sessionId] = pipeline;
+      print('[STREAM] session created: ${session.localUrl}');
 
       return Result.success(session);
     } catch (e, st) {
-      dev.log('startStream failed', error: e, stackTrace: st);
+      print('[STREAM] startStream FAILED: $e\n$st');
       return Result.failure(
         UsenetStreamError('', 'Failed to start stream: $e'),
       );
@@ -636,7 +637,9 @@ class UsenetServiceImpl implements UsenetService {
   @override
   Future<Result<void>> stopStream(String sessionId) async {
     try {
-      _pipelines.remove(sessionId);
+      final pipeline = _pipelines.remove(sessionId);
+      // Dispose the pipeline to cancel its fetch scheduler and free resources.
+      await pipeline?.dispose();
       await _ensureServer.removeSession(sessionId);
       return const Result.success(null);
     } catch (e, st) {

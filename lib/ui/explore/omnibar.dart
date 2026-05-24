@@ -40,6 +40,7 @@ import 'package:kabuk/ui/explore/discovery_providers.dart';
 import 'package:kabuk/ui/explore/explore_tab.dart';
 import 'package:kabuk/ui/explore/explore_view.dart';
 import 'package:kabuk/ui/explore/feed_management_sheet.dart';
+import 'package:kabuk/ui/explore/entity_player.dart' show PlayableEntity, pushEntityPlayer;
 import 'package:kabuk/ui/explore/media_detail_page.dart' show pushMediaDetail;
 import 'package:kabuk/ui/explore/profile_view.dart';
 import 'package:kabuk/ui/explore/topic_following.dart';
@@ -543,7 +544,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
     }
 
     // TMDB media search — for default queries and `media:` prefix.
-    // Uses composite service (TVmaze + IMDbAPI.dev + optional TMDB).
+    // Uses composite service (TVmaze + IMDb search proxy + optional TMDB).
     _mediaDebounce?.cancel();
     final isMedia = _isMediaQuery(q);
     if (q.isNotEmpty && (!_isBrowseableQuery(q) || isMedia) && !_isUrlQuery(q)) {
@@ -1214,49 +1215,7 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
               ),
             if (_nostrResults.isNotEmpty && _scope != 'usenet:all')
               _buildNostrResultsSection(),
-            if (_usenetSearching && _scope != 'nostr:global')
-              Padding(
-                padding: EdgeInsets.all(24),
-                child: Center(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: KabukTheme.warmAccent,
-                        ),
-                      ),
-                      SizedBox(width: 12),
-                      Text(
-                        'Searching Usenet indexers...',
-                        style: TextStyle(
-                          color: context.kabukTextSecondary,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            if (_usenetResults.isNotEmpty && _scope != 'nostr:global')
-              _buildUsenetResultsSection(),
-            if (_usenetError != null &&
-                !_usenetSearching &&
-                _scope != 'nostr:global')
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Text(
-                  _usenetError!,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.error,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
+            // Media results first — entity-centric cards with posters.
             if (_mediaSearching)
               Padding(
                 padding: EdgeInsets.all(24),
@@ -1312,6 +1271,50 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
                       ),
                     ),
                   ],
+                ),
+              ),
+            // Usenet results below media results.
+            if (_usenetSearching && _scope != 'nostr:global')
+              Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: KabukTheme.warmAccent,
+                        ),
+                      ),
+                      SizedBox(width: 12),
+                      Text(
+                        'Searching Usenet indexers...',
+                        style: TextStyle(
+                          color: context.kabukTextSecondary,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            if (_usenetResults.isNotEmpty && _scope != 'nostr:global')
+              _buildUsenetResultsSection(),
+            if (_usenetError != null &&
+                !_usenetSearching &&
+                _scope != 'nostr:global')
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Text(
+                  _usenetError!,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontSize: 12,
+                  ),
                 ),
               ),
             // Plugin search results.
@@ -2649,11 +2652,34 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
                 ],
               ],
             ),
-            trailing: Icon(
-              Icons.chevron_right_rounded,
-              size: 16,
-              color: context.kabukTextTertiary,
-            ),
+            trailing: result.mediaType == MediaType.movie
+                ? IconButton(
+                    icon: const Icon(
+                      Icons.play_circle_fill_rounded,
+                      color: KabukTheme.accentGreen,
+                      size: 28,
+                    ),
+                    tooltip: 'Play',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      pushEntityPlayer(
+                        context,
+                        PlayableEntity(
+                          title: result.title,
+                          year: result.releaseYear,
+                          posterUrl: posterUrl,
+                          imdbId: result.imdbId,
+                        ),
+                      );
+                    },
+                  )
+                : Icon(
+                    Icons.chevron_right_rounded,
+                    size: 16,
+                    color: context.kabukTextTertiary,
+                  ),
             onTap: () {
               final navigator = Navigator.of(context);
               navigator.pop();

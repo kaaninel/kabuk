@@ -497,7 +497,9 @@ class NewznabClient {
 
   Future<XmlDocument> _get(Map<String, String> params) async {
     final uri = _buildUri(params);
-    final response = await _http.get(uri, headers: _headers);
+    final response = await _http
+        .get(uri, headers: _headers)
+        .timeout(const Duration(seconds: 15));
     if (response.statusCode != 200) {
       throw NewznabException(
         code: response.statusCode,

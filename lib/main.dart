@@ -31,6 +31,7 @@ Future<void> main() async {
   // On iOS, KabukViewController handles home-indicator auto-hide and
   // bottom-edge gesture deferral natively.
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     systemNavigationBarColor: Colors.transparent,

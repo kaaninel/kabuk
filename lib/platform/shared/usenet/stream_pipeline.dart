@@ -302,6 +302,13 @@ class StreamPipeline {
   /// Decoded segment data indexed by segment index.
   final Map<int, Uint8List> _decodedSegments = {};
 
+  /// Highest segment index that has been served via [getBytes].
+  int _lastServedSegment = -1;
+
+  /// Number of segments to keep ahead of the last served position.
+  /// Segments behind this window are evicted from memory.
+  static const int _evictionWindowSize = 80;
+
   /// Set of segment indices currently being fetched.
   final Set<int> _inFlight = {};
 
@@ -340,6 +347,12 @@ class StreamPipeline {
   /// Current download speed in bytes/second.
   double _currentSpeed = 0;
 
+  /// Total bytes downloaded from Usenet (persists even after eviction).
+  int _totalBytesDownloaded = 0;
+
+  /// Total segments fetched (persists even after eviction).
+  int _totalSegmentsFetched = 0;
+
   /// Whether the pipeline has been started and is ready to serve.
   bool _isReady = false;
 
@@ -352,8 +365,11 @@ class StreamPipeline {
   /// Whether the pipeline is in RAR extraction mode.
   bool _isRarMode = false;
 
-  /// Extracted RAR content (only populated in RAR mode).
-  Uint8List? _extractedContent;
+  /// Expected total content size in bytes (set from RAR file header or NZB).
+  ///
+  /// For RAR mode this is set from [RarFileStart.uncompressedSize] when
+  /// available, otherwise estimated from the NZB total bytes.
+  int? _estimatedTotalBytes;
 
   /// Completer completed when initial buffering finishes and [_isReady] is set.
   Completer<void>? _readyCompleter;
@@ -383,27 +399,25 @@ class StreamPipeline {
 
   /// Total content length in bytes, or 0 if not yet known.
   int get totalBytes {
-    if (_isRarMode && _extractedContent != null) {
-      return _extractedContent!.length;
+    // For RAR mode, prefer the expected total from the RAR file header.
+    if (_isRarMode && _estimatedTotalBytes != null) {
+      return _estimatedTotalBytes!;
     }
     if (_segmentMap.isEmpty) return 0;
     return _segmentMap.last.byteEnd;
   }
 
   /// Detected MIME type of the primary content file.
-  String? get mimeType => _plan?.detectedContentType ?? _targetFile?.detectedContentType;
+  String? get mimeType => _rarExtractedMimeType ?? _plan?.detectedContentType ?? _targetFile?.detectedContentType;
+
+  /// MIME type detected during RAR extraction (from file header/content sniffing).
+  String? _rarExtractedMimeType;
 
   /// Active cache session identifier, or `null` if not started.
   String? get cacheSessionId => _cacheSessionId;
 
   /// Total bytes downloaded from Usenet so far.
-  int get bytesDownloaded {
-    var total = 0;
-    for (final entry in _decodedSegments.values) {
-      total += entry.length;
-    }
-    return total;
-  }
+  int get bytesDownloaded => _totalBytesDownloaded;
 
   /// Starts the pipeline for the given [nzb] document.
   ///
@@ -414,12 +428,15 @@ class StreamPipeline {
   /// Emits [StreamPipelineBuffering] events during initial buffering,
   /// then [StreamPipelineReady] when enough data is available to serve.
   Future<void> start(NzbDocument nzb, {String? targetFile}) async {
-    if (_disposed) return;
+    if (_disposed) {
+      print('[Pipeline] start: already disposed!');
+      return;
+    }
 
+    print('[Pipeline] start: "${nzb.title}" files=${nzb.files.length}');
     _nzb = nzb;
 
     // Analyse the NZB to determine processing strategy.
-    // Use stubs for the initial analysis (only needs file classification).
     final analyzeProcessor = PostProcessor(
       yenc: _yenc,
       par2: _createStubPar2(),
@@ -427,58 +444,61 @@ class StreamPipeline {
     );
     _plan = analyzeProcessor.analyze(nzb);
     _isRarMode = _plan!.needsRarExtraction;
+    print('[Pipeline] plan: isRarMode=$_isRarMode '
+        'contentType=${_plan!.detectedContentType}');
 
-    // Select the target file.
-    _targetFile = _selectTargetFile(nzb, targetFile);
-    if (_targetFile == null) {
-      _emitError('No suitable content file found in NZB', fatal: true);
-      return;
+    // Select the target file (for non-RAR) or skip (RAR uses all volumes).
+    if (!_isRarMode) {
+      _targetFile = _selectTargetFile(nzb, targetFile);
+      if (_targetFile == null) {
+        print('[Pipeline] ERROR: no suitable target file found!');
+        _emitError('No suitable content file found in NZB', fatal: true);
+        return;
+      }
+      print('[Pipeline] target: "${_targetFile!.filename}" '
+          'bytes=${_targetFile!.totalBytes} segs=${_targetFile!.segments.length} '
+          'mime=${_targetFile!.detectedContentType}');
     }
 
     // Create a cache session.
     try {
       _cacheSessionId =
-          await _cache.createSession(nzb.title ?? _targetFile!.filename);
+          await _cache.createSession(nzb.title ?? _targetFile?.filename ?? 'stream');
     } catch (e) {
+      print('[Pipeline] cache session failed: $e');
       _emitError('Failed to create cache session: $e', fatal: true);
       return;
     }
 
+    _readyCompleter = Completer<void>();
+
     if (_isRarMode) {
-      // Create a real processor with actual RAR + PAR2 engines for extraction.
-      final processor = PostProcessor(
-        yenc: _yenc,
-        par2: Par2Engine(),
-        rar: RarExtractor(),
-      );
-      await _startRarPipeline(nzb, processor);
+      print('[Pipeline] starting progressive RAR pipeline…');
+      unawaited(_runRarStreamingPipeline(nzb));
     } else {
       _buildSegmentMap(_targetFile!);
       _seedFetchQueue();
-
-      // Create a completer that the scheduler will complete when buffering
-      // finishes and [_isReady] becomes true.
-      _readyCompleter = Completer<void>();
-
-      // Start the scheduler in the background.
+      print('[Pipeline] segmentMap=${_segmentMap.length} segments, '
+          'totalBytes=$totalBytes, fetchQueue=${_fetchQueue.length}');
       unawaited(_runScheduler());
+    }
 
-      // Wait for initial buffering to complete (with timeout).
-      try {
-        await _readyCompleter!.future.timeout(const Duration(seconds: 120));
-      } on TimeoutException {
-        _emitError('Initial buffering timed out after 120 seconds',
-            fatal: true);
-        return;
-      }
+    try {
+      await _readyCompleter!.future.timeout(const Duration(seconds: 120));
+      print('[Pipeline] buffering complete — isReady=$_isReady');
+    } on TimeoutException {
+      print('[Pipeline] TIMEOUT: initial buffering took >120s');
+      _emitError('Initial buffering timed out after 120 seconds',
+          fatal: true);
+      return;
     }
   }
 
   /// Returns the byte range [start] (inclusive) to [end] (exclusive).
   ///
-  /// For non-RAR content this calculates which decoded segments cover
-  /// the requested range, waits for any uncached segments, and assembles
-  /// the result. For RAR content the extracted file is sliced directly.
+  /// Calculates which decoded segments cover the requested range, waits
+  /// for any uncached segments, and assembles the result. Works for both
+  /// direct (non-RAR) and progressive RAR-extracted content.
   ///
   /// Returns an empty [Uint8List] if the range is invalid.
   Future<Uint8List> getBytes(int start, int end) async {
@@ -488,15 +508,18 @@ class StreamPipeline {
     if (start < 0 || start >= total || end <= start) return Uint8List(0);
     final clampedEnd = end > total ? total : end;
 
-    // RAR mode: slice from extracted content.
-    if (_isRarMode) {
-      final content = _extractedContent;
-      if (content == null) return Uint8List(0);
-      return Uint8List.sublistView(content, start, clampedEnd);
+    final result = await _assembleByteRange(start, clampedEnd);
+
+    // Track highest served segment for eviction.
+    if (!_isRarMode && _segmentMap.isNotEmpty) {
+      final endIdx = _segmentIndexForByte(clampedEnd - 1);
+      if (endIdx > _lastServedSegment) {
+        _lastServedSegment = endIdx;
+        _evictOldSegments();
+      }
     }
 
-    // Direct mode: assemble from decoded segments.
-    return _assembleByteRange(start, clampedEnd);
+    return result;
   }
 
   /// Seeks to [bytePosition], reprioritising the fetch queue so segments
@@ -507,7 +530,9 @@ class StreamPipeline {
     _currentPosition = bytePosition.clamp(0, totalBytes);
     _emitEvent(StreamPipelineSeek(bytePosition: _currentPosition));
 
-    if (_isRarMode) return; // RAR mode fetches everything anyway.
+    // In RAR mode, data arrives sequentially — can't reprioritise.
+    // The player will wait for the data to be extracted.
+    if (_isRarMode) return;
 
     // Find the segment containing this byte position.
     final targetIdx = _segmentIndexForByte(_currentPosition);
@@ -526,12 +551,8 @@ class StreamPipeline {
     if (sid == null) return null;
 
     try {
-      // If we have extracted RAR content, cache it as a file first.
-      if (_isRarMode && _extractedContent != null) {
-        final filename = _targetFile?.filename ?? 'content';
-        await _cache.putFile(sid, filename, _extractedContent!);
-      } else if (!_isRarMode && _segmentMap.isNotEmpty) {
-        // For direct mode, assemble the full file and cache it.
+      // Assemble the full file from decoded segments and cache it.
+      if (_segmentMap.isNotEmpty) {
         final fullData = await _assembleByteRange(0, totalBytes);
         final filename = _targetFile?.filename ?? 'content';
         await _cache.putFile(sid, filename, fullData);
@@ -793,17 +814,22 @@ class StreamPipeline {
     var consecutiveFailures = 0;
     const maxConsecutiveFailures = 10;
 
+    print('[Scheduler] starting: ${_fetchQueue.length} segments to fetch, '
+        'bufferTarget=$initialBufferTarget');
+
     while (!_disposed && _fetchQueue.isNotEmpty) {
       // Collect the next batch.
       final batch = _collectBatch();
       if (batch.isEmpty) {
-        // Wait for a wake signal (e.g. seek or new segments needed).
+        print('[Scheduler] batch empty, waiting for wake…');
         _schedulerWake = Completer<void>();
         await _schedulerWake!.future.catchError((_) {});
         _schedulerWake = null;
         continue;
       }
 
+      print('[Scheduler] fetching batch of ${batch.length} segments '
+          '(queued=${_fetchQueue.length} decoded=${_decodedSegments.length})');
 
       // Mark as in-flight.
       for (final idx in batch) {
@@ -816,6 +842,8 @@ class StreamPipeline {
 
       try {
         final results = await _pool.fetchBatch(messageIds);
+        print('[Scheduler] batch fetched: ${results.length} results, '
+            'empty=${results.where((r) => r.isEmpty).length}');
         consecutiveFailures = 0; // Reset on success.
 
         for (var i = 0; i < batch.length; i++) {
@@ -834,6 +862,8 @@ class StreamPipeline {
           try {
             final decoded = _yenc.decodePart(raw);
             _decodedSegments[segIdx] = decoded.data;
+            _totalBytesDownloaded += decoded.data.length;
+            _totalSegmentsFetched++;
 
             // Cache the decoded segment.
             final sid = _cacheSessionId;
@@ -861,8 +891,9 @@ class StreamPipeline {
                 '${_segmentMap[segIdx].messageId}: ${e.message}');
           }
         }
-      } catch (e) {
+      } catch (e, st) {
         // Batch fetch failed — re-queue segments.
+        print('[Scheduler] BATCH FETCH FAILED: $e');
         for (final idx in batch) {
           _inFlight.remove(idx);
           _enqueueSegment(idx, _FetchPriority.prefetch);
@@ -913,17 +944,16 @@ class StreamPipeline {
 
       // Emit progress.
       _emitEvent(StreamPipelineProgress(
-        bytesDownloaded: _decodedSegments.values
-            .fold<int>(0, (sum, d) => sum + d.length),
+        bytesDownloaded: _totalBytesDownloaded,
         totalBytes: totalBytes,
-        segmentsFetched: _decodedSegments.length,
+        segmentsFetched: _totalSegmentsFetched,
         totalSegments: _segmentMap.length,
         downloadSpeed: _currentSpeed,
       ));
     }
 
     // All segments fetched.
-    if (!_disposed && _decodedSegments.length >= _segmentMap.length) {
+    if (!_disposed && _totalSegmentsFetched >= _segmentMap.length) {
       _isComplete = true;
       _emitEvent(const StreamPipelineDone());
     }
@@ -968,13 +998,20 @@ class StreamPipeline {
     // Ensure all needed segments are available.
     for (final idx in segIndices) {
       if (!_decodedSegments.containsKey(idx)) {
-        // Boost priority for this segment.
-        _enqueueSegment(idx, _FetchPriority.seek);
-        _wakeScheduler();
+        // Try to recover from disk cache first (segment may have been evicted).
+        final recovered = await _recoverFromCache(idx);
+        if (recovered) continue;
 
-        // Wait for it (with timeout).
+        // In non-RAR mode, boost priority for this segment in the scheduler.
+        if (!_isRarMode) {
+          _enqueueSegment(idx, _FetchPriority.seek);
+          _wakeScheduler();
+        }
+
+        // Wait for it (with timeout — longer for RAR since data arrives sequentially).
+        final timeout = _isRarMode ? const Duration(seconds: 120) : const Duration(seconds: 30);
         await _waitForSegment(idx).timeout(
-          const Duration(seconds: 30),
+          timeout,
           onTimeout: () {
             _emitError('Timeout waiting for segment $idx');
           },
@@ -1032,190 +1069,516 @@ class StreamPipeline {
     }
   }
 
+  /// Evicts decoded segments that are far behind the current playback position.
+  ///
+  /// Keeps a window of [_evictionWindowSize] segments ahead of
+  /// [_lastServedSegment] and removes everything behind
+  /// `_lastServedSegment - _evictionWindowSize` to free memory.
+  void _evictOldSegments() {
+    final evictBefore = _lastServedSegment - _evictionWindowSize;
+    if (evictBefore <= 0) return;
+    final toRemove = <int>[];
+    for (final idx in _decodedSegments.keys) {
+      if (idx < evictBefore) toRemove.add(idx);
+    }
+    for (final idx in toRemove) {
+      _decodedSegments.remove(idx);
+    }
+  }
+
+  /// Attempts to recover an evicted segment from the disk cache.
+  ///
+  /// Returns `true` if the segment was restored to [_decodedSegments].
+  Future<bool> _recoverFromCache(int segIdx) async {
+    final sid = _cacheSessionId;
+    if (sid == null || segIdx >= _segmentMap.length) return false;
+    try {
+      final data = await _cache.getSegment(sid, _segmentMap[segIdx].messageId);
+      if (data != null) {
+        _decodedSegments[segIdx] = data;
+        return true;
+      }
+    } catch (_) {
+      // Cache miss — segment needs to be re-fetched.
+    }
+    return false;
+  }
+
   // -----------------------------------------------------------------------
-  // RAR pipeline
+  // Progressive RAR streaming pipeline
   // -----------------------------------------------------------------------
 
-  /// Runs the full fetch-decode-extract pipeline for RAR content.
+  /// Runs the progressive RAR streaming pipeline.
   ///
-  /// RAR archives require all volume parts to be complete before
-  /// extraction can begin, so this fetches everything, then feeds
-  /// segments through the [PostProcessor], and finally caches the
-  /// extracted content.
-  Future<void> _startRarPipeline(
-    NzbDocument nzb,
-    PostProcessor processor,
-  ) async {
+  /// Instead of downloading all RAR volumes before extraction, this fetches
+  /// volumes one at a time and feeds their decoded segments to the
+  /// [RarExtractor] as lazy streams. Extracted data chunks are stored in
+  /// [_decodedSegments] and served via [getBytes] / [_assembleByteRange],
+  /// just like the non-RAR path.
+  ///
+  /// Sets [_isReady] after the initial buffer threshold (typically a few MB)
+  /// so playback can begin while the rest downloads in the background.
+  Future<void> _runRarStreamingPipeline(NzbDocument nzb) async {
     _emitEvent(const StreamPipelineBuffering(percent: 0));
 
-    // Collect all content file segments (RAR parts + PAR2).
-    final allFiles = [...nzb.contentFiles, ...nzb.par2Files];
-    final allSegments = <_RarSegmentTask>[];
-    for (final file in allFiles) {
-      final sorted = List<NzbSegment>.from(file.segments)..sort();
-      for (final seg in sorted) {
-        allSegments.add(_RarSegmentTask(
-          filename: file.filename,
-          segmentNumber: seg.number,
-          messageId: seg.messageId,
-        ));
-      }
-    }
+    // Get RAR volumes in correct order for multi-volume extraction.
+    // For non-obfuscated NZBs, natural filename sort works (part001, part002...).
+    // For obfuscated NZBs (all same filename), fall back to date (posting
+    // timestamp) or original XML order.
+    final rarFiles = nzb.rarFiles.toList();
+    _sortRarVolumes(rarFiles);
 
-    final totalSegs = allSegments.length;
-    var fetchedCount = 0;
-
-    // Stream controller that feeds DecodedSegments to PostProcessor.
-    final segmentStream = StreamController<DecodedSegment>();
-
-    // Start post-processing in the background.
-    final postEvents = processor.process(nzb, segmentStream.stream);
-    final extractedChunks = <Uint8List>[];
-    String? extractedFilename;
-    String? extractedMimeType;
-
-    // Listen to post-process events.
-    final postProcessDone = Completer<void>();
-    var hadFatalError = false;
-    final postSub = postEvents.listen(
-      (event) {
-        switch (event) {
-          case PostProcessFileData(:final filename, :final data, :final mimeType):
-            extractedChunks.add(data);
-            extractedFilename ??= filename;
-            extractedMimeType ??= mimeType;
-          case PostProcessComplete():
-            if (!postProcessDone.isCompleted) postProcessDone.complete();
-          case PostProcessError(:final message, :final fatal):
-            _emitError('Post-processing: $message', fatal: false);
-            if (fatal) hadFatalError = true;
-            // Don't abort — PAR2 verification failures shouldn't block
-            // RAR extraction. Let the stream complete naturally.
-          case PostProcessProgress(:final percent):
-            _emitEvent(StreamPipelineBuffering(percent: percent * 0.5 + 0.5));
-          case PostProcessAnalyzing() ||
-               PostProcessFileComplete() ||
-               PostProcessVerifying() ||
-               PostProcessRepairing() ||
-               PostProcessExtracting():
-            break; // Informational — not forwarded.
-        }
-      },
-      onError: (Object e) {
-        if (!postProcessDone.isCompleted) {
-          postProcessDone.completeError(e);
-        }
-      },
-      onDone: () {
-        if (!postProcessDone.isCompleted) postProcessDone.complete();
-      },
-    );
-
-    // Fetch all segments in batches.
-    for (var i = 0; i < totalSegs; i += batchSize) {
-      if (_disposed) break;
-
-      final batchEnd = math.min(i + batchSize, totalSegs);
-      final batchTasks = allSegments.sublist(i, batchEnd);
-      final messageIds = batchTasks.map((t) => t.messageId).toList();
-
-      try {
-        final results = await _pool.fetchBatch(messageIds);
-
-        for (var j = 0; j < batchTasks.length; j++) {
-          final task = batchTasks[j];
-          final raw = results[j];
-          if (raw.isEmpty) {
-            _emitError('Failed to fetch segment ${task.messageId}');
-            continue;
-          }
-
-          try {
-            final decoded = _yenc.decodePart(raw);
-            segmentStream.add(DecodedSegment(
-              filename: task.filename,
-              segmentNumber: task.segmentNumber,
-              data: decoded.data,
-              checksumValid: decoded.checksumValid,
-            ));
-
-            fetchedCount++;
-            _speedBytes += decoded.data.length;
-            _updateSpeed();
-          } on FormatException catch (e) {
-            _emitError('yEnc decode failed: ${e.message}');
-          }
-        }
-      } catch (e) {
-        _emitError('Batch fetch failed: $e');
-      }
-
-      // Emit buffering progress (first 50% is fetching).
-      final pct = totalSegs > 0 ? fetchedCount / totalSegs : 1.0;
-      _emitEvent(StreamPipelineBuffering(percent: pct * 0.5));
-
-      _emitEvent(StreamPipelineProgress(
-        bytesDownloaded: _speedBytes,
-        totalBytes: nzb.totalBytes,
-        segmentsFetched: fetchedCount,
-        totalSegments: totalSegs,
-        downloadSpeed: _currentSpeed,
-      ));
-    }
-
-    // Close the segment stream to signal completion to PostProcessor.
-    await segmentStream.close();
-
-    // Wait for post-processing to finish.
-    try {
-      await postProcessDone.future.timeout(
-        const Duration(minutes: 10),
-        onTimeout: () {
-          _emitError('Post-processing timed out', fatal: true);
-        },
-      );
-    } catch (e) {
-      _emitError('Post-processing failed: $e', fatal: true);
-      await postSub.cancel();
+    if (rarFiles.isEmpty) {
+      _emitError('No RAR volumes found in NZB', fatal: true);
       return;
     }
 
-    await postSub.cancel();
+    // Probe: verify volume[0] is actually the first RAR volume by downloading
+    // its first segment and checking for a file header. If it's a continuation
+    // volume, scan others to find the real first volume.
+    await _probeAndReorderFirstVolume(rarFiles);
 
-    // Assemble extracted content.
-    if (extractedChunks.isNotEmpty) {
-      var totalLen = 0;
-      for (final chunk in extractedChunks) {
-        totalLen += chunk.length;
-      }
-      final assembled = Uint8List(totalLen);
-      var offset = 0;
-      for (final chunk in extractedChunks) {
-        assembled.setRange(offset, offset + chunk.length, chunk);
-        offset += chunk.length;
-      }
-      _extractedContent = assembled;
+    print('[RAR-Stream] ${rarFiles.length} RAR volumes to process');
+    // Log first few volumes for debugging order.
+    for (var i = 0; i < math.min(3, rarFiles.length); i++) {
+      final f = rarFiles[i];
+      print('[RAR-Stream] vol[$i]: "${f.filename}" date=${f.date} '
+          'segs=${f.segments.length} bytes=${f.totalBytes}');
+    }
+    if (rarFiles.length > 3) {
+      print('[RAR-Stream] ... (${rarFiles.length - 3} more)');
+    }
 
-      // Cache the extracted file.
-      final sid = _cacheSessionId;
-      if (sid != null && extractedFilename != null) {
+    // Estimate total content bytes from NZB size (RAR overhead ~2-3%).
+    // This estimate is refined once we get the real size from the RAR header.
+    var nzbRarBytes = 0;
+    for (final f in rarFiles) {
+      nzbRarBytes += f.totalBytes;
+    }
+    _estimatedTotalBytes = (nzbRarBytes * 0.97).round();
+    print('[RAR-Stream] estimated content size: $_estimatedTotalBytes bytes '
+        '(from $nzbRarBytes RAR bytes)');
+
+    // Count total segments across all RAR volumes.
+    var totalSegs = 0;
+    for (final f in rarFiles) {
+      totalSegs += f.segments.length;
+    }
+
+    // Create lazy download streams for each RAR volume.
+    var fetchedSegs = 0;
+    final volumeStreams = <Stream<List<int>>>[];
+    for (final file in rarFiles) {
+      volumeStreams.add(_createVolumeDownloadStream(file, totalSegs, () => fetchedSegs, (n) => fetchedSegs = n));
+    }
+
+    // Start the RAR extractor with lazy volume streams.
+    final rar = RarExtractor();
+    final extractStream = volumeStreams.length == 1
+        ? rar.extract(volumeStreams.first)
+        : rar.extractMultiVolume(volumeStreams);
+
+    // Track extraction state.
+    var extractedOffset = 0;
+    var chunkIndex = 0;
+    String? extractedFilename;
+    var consecutiveErrors = 0;
+
+    // Initial buffer threshold — enough for the player to start.
+    const initialBufferBytes = 5 * 1024 * 1024; // 5 MB
+
+    try {
+      await for (final event in extractStream) {
+        if (_disposed) break;
+
+        switch (event) {
+          case RarFileStart(:final filename, :final uncompressedSize, :final compressionMethod):
+            extractedFilename ??= filename;
+            print('[RAR-Stream] file started: "$filename" '
+                'size=${uncompressedSize ?? "unknown"} '
+                'method=${compressionMethod ?? "unknown"}');
+
+            // Reject compressed RAR — we can only stream Store-method archives.
+            // Compressed data requires RAR decompression which we don't support.
+            if (compressionMethod != null && compressionMethod != 'Store') {
+              print('[RAR-Stream] ✗ compressed RAR (method=$compressionMethod), '
+                  'cannot stream — need Store method');
+              _emitError(
+                'RAR archive uses $compressionMethod compression. '
+                'Only Store (uncompressed) RAR archives can be streamed.',
+                fatal: true,
+              );
+              return;
+            }
+
+            // Update estimated total with exact size from the RAR header.
+            if (uncompressedSize != null && uncompressedSize > 0) {
+              _estimatedTotalBytes = uncompressedSize;
+              print('[RAR-Stream] updated total bytes: $uncompressedSize');
+            }
+
+            // Detect MIME type from filename extension.
+            _rarExtractedMimeType ??= _mimeFromFilename(filename);
+
+          case RarFileData(:final data):
+            if (data.isEmpty) continue;
+            consecutiveErrors = 0;
+
+            // Debug: log first bytes of first chunk to verify data is valid.
+            if (chunkIndex == 0) {
+              final hexBytes = data.take(16).map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
+              print('[RAR-Stream] first chunk: ${data.length} bytes, '
+                  'hex: $hexBytes');
+              // Also sniff MIME from actual bytes (overrides filename-based).
+              final sniffed = _sniffMimeType(data);
+              if (sniffed != null) {
+                _rarExtractedMimeType = sniffed;
+                print('[RAR-Stream] MIME from magic bytes: $sniffed');
+              } else if (_rarExtractedMimeType != null) {
+                print('[RAR-Stream] MIME from filename: $_rarExtractedMimeType '
+                    '(magic bytes did not match any known format)');
+              }
+            }
+
+            // Detect MIME type from first data chunk.
+            if (chunkIndex == 0 && _rarExtractedMimeType == null) {
+              _rarExtractedMimeType = _sniffMimeType(data);
+            }
+
+            // Store the chunk as a virtual segment.
+            _decodedSegments[chunkIndex] = data;
+            _totalBytesDownloaded += data.length;
+            _totalSegmentsFetched++;
+            _segmentMap.add(_SegmentInfo(
+              index: chunkIndex,
+              messageId: 'rar_chunk_$chunkIndex',
+              byteStart: extractedOffset,
+              byteEnd: extractedOffset + data.length,
+              encodedBytes: data.length,
+            ));
+
+            extractedOffset += data.length;
+            chunkIndex++;
+
+            // Notify any waiters blocked on this segment.
+            _notifySegmentWaiters(chunkIndex - 1);
+
+            // Speed tracking.
+            _speedBytes += data.length;
+            _updateSpeed();
+
+            // Check if we've reached the initial buffer threshold.
+            if (!_isReady && extractedOffset >= initialBufferBytes) {
+              _isReady = true;
+              if (_readyCompleter != null && !_readyCompleter!.isCompleted) {
+                _readyCompleter!.complete();
+              }
+              _emitEvent(StreamPipelineReady(
+                totalBytes: totalBytes,
+                mimeType: _rarExtractedMimeType ?? 'application/octet-stream',
+                filename: extractedFilename ?? 'content',
+              ));
+              print('[RAR-Stream] ready! extracted=$extractedOffset bytes '
+                  '($chunkIndex chunks), total=$totalBytes');
+            }
+
+            // Emit buffering/progress events.
+            if (!_isReady) {
+              final pct = initialBufferBytes > 0
+                  ? extractedOffset / initialBufferBytes
+                  : 0.0;
+              _emitEvent(StreamPipelineBuffering(
+                percent: pct.clamp(0.0, 1.0),
+              ));
+            }
+
+            _emitEvent(StreamPipelineProgress(
+              bytesDownloaded: extractedOffset,
+              totalBytes: totalBytes,
+              segmentsFetched: chunkIndex,
+              totalSegments: _estimatedTotalBytes != null
+                  ? (_estimatedTotalBytes! / math.max(1, extractedOffset / math.max(1, chunkIndex))).round()
+                  : totalSegs,
+              downloadSpeed: _currentSpeed,
+            ));
+
+          case RarFileEnd(:final filename, :final checksumValid):
+            print('[RAR-Stream] file complete: "$filename" '
+                'valid=$checksumValid, total=$extractedOffset bytes');
+            if (!checksumValid) {
+              _emitError('CRC mismatch in extracted file: $filename');
+            }
+
+          case RarProgress():
+            break; // Ignored — we emit our own progress events.
+
+          case RarError(:final message, :final recoverable):
+            print('[RAR-Stream] error: $message (recoverable=$recoverable)');
+            _emitError('RAR extraction: $message', fatal: !recoverable);
+            consecutiveErrors++;
+            if (!recoverable || consecutiveErrors > 10) break;
+
+          case RarPasswordRequired():
+            _emitError('RAR archive is password-protected', fatal: true);
+            return;
+        }
+      }
+    } catch (e, st) {
+      print('[RAR-Stream] extraction failed: $e\n$st');
+      _emitError('RAR extraction failed: $e', fatal: true);
+    }
+
+    // If we never reached the buffer threshold but have some data, mark ready.
+    if (!_isReady && extractedOffset > 0) {
+      _isReady = true;
+      if (_readyCompleter != null && !_readyCompleter!.isCompleted) {
+        _readyCompleter!.complete();
+      }
+      // Update estimated total to actual extracted size.
+      _estimatedTotalBytes = extractedOffset;
+      _emitEvent(StreamPipelineReady(
+        totalBytes: totalBytes,
+        mimeType: _rarExtractedMimeType ?? 'application/octet-stream',
+        filename: extractedFilename ?? 'content',
+      ));
+      print('[RAR-Stream] ready (all extracted): $extractedOffset bytes');
+    } else if (!_isReady) {
+      // No data extracted at all.
+      _emitError('No content could be extracted from RAR archive', fatal: true);
+      return;
+    }
+
+    // Update final total bytes to actual extracted size.
+    _estimatedTotalBytes = extractedOffset;
+
+    _isComplete = true;
+    _emitEvent(const StreamPipelineDone());
+    print('[RAR-Stream] complete: $extractedOffset bytes in $chunkIndex chunks');
+  }
+
+  /// Creates a lazy download stream for a single RAR volume.
+  ///
+  /// Downloads and yEnc-decodes segments one at a time, yielding decoded
+  /// data as chunks. The [RarExtractor] consumes these chunks progressively.
+  Stream<List<int>> _createVolumeDownloadStream(
+    NzbFileEntry file,
+    int totalSegments,
+    int Function() getFetchedCount,
+    void Function(int) setFetchedCount,
+  ) async* {
+    final segments = List<NzbSegment>.from(file.segments)..sort();
+    print('[RAR-Stream] downloading volume "${file.filename}" '
+        '(${segments.length} segments, ${file.totalBytes} bytes)');
+
+    for (final seg in segments) {
+      if (_disposed) return;
+
+      try {
+        final results = await _pool.fetchBatch([seg.messageId]);
+        if (results.isNotEmpty && results.first.isNotEmpty) {
+          final decoded = _yenc.decodePart(results.first);
+          _speedBytes += decoded.data.length;
+          _updateSpeed();
+          setFetchedCount(getFetchedCount() + 1);
+          yield decoded.data;
+        } else {
+          _emitError('Empty result for segment ${seg.messageId}');
+          // Yield empty bytes to keep the volume stream going.
+          // The RAR parser handles gaps gracefully for store-mode archives.
+        }
+      } catch (e) {
+        print('[RAR-Stream] segment fetch failed: $e');
+        _emitError('Segment fetch failed: $e');
+        // Continue to next segment — partial extraction is better than nothing.
+      }
+    }
+  }
+
+  /// Guesses MIME type from a filename extension.
+  static String? _mimeFromFilename(String filename) {
+    final ext = filename.split('.').last.toLowerCase();
+    return const <String, String>{
+      'mkv': 'video/x-matroska',
+      'mp4': 'video/mp4',
+      'avi': 'video/x-msvideo',
+      'wmv': 'video/x-ms-wmv',
+      'mov': 'video/quicktime',
+      'webm': 'video/webm',
+      'flv': 'video/x-flv',
+      'ts': 'video/mp2t',
+      'm4v': 'video/x-m4v',
+      'mp3': 'audio/mpeg',
+      'flac': 'audio/flac',
+      'aac': 'audio/aac',
+      'ogg': 'audio/ogg',
+      'wav': 'audio/wav',
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+      'gif': 'image/gif',
+      'pdf': 'application/pdf',
+      'epub': 'application/epub+zip',
+    }[ext];
+  }
+
+  /// Sniffs MIME type from file content magic bytes.
+  static String? _sniffMimeType(Uint8List data) {
+    if (data.length < 12) return null;
+
+    // Matroska/WebM (EBML header).
+    if (data[0] == 0x1A && data[1] == 0x45 && data[2] == 0xDF && data[3] == 0xA3) {
+      // Check for WebM doctype vs Matroska.
+      return 'video/x-matroska';
+    }
+    // MPEG-4 (ftyp box).
+    if (data[4] == 0x66 && data[5] == 0x74 && data[6] == 0x79 && data[7] == 0x70) {
+      return 'video/mp4';
+    }
+    // AVI (RIFF...AVI).
+    if (data[0] == 0x52 && data[1] == 0x49 && data[2] == 0x46 && data[3] == 0x46 &&
+        data[8] == 0x41 && data[9] == 0x56 && data[10] == 0x49) {
+      return 'video/x-msvideo';
+    }
+    // MPEG-TS.
+    if (data[0] == 0x47) {
+      return 'video/mp2t';
+    }
+    return null;
+  }
+
+  /// Sorts RAR volumes in the correct multi-volume order.
+  ///
+  /// For non-obfuscated NZBs (e.g. "movie.part001.rar", "movie.part002.rar"),
+  /// natural filename sort handles this correctly.
+  ///
+  /// For obfuscated NZBs where all files have the same generated name
+  /// (e.g. "File 1.rar" × 46), we preserve the original NZB XML order.
+  /// NZB generators typically emit `<file>` elements in upload order, which
+  /// corresponds to volume order. If dates are available, sort by date as
+  /// a secondary strategy.
+  static void _sortRarVolumes(List<NzbFileEntry> files) {
+    if (files.length <= 1) return;
+
+    // Check if filenames are all identical (obfuscated case).
+    final allSameFilename = files.every((f) => f.filename == files.first.filename);
+
+    if (allSameFilename) {
+      // Check if dates are available for sorting.
+      final hasDates = files.any((f) => f.date != null);
+      if (hasDates) {
+        // Sort by posting timestamp (reflects upload order).
+        files.sort((a, b) {
+          final ad = a.date ?? 0;
+          final bd = b.date ?? 0;
+          return ad.compareTo(bd);
+        });
+        print('[RAR-Sort] obfuscated NZB: sorted ${files.length} volumes by date');
+      } else {
+        // No dates, no distinct filenames — keep original NZB XML order.
+        // NZB generators typically emit <file> elements in upload/volume order.
+        print('[RAR-Sort] obfuscated NZB: keeping original XML order '
+            '(${files.length} volumes, no dates)');
+      }
+    } else {
+      // Natural sort by filename (handles part001, part002, etc.).
+      files.sort();
+      print('[RAR-Sort] sorted ${files.length} volumes by filename');
+    }
+  }
+
+  /// Probes RAR volumes to find the first volume and reorders the list.
+  ///
+  /// Downloads the first segment of each candidate volume (up to a limit)
+  /// and uses [RarExtractor.inspect] to check the `isFirstVolume` flag.
+  /// If found, moves it to position 0.
+  Future<void> _probeAndReorderFirstVolume(List<NzbFileEntry> files) async {
+    if (files.length <= 1) return;
+
+    // Only probe if filenames are ambiguous (all same name).
+    final allSame = files.every((f) => f.filename == files.first.filename);
+    if (!allSame) return; // Filenames are distinct → already sorted correctly.
+
+    print('[RAR-Probe] probing ${math.min(files.length, 5)} volumes '
+        'for first-volume flag...');
+
+    final rar = RarExtractor();
+
+    // Probe up to 5 candidate volumes in parallel.
+    final probeFutures = <int, Future<RarArchiveInfo>>{};
+    for (var i = 0; i < math.min(files.length, 5); i++) {
+      final file = files[i];
+      if (file.segments.isEmpty) continue;
+
+      probeFutures[i] = (() async {
+        final seg = (List<NzbSegment>.from(file.segments)..sort()).first;
+        final results = await _pool.fetchBatch([seg.messageId]);
+        if (results.isEmpty || results.first.isEmpty) {
+          throw StateError('Empty response for probe segment');
+        }
+        final decoded = _yenc.decodePart(results.first);
+        return rar.inspect(decoded.data);
+      })();
+    }
+
+    // Check results — find the first volume.
+    // A valid first volume must be detected as multi-volume (isMultiVolume)
+    // AND as the first in the set (isFirstVolume). Default parser values
+    // are isFirstVolume=true, isMultiVolume=false — so we reject results
+    // that match defaults (indicates parsing failure / non-RAR data).
+    for (final entry in probeFutures.entries) {
+      try {
+        final info = await entry.value;
+        final isValid = info.isMultiVolume && info.isFirstVolume;
+        print('[RAR-Probe] vol[${entry.key}]: '
+            '${info.version}, multiVol=${info.isMultiVolume}, '
+            'firstVol=${info.isFirstVolume}, '
+            'files=${info.files.length}'
+            '${isValid ? ' ← FIRST VOLUME' : ''}');
+
+        if (isValid && entry.key != 0) {
+          // Move this volume to position 0.
+          final firstVol = files.removeAt(entry.key);
+          files.insert(0, firstVol);
+          print('[RAR-Probe] ✓ moved vol[${entry.key}] to position 0');
+          return;
+        } else if (isValid && entry.key == 0) {
+          print('[RAR-Probe] ✓ vol[0] is already the first volume');
+          return;
+        }
+      } catch (e) {
+        print('[RAR-Probe] vol[${entry.key}] probe failed: $e');
+      }
+    }
+
+    // If no first volume found in the first 5, probe ALL remaining volumes.
+    if (files.length > 5) {
+      print('[RAR-Probe] scanning remaining ${files.length - 5} volumes...');
+      for (var i = 5; i < files.length; i++) {
+        if (_disposed) return;
+        final file = files[i];
+        if (file.segments.isEmpty) continue;
+
         try {
-          await _cache.putFile(sid, extractedFilename!, assembled);
+          final seg = (List<NzbSegment>.from(file.segments)..sort()).first;
+          final results = await _pool.fetchBatch([seg.messageId]);
+          if (results.isEmpty || results.first.isEmpty) continue;
+          final decoded = _yenc.decodePart(results.first);
+          final info = await rar.inspect(decoded.data);
+
+          if (info.isMultiVolume && info.isFirstVolume) {
+            final firstVol = files.removeAt(i);
+            files.insert(0, firstVol);
+            print('[RAR-Probe] ✓ found first volume at index $i, moved to 0');
+            return;
+          }
         } catch (_) {
-          // Best-effort cache.
+          continue;
         }
       }
     }
 
-    _isReady = true;
-    _isComplete = true;
-
-    _emitEvent(StreamPipelineReady(
-      totalBytes: totalBytes,
-      mimeType: extractedMimeType ?? mimeType,
-      filename: extractedFilename ?? _targetFile?.filename ?? 'unknown',
-    ));
-    _emitEvent(const StreamPipelineDone());
+    print('[RAR-Probe] ⚠ could not identify first volume, '
+        'using current order');
   }
 
   // -----------------------------------------------------------------------
@@ -1247,6 +1610,11 @@ class StreamPipeline {
   /// Emits an error event.
   void _emitError(String message, {bool fatal = false}) {
     _emitEvent(StreamPipelineError(message: message, fatal: fatal));
+    // On fatal errors, complete the ready-completer so start() returns
+    // promptly instead of waiting for the 120-second timeout.
+    if (fatal && _readyCompleter != null && !_readyCompleter!.isCompleted) {
+      _readyCompleter!.complete();
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -1270,18 +1638,6 @@ class StreamPipeline {
 
 /// Lightweight task descriptor for RAR segment fetching.
 @immutable
-class _RarSegmentTask {
-  const _RarSegmentTask({
-    required this.filename,
-    required this.segmentNumber,
-    required this.messageId,
-  });
-
-  final String filename;
-  final int segmentNumber;
-  final String messageId;
-}
-
 /// Stub [Par2Engine] that satisfies the [PostProcessor] constructor
 /// when only [PostProcessor.analyze] is needed.
 class _StubPar2Engine implements Par2Engine {

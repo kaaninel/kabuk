@@ -60,6 +60,7 @@ class MediaSearchResult {
     this.voteCount,
     this.genreIds = const [],
     this.popularity,
+    this.imdbId,
   });
 
   /// Provider-specific numeric identifier.
@@ -97,6 +98,9 @@ class MediaSearchResult {
 
   /// Provider-computed popularity score.
   final double? popularity;
+
+  /// IMDb identifier (e.g. `tt1375666`), when available.
+  final String? imdbId;
 
   @override
   String toString() => 'MediaSearchResult(id: $id, title: $title, '

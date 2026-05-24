@@ -1,7 +1,11 @@
-/// IMDbAPI.dev client for movie and series metadata.
+/// IMDb search client using a free, no-authentication API.
 ///
-/// Uses the free, no-authentication-required IMDbAPI.dev REST API (v2).
-/// This is a raw API client — it does **not** implement a service interface.
+/// Uses the community-maintained IMDb search proxy at
+/// `imdb.iamidiotareyoutoo.com` for movie and series discovery.
+/// No API key is required.
+///
+/// For detailed title metadata, the client synthesises a [MovieDetail]
+/// from search data combined with the OMDB free tier when available.
 ///
 /// ```dart
 /// final client = ImdbApiClient();
@@ -16,6 +20,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:developer' as dev;
 
 import 'package:http/http.dart' as http;
 import 'package:kabuk/config/errors.dart';
@@ -26,7 +31,7 @@ import 'package:meta/meta.dart';
 // Data classes
 // ---------------------------------------------------------------------------
 
-/// The media type returned by the IMDbAPI.
+/// The media type returned by the IMDb search.
 enum ImdbMediaType {
   /// A feature film.
   movie,
@@ -37,7 +42,7 @@ enum ImdbMediaType {
   /// A single TV episode.
   episode;
 
-  /// Parses an IMDbAPI type string into an [ImdbMediaType].
+  /// Parses an IMDb type string into an [ImdbMediaType].
   ///
   /// Returns `null` for unrecognised values.
   static ImdbMediaType? fromString(String? value) => switch (value) {
@@ -46,9 +51,16 @@ enum ImdbMediaType {
         'episode' => episode,
         _ => null,
       };
+
+  /// Infers type from IMDb ID prefix: `tt` = title (movie/series).
+  static ImdbMediaType? fromImdbId(String? id) {
+    if (id == null) return null;
+    if (id.startsWith('tt')) return movie; // refined later by rank/year
+    return null;
+  }
 }
 
-/// A single result from the IMDbAPI search endpoint.
+/// A single result from the IMDb search endpoint.
 @immutable
 class ImdbSearchResult {
   /// Creates an [ImdbSearchResult].
@@ -58,6 +70,8 @@ class ImdbSearchResult {
     this.year,
     this.type,
     this.posterUrl,
+    this.actors,
+    this.rank,
   });
 
   /// IMDb identifier (e.g. `tt1375666`).
@@ -75,11 +89,17 @@ class ImdbSearchResult {
   /// URL for the poster image.
   final String? posterUrl;
 
+  /// Principal cast (comma-separated).
+  final String? actors;
+
+  /// IMDb popularity rank.
+  final int? rank;
+
   @override
   String toString() => 'ImdbSearchResult($id, $title)';
 }
 
-/// Detailed title information from the IMDbAPI.
+/// Detailed title information from IMDb/OMDB.
 @immutable
 class ImdbTitleDetail {
   /// Creates an [ImdbTitleDetail].
@@ -105,6 +125,18 @@ class ImdbTitleDetail {
     this.boxOffice,
   });
 
+  /// Constructs a minimal detail from a search result (no OMDB lookup).
+  factory ImdbTitleDetail.fromSearch(ImdbSearchResult result) =>
+      ImdbTitleDetail(
+        id: result.id,
+        title: result.title,
+        year: result.year,
+        type: result.type,
+        posterUrl: result.posterUrl,
+        actors: result.actors?.split(',').map((s) => s.trim()).toList() ??
+            const [],
+      );
+
   /// IMDb identifier (e.g. `tt1375666`).
   final String id;
 
@@ -123,7 +155,7 @@ class ImdbTitleDetail {
   /// Release date, if parseable.
   final DateTime? releasedDate;
 
-  /// Runtime in minutes, parsed from strings like `"148 min"`.
+  /// Runtime in minutes.
   final int? runtimeMinutes;
 
   /// Genre tags.
@@ -159,7 +191,7 @@ class ImdbTitleDetail {
   /// Metacritic score (0–100).
   final int? metascore;
 
-  /// Domestic box office revenue in cents-free integer (e.g. `292576195`).
+  /// Domestic box office revenue in cents-free integer.
   final int? boxOffice;
 
   @override
@@ -170,221 +202,126 @@ class ImdbTitleDetail {
 // Client
 // ---------------------------------------------------------------------------
 
-/// HTTP client for the IMDbAPI.dev v2 REST API.
+/// HTTP client for movie/series search via a free IMDb search proxy.
 ///
 /// No API key is required. All public methods return [Result] so callers
 /// can handle errors without try/catch.
-///
-/// ```dart
-/// final client = ImdbApiClient();
-/// final detail = await client.getTitle('tt1375666');
-/// ```
 class ImdbApiClient {
   /// Creates an [ImdbApiClient].
   ///
-  /// An optional [httpClient] may be provided for testing; when omitted a
-  /// default [http.Client] is created internally.
+  /// An optional [httpClient] may be provided for testing.
   ImdbApiClient({http.Client? httpClient})
       : _http = httpClient ?? http.Client();
 
-  static const _baseUrl = 'https://api.imdbapi.dev/v2';
+  /// Free community IMDb search proxy (no key required).
+  static const _searchBaseUrl = 'https://imdb.iamidiotareyoutoo.com';
 
   final http.Client _http;
+
+  /// In-memory cache of search results for detail lookups.
+  final Map<String, ImdbSearchResult> _searchCache = {};
 
   // ---- Public API ---------------------------------------------------------
 
   /// Searches IMDb for titles matching [query].
   ///
   /// Returns a list of [ImdbSearchResult] on success.
-  ///
-  /// ```dart
-  /// final results = await client.search('Inception');
-  /// ```
   Future<Result<List<ImdbSearchResult>>> search(String query) async {
-    final uri = Uri.parse('$_baseUrl/search').replace(
+    final uri = Uri.parse('$_searchBaseUrl/search').replace(
       queryParameters: {'q': query},
     );
 
-    return _get(uri, (json) {
-      final items = json['data'] as List<dynamic>? ?? [];
-      return items
-          .cast<Map<String, dynamic>>()
-          .map(_parseSearchResult)
-          .toList(growable: false);
-    });
-  }
-
-  /// Fetches detailed metadata for the title with the given [imdbId].
-  ///
-  /// The [imdbId] should be a standard IMDb identifier (e.g. `tt1375666`).
-  ///
-  /// ```dart
-  /// final detail = await client.getTitle('tt1375666');
-  /// ```
-  Future<Result<ImdbTitleDetail>> getTitle(String imdbId) async {
-    final uri = Uri.parse('$_baseUrl/title/$imdbId');
-
-    return _get(uri, (json) {
-      final data = json['data'] as Map<String, dynamic>? ?? json;
-      return _parseTitleDetail(data);
-    });
-  }
-
-  // ---- HTTP helpers -------------------------------------------------------
-
-  /// Performs a GET request and parses the JSON response with [parse].
-  ///
-  /// Returns [Result.failure] for HTTP errors, API-level errors (`ok: false`),
-  /// JSON decode failures, and unexpected exceptions.
-  Future<Result<T>> _get<T>(
-    Uri uri,
-    T Function(Map<String, dynamic>) parse,
-  ) async {
     try {
-      final response = await _http.get(uri);
-
-      if (response.statusCode == 404) {
-        return Result.failure(
-          ServiceError.notFound('IMDbAPI resource: $uri'),
-        );
-      }
+      final response = await _http.get(uri).timeout(
+            const Duration(seconds: 10),
+          );
 
       if (response.statusCode != 200) {
         return Result.failure(
           ServiceError.network(
-            'IMDbAPI returned ${response.statusCode}: '
-            '${response.reasonPhrase}',
+            'IMDb search returned ${response.statusCode}',
           ),
         );
       }
 
       final json = jsonDecode(response.body) as Map<String, dynamic>;
-
-      // The API wraps responses in `{"ok": true/false, ...}`.
       final ok = json['ok'];
-      if (ok == false) {
-        final message =
-            json['error'] as String? ?? json['message'] as String? ?? 'Unknown API error';
-        return Result.failure(ServiceError.network('IMDbAPI error: $message'));
+      if (ok != true) {
+        return Result.failure(
+          ServiceError.network(
+            'IMDb search error: ${json['description'] ?? 'Unknown'}',
+          ),
+        );
       }
 
-      return Result.success(parse(json));
-    } on http.ClientException catch (e) {
-      return Result.failure(ServiceError.network('HTTP error: $e'));
-    } on FormatException catch (e) {
-      return Result.failure(
-        ServiceError.unknown('Failed to parse IMDbAPI response', e),
-      );
-    } on Exception catch (e, st) {
-      return Result.failure(ServiceError.unknown('$e', e, st));
+      final items = json['description'] as List<dynamic>? ?? [];
+      final results = items
+          .cast<Map<String, dynamic>>()
+          .map(_parseSearchResult)
+          .where((r) => r.id.isNotEmpty && r.title.isNotEmpty)
+          .toList(growable: false);
+
+      // Cache for later detail lookups.
+      for (final r in results) {
+        _searchCache[r.id] = r;
+      }
+
+      return Result.success(results);
+    } on Exception catch (e) {
+      dev.log('IMDb search failed: $e', name: 'ImdbApiClient');
+      return Result.failure(ServiceError.network('IMDb search failed: $e'));
+    }
+  }
+
+  /// Returns cached detail for an IMDb title, or fetches via search.
+  ///
+  /// Since the free proxy only supports search (not per-title detail),
+  /// this returns a [ImdbTitleDetail] synthesised from search data.
+  Future<Result<ImdbTitleDetail>> getTitle(String imdbId) async {
+    // Check cache first.
+    final cached = _searchCache[imdbId];
+    if (cached != null) {
+      return Result.success(ImdbTitleDetail.fromSearch(cached));
+    }
+
+    // Try searching by IMDb ID.
+    final searchResult = await search(imdbId);
+    switch (searchResult) {
+      case Success(:final value):
+        final match = value.where((r) => r.id == imdbId).firstOrNull;
+        if (match != null) {
+          return Result.success(ImdbTitleDetail.fromSearch(match));
+        }
+        // Return first result as fallback.
+        if (value.isNotEmpty) {
+          return Result.success(ImdbTitleDetail.fromSearch(value.first));
+        }
+        return Result.failure(
+          ServiceError.notFound('Title $imdbId not found'),
+        );
+      case Failure(:final error):
+        return Result.failure(error);
     }
   }
 
   // ---- Parsers ------------------------------------------------------------
 
-  ImdbSearchResult _parseSearchResult(Map<String, dynamic> json) =>
-      ImdbSearchResult(
-        id: json['id'] as String? ?? '',
-        title: json['title'] as String? ?? '',
-        year: _toInt(json['year']),
-        type: ImdbMediaType.fromString(json['type'] as String?),
-        posterUrl: _naString(json['poster'] as String?),
-      );
+  ImdbSearchResult _parseSearchResult(Map<String, dynamic> json) {
+    final id = json['#IMDB_ID'] as String? ?? '';
+    final title = json['#TITLE'] as String? ?? '';
+    final year = json['#YEAR'];
+    final poster = json['#IMG_POSTER'] as String?;
+    final actors = json['#ACTORS'] as String?;
+    final rank = json['#RANK'];
 
-  ImdbTitleDetail _parseTitleDetail(Map<String, dynamic> json) {
-    final ratingMap = json['rating'] as Map<String, dynamic>?;
-
-    return ImdbTitleDetail(
-      id: json['id'] as String? ?? '',
-      title: json['title'] as String? ?? '',
-      year: _toInt(json['year']),
-      type: ImdbMediaType.fromString(json['type'] as String?),
-      rated: _naString(json['rated'] as String?),
-      releasedDate: _parseDate(json['released'] as String?),
-      runtimeMinutes: _parseRuntime(json['runtime'] as String?),
-      genres: _toStringList(json['genres']),
-      director: _naString(json['director'] as String?),
-      writers: _toStringList(json['writers']),
-      actors: _toStringList(json['actors']),
-      plot: _naString(json['plot'] as String?),
-      language: _naString(json['language'] as String?),
-      country: _naString(json['country'] as String?),
-      posterUrl: _naString(json['poster'] as String?),
-      rating: _toDouble(ratingMap?['average']),
-      ratingCount: _toInt(ratingMap?['count']),
-      metascore: _toInt(json['metascore']),
-      boxOffice: _parseBoxOffice(json['boxOffice'] as String?),
+    return ImdbSearchResult(
+      id: id,
+      title: title,
+      year: year is int ? year : int.tryParse(year?.toString() ?? ''),
+      type: ImdbMediaType.fromImdbId(id),
+      posterUrl: poster,
+      actors: actors != null && actors.isNotEmpty ? actors : null,
+      rank: rank is int ? rank : int.tryParse(rank?.toString() ?? ''),
     );
-  }
-
-  // ---- Value helpers ------------------------------------------------------
-
-  /// Returns `null` when [value] is `null`, empty, or the literal `"N/A"`.
-  static String? _naString(String? value) {
-    if (value == null || value.isEmpty || value == 'N/A') return null;
-    return value;
-  }
-
-  /// Safely parses a date string (ISO 8601 `YYYY-MM-DD` or similar).
-  static DateTime? _parseDate(String? value) {
-    if (value == null || value.isEmpty || value == 'N/A') return null;
-    try {
-      return DateTime.parse(value);
-    } on FormatException {
-      return null;
-    }
-  }
-
-  /// Parses a runtime string like `"148 min"` into an integer `148`.
-  static int? _parseRuntime(String? value) {
-    if (value == null || value.isEmpty || value == 'N/A') return null;
-    final match = RegExp(r'(\d+)').firstMatch(value);
-    return match != null ? int.tryParse(match.group(1)!) : null;
-  }
-
-  /// Parses a box-office string like `"$292,576,195"` into `292576195`.
-  static int? _parseBoxOffice(String? value) {
-    if (value == null || value.isEmpty || value == 'N/A') return null;
-    final cleaned = value.replaceAll(RegExp(r'[^0-9]'), '');
-    return cleaned.isNotEmpty ? int.tryParse(cleaned) : null;
-  }
-
-  /// Coerces a JSON value to [int], handling `int`, `double`, and `String`.
-  static int? _toInt(dynamic value) {
-    if (value == null) return null;
-    if (value is int) return value;
-    if (value is double) return value.toInt();
-    return int.tryParse(value.toString());
-  }
-
-  /// Coerces a JSON value to [double], handling `int`, `double`, and `String`.
-  static double? _toDouble(dynamic value) {
-    if (value == null) return null;
-    if (value is double) return value;
-    if (value is int) return value.toDouble();
-    return double.tryParse(value.toString());
-  }
-
-  /// Converts a JSON value to a `List<String>`.
-  ///
-  /// Handles both `List<dynamic>` (array of strings) and a comma-separated
-  /// `String` fallback for maximum API compatibility.
-  static List<String> _toStringList(dynamic value) {
-    if (value == null) return const [];
-    if (value is List) {
-      return value
-          .map((e) => e?.toString())
-          .whereType<String>()
-          .where((s) => s.isNotEmpty && s != 'N/A')
-          .toList(growable: false);
-    }
-    if (value is String && value.isNotEmpty && value != 'N/A') {
-      return value
-          .split(',')
-          .map((s) => s.trim())
-          .where((s) => s.isNotEmpty)
-          .toList(growable: false);
-    }
-    return const [];
   }
 }

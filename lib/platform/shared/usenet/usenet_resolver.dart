@@ -10,6 +10,7 @@ library;
 import 'dart:async';
 import 'dart:developer' as dev;
 
+import 'package:flutter/foundation.dart';
 import 'package:kabuk/config/result.dart';
 import 'package:kabuk/knowledge/types/streaming_prefs.dart';
 import 'package:kabuk/platform/shared/usenet/release_parser.dart';
@@ -94,11 +95,15 @@ class UsenetResolver {
     int? year,
     required StreamingPrefs prefs,
   }) async {
+    debugPrint('[Resolver] .resolveMovie: imdbId=$imdbId title=$title year=$year',
+        );
     final results = await _searchForMovie(
       imdbId: imdbId,
       title: title,
       year: year,
     );
+    debugPrint('[Resolver] .resolveMovie: found ${results.length} raw results',
+        );
     return _rankResults(results, prefs);
   }
 
@@ -146,28 +151,43 @@ class UsenetResolver {
   }) async {
     final results = <UsenetRelease>[];
 
-    // Prefer IMDB ID search (most accurate).
+    // Try IMDB ID search first (most accurate), but with a tight timeout
+    // because many indexers don't support t=movie and may hang.
     if (imdbId != null && imdbId.isNotEmpty) {
-      final res = await _usenet.searchMovie(imdbId: imdbId, limit: 50);
-      if (res case Success(:final value)) {
-        results.addAll(value);
+      final cleanId = imdbId.startsWith('tt') ? imdbId.substring(2) : imdbId;
+      debugPrint('[Resolver] IMDB search with id=$cleanId');
+      try {
+        final res = await _usenet
+            .searchMovie(imdbId: cleanId, limit: 50)
+            .timeout(const Duration(seconds: 10));
+        debugPrint('[Resolver] IMDB search complete, success=${res is Success}');
+        if (res case Success(:final value)) {
+          results.addAll(value);
+        }
+      } catch (e) {
+        debugPrint('[Resolver] IMDB search failed/timed out: $e — falling back to title search');
       }
     }
 
-    // Supplement with title search if few results or no IMDB ID.
-    if (results.length < 5 && title != null && title.isNotEmpty) {
+    // Always do a title search (uses t=search which is universally supported).
+    if (title != null && title.isNotEmpty) {
       final query = year != null ? '$title $year' : title;
-      final res = await _usenet.search(
-        query,
-        category: UsenetCategory.movies,
-        limit: 30,
-      );
-      if (res case Success(:final value)) {
-        final existingIds = results.map((r) => r.id).toSet();
-        results.addAll(value.where((r) => !existingIds.contains(r.id)));
+      debugPrint('[Resolver] title search for "$query" (category=movies)');
+      try {
+        final res = await _usenet
+            .search(query, category: UsenetCategory.movies, limit: 50)
+            .timeout(const Duration(seconds: 10));
+        debugPrint('[Resolver] title search complete, success=${res is Success}');
+        if (res case Success(:final value)) {
+          final existingIds = results.map((r) => r.id).toSet();
+          results.addAll(value.where((r) => !existingIds.contains(r.id)));
+        }
+      } catch (e) {
+        debugPrint('[Resolver] title search failed: $e');
       }
     }
 
+    debugPrint('[Resolver] returning ${results.length} total results');
     return results;
   }
 
@@ -179,21 +199,27 @@ class UsenetResolver {
   }) async {
     final results = <UsenetRelease>[];
 
-    // Prefer TVDB ID search.
+    // Try TVDB ID search (t=tvsearch) with timeout.
     if (tvdbId != null) {
-      final res = await _usenet.searchTv(
-        tvdbId: tvdbId,
-        season: season,
-        episode: episode,
-        limit: 50,
-      );
-      if (res case Success(:final value)) {
-        results.addAll(value);
+      try {
+        final res = await _usenet
+            .searchTv(
+              tvdbId: tvdbId,
+              season: season,
+              episode: episode,
+              limit: 50,
+            )
+            .timeout(const Duration(seconds: 10));
+        if (res case Success(:final value)) {
+          results.addAll(value);
+        }
+      } catch (e) {
+        debugPrint('[Resolver] TV TVDB search failed/timed out: $e');
       }
     }
 
-    // Supplement with title search.
-    if (results.length < 5 && seriesTitle != null && seriesTitle.isNotEmpty) {
+    // Always do title search (uses t=search which is universally supported).
+    if (seriesTitle != null && seriesTitle.isNotEmpty) {
       final query = StringBuffer(seriesTitle);
       if (season != null) {
         query.write(' S${season.toString().padLeft(2, '0')}');
@@ -201,14 +227,20 @@ class UsenetResolver {
           query.write('E${episode.toString().padLeft(2, '0')}');
         }
       }
-      final res = await _usenet.search(
-        query.toString(),
-        category: UsenetCategory.tvShows,
-        limit: 30,
-      );
-      if (res case Success(:final value)) {
-        final existingIds = results.map((r) => r.id).toSet();
-        results.addAll(value.where((r) => !existingIds.contains(r.id)));
+      try {
+        final res = await _usenet
+            .search(
+              query.toString(),
+              category: UsenetCategory.tvShows,
+              limit: 50,
+            )
+            .timeout(const Duration(seconds: 10));
+        if (res case Success(:final value)) {
+          final existingIds = results.map((r) => r.id).toSet();
+          results.addAll(value.where((r) => !existingIds.contains(r.id)));
+        }
+      } catch (e) {
+        debugPrint('[Resolver] TV title search failed: $e');
       }
     }
 
@@ -506,6 +538,7 @@ class StreamOrchestrator {
     required StreamingPrefs prefs,
   }) async {
     final entityLabel = title ?? imdbId ?? 'movie';
+    debugPrint('[Orchestrator] playMovie: $entityLabel imdbId=$imdbId');
     _emit(OrchestratorResolving(entity: entityLabel));
 
     final sources = await _resolver.resolveMovie(
@@ -601,7 +634,10 @@ class StreamOrchestrator {
   ) async {
     if (_disposed) return;
 
+    debugPrint('[Orchestrator] _playFromSources: ${sources.length} sources for "$entityLabel"');
+
     if (sources.isEmpty) {
+      debugPrint('[Orchestrator] No sources found!');
       _emit(const OrchestratorFailed(
         message: 'No sources found. Try broadening your quality preferences.',
         triedCount: 0,
@@ -658,7 +694,7 @@ class StreamOrchestrator {
   Future<bool> _trySource(ResolvedSource source) async {
     try {
       // 1. Fetch NZB file.
-      dev.log('StreamOrchestrator: fetching NZB for "${source.label}" '
+      debugPrint('[Orchestrator] fetching NZB for "${source.label}" '
           '(${source.sizeLabel})');
 
       final nzbResult = await _usenet.fetchNzb(source.release.nzbUrl);
@@ -666,30 +702,32 @@ class StreamOrchestrator {
       final nzb = switch (nzbResult) {
         Success(:final value) => value,
         Failure(:final error) => () {
-          dev.log('StreamOrchestrator: NZB fetch failed: $error');
+          debugPrint('[Orchestrator] NZB fetch failed: $error');
           return null;
         }(),
       };
       if (nzb == null) return false;
 
       // 2. Start streaming pipeline.
+      debugPrint('[Orchestrator] NZB fetched, starting stream pipeline...');
       _emit(OrchestratorBuffering(source: source, percent: 0));
 
       final sessionResult = await _usenet.startStream(nzb);
       final session = switch (sessionResult) {
         Success(:final value) => value,
         Failure(:final error) => () {
-          dev.log('StreamOrchestrator: stream start failed: $error');
+          debugPrint('[Orchestrator] stream start failed: $error');
           return null;
         }(),
       };
       if (session == null) return false;
 
+      debugPrint('[Orchestrator] stream ready: ${session.localUrl}');
       _activeSession = session;
       _activeSource = source;
       return true;
     } catch (e) {
-      dev.log('StreamOrchestrator: unexpected error: $e');
+      debugPrint('[Orchestrator] unexpected error in _trySource: $e');
       return false;
     }
   }
