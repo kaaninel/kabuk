@@ -52,14 +52,15 @@ Think of it as a shell for your digital life — like Android launchers or Windo
 
 ## Tech Stack
 
-- **Flutter/Dart 3.x** — Cross-platform UI
+- **Flutter/Dart 3.x** — Cross-platform UI (iOS is the active target)
 - **Riverpod** — State management
 - **Drift** — SQLite ORM for knowledge store
 - **Freezed** — Immutable data classes
 - **RFW** — Remote Flutter Widgets for dynamic UI
-- **gRPC** — Inter-device communication
-- **Nostr** — Decentralized social protocol (NIP-01, NIP-04, NIP-44, NIP-23, NIP-51)
-- **MCP** — Model Context Protocol for connecting external tools to the local LLM
+- **Nostr** — Decentralized social protocol (NIP-01, NIP-19, NIP-44, NIP-25, NIP-28)
+- **media_kit** — Universal video playback (MKV/MP4/HLS)
+- **llamadart** — On-device GGUF inference via Dart Native Assets
+- **MCP** *(design only — no implementation yet)* — Model Context Protocol for connecting external tools to the local LLM
 
 ## Documentation
 
@@ -75,6 +76,7 @@ Think of it as a shell for your digital life — like Android launchers or Windo
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Roadmap and master task list |
 | [docs/IMPROVEMENT_ROADMAP.md](docs/IMPROVEMENT_ROADMAP.md) | Improvement workstreams and phases |
 | [docs/UX_AUDIT_REPORT.md](docs/UX_AUDIT_REPORT.md) | UX findings and recommendations |
+| [docs/TOOL_DISTILLATION.md](docs/TOOL_DISTILLATION.md) | In-house tools vs. best open-source counterparts (build vs. adopt) |
 
 ## Getting Started
 
@@ -91,29 +93,43 @@ flutter run
 
 ## Project Status
 
-**Phase 5 / 6 — Communication & Ecosystem (Active Development)**
+**Last verified: Aug 2026** — iOS simulator build passing, `flutter analyze` clean (0 errors, 6 warnings), 634/634 tests passing.
 
-Core foundation is complete and the app is running on iOS. Current working features:
+The app runs on iOS (iPhone 17 Pro simulator) and the codebase is healthy, but the docs below previously overstated several features. The accurate picture:
 
-- ✅ Explore view — Reddit, RSS, 4chan, Nostr feeds with real-time data
-- ✅ Nostr social layer — Like/comment/repost any content via Nostr identity
-- ✅ Unified ChannelView — View any author's content natively across all sources
-- ✅ Chat view — Nostr DMs + Kabuk AI (local LLM) as primary assistant
-- ✅ In-app keyboard — Custom keyboard for all text input
-- ✅ Vault view — Notes, camera/audio capture, document library
-- ✅ Apps view — Tools (Notes, Calendar, Contacts, Search, Settings), Developer panel
-- ✅ Identity system — Nostr key management, generate/import nsec
-- ✅ Relay management — 8/9 relays connected by default
-- ✅ RFW widget system — 7 widget libraries (core, notes, contacts, dashboard, media, etc.)
-- ✅ Agent system — 11 specialized agents (identity, messaging, feeds, discover, router, etc.)
-- ✅ Settings — LLM config, local models, service providers, encryption at rest
-- ✅ Horizontal swipe navigation between articles
-- ✅ Breadcrumb omnibar — Source › Channel › Author › Title navigation in article detail
-- 🔄 Local LLM on-device inference (GGUF model support)
-- 🔄 External LLM API integration (OpenAI, Ollama)
-- 🔄 MCP (Model Context Protocol) server support
-- ⏳ App Marketplace
-- ⏳ YouTube feed source
+### Working (verified)
+
+- ✅ 4-view shell — Explore, Chat, Vault, Apps — plus Onboarding, Settings (12 sub-pages), Marketplace
+- ✅ Explore feed — RSS, Reddit, 4chan, Nostr, Usenet articles stored as `schema:Article` and rendered as native cards; pull-to-refresh, sort modes, filters, 30-min background refresh
+- ✅ Nostr social layer — NIP-01/19/44/25, relays, DMs, group channels, reactions
+- ✅ Agent system — 11 domain agents (router, system, note, contact, calendar, file, search, identity, messaging, feeds, discover); isolate runtime; tiered LLM (local GGUF + OpenAI/Anthropic HTTP); privacy filter; memory; cost tracking
+- ✅ Knowledge store — Drift/SQLite RDF triple store (schemaVersion 4), FTS5, change events, device-sync columns
+- ✅ Usenet stack — Newznab indexers, NNTP provider pool, NZB/yEnc/par2/RAR, streaming pipeline + local HTTP server, "Find on Usenet", media_kit video player
+- ✅ Content plugins — Reddit, 4chan, Media, YouTube, HackerNews, Wikipedia, SoundCloud, Bandcamp (searchable/usable via omnibar + marketplace)
+- ✅ RFW widget system — 7 built-in widget libraries with knowledge-store bindings
+- ✅ Vault — AES-256-GCM encrypted files, notes, camera/audio capture, collections
+- ✅ Identity system — secp256k1 keypairs, nsec import/generate, biometrics
+- ✅ 634 passing tests (agent, knowledge, service, and platform layers; no UI widget tests)
+
+### Partially working / fragile (see docs/IMPROVEMENT_ROADMAP.md)
+
+- 🔄 LLM behavior is the weakest area — see "Known Gaps" below. Local GGUF tool-calling is unreliable, all domain agents run on the base tier, and unconfigured setups show a misleading "AI model is being prepared" stub.
+- 🔄 Content sources/channels — see "Known Gaps". Feed is capped at 200 articles, articles are pruned 48h after publication, non-Reddit channels never fetch fresh content, and plugin content has no Explore surface.
+
+### Known Gaps (verified in code, Aug 2026)
+
+1. **Explore feed hard-capped at 200 articles** — `articlesProvider` reads `listArticles(limit: 200)`; older content is never visible.
+2. **Articles auto-delete after 48h** — unread articles expire 48h after publication and are pruned on startup/refresh; users lose content they didn't read in time.
+3. **ChannelView only refreshes Reddit** — non-Reddit channels show only cached knowledge-store content and never fetch fresh items.
+4. **Unified ChannelPage is dead code** — `channel_page.dart` is never wired into navigation and returns an empty list for non-plugin channels.
+5. **Plugin content (YouTube, HN, Wikipedia, SoundCloud, Bandcamp) has no Explore/channel surface** — only reachable via omnibar search/URL-resolution.
+6. **Reddit uses the unauthenticated JSON API** — subject to aggressive 429/403 blocking; failures are silently swallowed so feeds go stale without feedback.
+7. **All domain agents run on the base LLM tier** — `processLlmRequest` never sets a tier, so with a local model everything runs on the small, tool-calling-weak model; `standard`/`advanced` tiers are unused by agents.
+8. **MCP and wallet/Lightning are design-only** — `docs/MCP.md` exists but there is zero MCP code; wallet/zaps are documented as "not implemented".
+9. **Remote-only LLM config makes two API calls per message** — one for routing (base tier = remote) plus one for the response.
+10. **iOS build artifacts are uncommitted** — SPM dirs, Xcode scheme pre-action, `Podfile.lock`, `pubspec.lock` changes left from the last build.
+
+See [docs/IMPROVEMENT_ROADMAP.md](docs/IMPROVEMENT_ROADMAP.md) for the full status and remediation plan.
 
 ## License
 

@@ -10,6 +10,7 @@ import 'package:kabuk/agents/http_llm.dart';
 import 'package:kabuk/agents/llm.dart';
 import 'package:kabuk/agents/local_llm.dart';
 import 'package:kabuk/config/providers.dart';
+import 'package:kabuk/platform/shared/device_capabilities.dart' show kStandardModelId;
 import 'package:kabuk/services/model_manager.dart';
 import 'package:kabuk/ui/theme.dart';
 
@@ -365,6 +366,7 @@ class _LocalModelsPageState extends ConsumerState<LocalModelsPage> {
                   return _DownloadModelTile(
                     model: model,
                     isInstalled: isInstalled,
+                    isStandard: model.id == kStandardModelId,
                     isDownloading: _downloadingModelId == model.id,
                     progress: _downloadProgress,
                     onDownload: () => _downloadModel(model),
@@ -461,6 +463,7 @@ class _DownloadModelTile extends StatelessWidget {
   const _DownloadModelTile({
     required this.model,
     required this.isInstalled,
+    this.isStandard = false,
     required this.isDownloading,
     required this.progress,
     required this.onDownload,
@@ -468,6 +471,7 @@ class _DownloadModelTile extends StatelessWidget {
 
   final RemoteModelInfo model;
   final bool isInstalled;
+  final bool isStandard;
   final bool isDownloading;
   final double progress;
   final VoidCallback onDownload;
@@ -515,6 +519,14 @@ class _DownloadModelTile extends StatelessWidget {
                 if (isInstalled)
                   const Chip(
                     label: Text('Installed', style: TextStyle(fontSize: 11)),
+                    backgroundColor: Color(0xFF1B3A2A),
+                    side: BorderSide.none,
+                    visualDensity: VisualDensity.compact,
+                    labelStyle: TextStyle(color: KabukTheme.accentGreen),
+                  )
+                else if (isStandard)
+                  const Chip(
+                    label: Text('Standard', style: TextStyle(fontSize: 11)),
                     backgroundColor: Color(0xFF1B3A2A),
                     side: BorderSide.none,
                     visualDensity: VisualDensity.compact,

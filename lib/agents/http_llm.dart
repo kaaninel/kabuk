@@ -55,6 +55,23 @@ class LlmConfig {
          defaultModel: model,
        );
 
+  /// Creates a config for an OpenAI-compatible endpoint.
+  ///
+  /// Works with OpenRouter, LM Studio, vLLM, llama.cpp server, Groq,
+  /// Together, and any server exposing the OpenAI Chat Completions API.
+  /// The provider is set to [LlmProvider.openai] so the OpenAI wire
+  /// format + Bearer auth are used, but requests go to [baseUrl].
+  const LlmConfig.openAICompatible({
+    required String baseUrl,
+    String apiKey = '',
+    String? model,
+  }) : this(
+         provider: LlmProvider.openai,
+         baseUrl: baseUrl,
+         apiKey: apiKey,
+         defaultModel: model,
+       );
+
   /// The LLM provider type.
   final LlmProvider provider;
 
@@ -241,8 +258,11 @@ class HttpLlmService implements LlmService {
       'stream': stream,
     };
 
-    // Request usage reporting in the final streaming chunk (OpenAI).
-    if (stream && config.provider == LlmProvider.openai) {
+    // Request usage reporting in the final streaming chunk (OpenAI only —
+    // some third-party compatible servers reject the extra field).
+    if (stream &&
+        config.provider == LlmProvider.openai &&
+        config.baseUrl.contains('api.openai.com')) {
       body['stream_options'] = {'include_usage': true};
     }
 

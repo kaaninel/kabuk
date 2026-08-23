@@ -68,106 +68,37 @@ class SharedModelManager implements ModelManager {
 
   @override
   List<RemoteModelInfo> get recommendedModels => const [
-    // ── Qwen3.5 0.8B (unsloth) ──────────────────────────────────────────────
+    // ── MiniCPM5 1B — STANDARD on-device model ──────────────────────────────
+    // Kabuk standardizes on MiniCPM5 1B: it is the only on-device model,
+    // auto-downloaded during onboarding. Good instruction following, tool
+    // calling and multilingual support at a size that fits any phone.
     RemoteModelInfo(
-      id: 'qwen3.5-0.8b-q4km',
-      name: 'Qwen3.5 0.8B (Q4_K_M)',
+      id: 'minicpm5-1b-q4km',
+      name: 'MiniCPM5 1B (Q4_K_M)',
       downloadUrl:
-          'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf',
-      fileName: 'qwen3.5-0.8b-q4km.gguf',
-      sizeBytes: 533000000, // ~533 MB
+          'https://huggingface.co/openbmb/MiniCPM5-1B-GGUF/resolve/main/MiniCPM5-1B-Q4_K_M.gguf',
+      fileName: 'minicpm5-1b-q4km.gguf',
+      sizeBytes: 1190000000, // ~1.19 GB
       quantization: 'Q4_K_M',
-      parameterCount: '0.8B',
+      parameterCount: '1B',
       description:
-          'Smallest Qwen3.5. Fast on-device inference, '
-          'good for tool calling and quick agent tasks.',
-      chatFormat: 'chatml',
+          'The standard Kabuk model. Fast, fits in ~2.5 GB RAM, '
+          'strong tool calling and instruction following for agent tasks.',
+      chatFormat: 'minicpm',
     ),
     RemoteModelInfo(
-      id: 'qwen3.5-0.8b-q8',
-      name: 'Qwen3.5 0.8B (Q8_0)',
+      id: 'minicpm5-1b-q8',
+      name: 'MiniCPM5 1B (Q8_0)',
       downloadUrl:
-          'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q8_0.gguf',
-      fileName: 'qwen3.5-0.8b-q8.gguf',
-      sizeBytes: 812000000, // ~812 MB
+          'https://huggingface.co/openbmb/MiniCPM5-1B-GGUF/resolve/main/MiniCPM5-1B-Q8_0.gguf',
+      fileName: 'minicpm5-1b-q8.gguf',
+      sizeBytes: 1790000000, // ~1.79 GB
       quantization: 'Q8_0',
-      parameterCount: '0.8B',
+      parameterCount: '1B',
       description:
-          'Near full-precision 0.8B. Best 0.8B quality at '
-          'the cost of slightly more RAM.',
-      chatFormat: 'chatml',
-    ),
-    // ── Qwen3.5 2B (unsloth) ────────────────────────────────────────────────
-    RemoteModelInfo(
-      id: 'qwen3.5-2b-q3km',
-      name: 'Qwen3.5 2B (Q3_K_M)',
-      downloadUrl:
-          'https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q3_K_M.gguf',
-      fileName: 'qwen3.5-2b-q3km.gguf',
-      sizeBytes: 1110000000, // ~1.11 GB
-      quantization: 'Q3_K_M',
-      parameterCount: '2B',
-      description:
-          'Compact 2B with aggressive quantization. Fits in '
-          '~1.5 GB RAM with solid reasoning capability.',
-      chatFormat: 'chatml',
-    ),
-    RemoteModelInfo(
-      id: 'qwen3.5-2b-q4km',
-      name: 'Qwen3.5 2B (Q4_K_M)',
-      downloadUrl:
-          'https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf',
-      fileName: 'qwen3.5-2b-q4km.gguf',
-      sizeBytes: 1280000000, // ~1.28 GB
-      quantization: 'Q4_K_M',
-      parameterCount: '2B',
-      description:
-          'Best-value 2B. Strong multilingual reasoning, tool '
-          'use, and structured output. Good all-rounder.',
-      chatFormat: 'chatml',
-    ),
-    RemoteModelInfo(
-      id: 'qwen3.5-2b-q8',
-      name: 'Qwen3.5 2B (Q8_0)',
-      downloadUrl:
-          'https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q8_0.gguf',
-      fileName: 'qwen3.5-2b-q8.gguf',
-      sizeBytes: 2010000000, // ~2.01 GB
-      quantization: 'Q8_0',
-      parameterCount: '2B',
-      description:
-          'Near full-precision 2B. Maximum quality from the '
-          '2B tier, excellent for agentic tasks.',
-      chatFormat: 'chatml',
-    ),
-    // ── Qwen3.5 4B (unsloth) ────────────────────────────────────────────────
-    RemoteModelInfo(
-      id: 'qwen3.5-4b-q3km',
-      name: 'Qwen3.5 4B (Q3_K_M)',
-      downloadUrl:
-          'https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q3_K_M.gguf',
-      fileName: 'qwen3.5-4b-q3km.gguf',
-      sizeBytes: 2290000000, // ~2.29 GB
-      quantization: 'Q3_K_M',
-      parameterCount: '4B',
-      description:
-          'Qwen3.5 4B at ~2.3 GB. Good fit for 3 GB RAM '
-          'budgets with strong reasoning capability.',
-      chatFormat: 'chatml',
-    ),
-    RemoteModelInfo(
-      id: 'qwen3.5-4b-q4km',
-      name: 'Qwen3.5 4B (Q4_K_M)',
-      downloadUrl:
-          'https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf',
-      fileName: 'qwen3.5-4b-q4km.gguf',
-      sizeBytes: 2740000000, // ~2.74 GB
-      quantization: 'Q4_K_M',
-      parameterCount: '4B',
-      description:
-          'Most capable small model. Excellent code, long-context '
-          'reasoning, agents, and vision understanding.',
-      chatFormat: 'chatml',
+          'Near full-precision MiniCPM5 1B. Best quality from the '
+          'standard tier at the cost of more RAM.',
+      chatFormat: 'minicpm',
     ),
   ];
 
@@ -260,6 +191,7 @@ class SharedModelManager implements ModelManager {
   /// Guesses the chat format based on the model file name.
   static String? _guessChatFormat(String fileName) {
     final lower = fileName.toLowerCase();
+    if (lower.contains('minicpm')) return 'minicpm';
     if (lower.contains('gemma')) return 'gemma';
     if (lower.contains('phi')) return 'chatml';
     if (lower.contains('qwen')) return 'chatml';

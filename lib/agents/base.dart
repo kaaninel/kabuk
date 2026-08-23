@@ -8,11 +8,15 @@ library;
 
 import 'dart:developer' as dev;
 
+import 'package:kabuk/agents/channels.dart';
 import 'package:kabuk/agents/context.dart';
 import 'package:kabuk/agents/llm.dart';
 import 'package:kabuk/agents/messages.dart';
+import 'package:kabuk/agents/observation.dart';
 import 'package:kabuk/agents/prompts.dart';
 import 'package:kabuk/agents/tiered_llm.dart';
+import 'package:kabuk/plugins/channel.dart';
+import 'package:kabuk/plugins/content_item.dart';
 
 /// A tool that an agent can execute.
 ///
@@ -98,6 +102,15 @@ sealed class ToolResult {
   /// Multiple results combined into one.
   const factory ToolResult.compound(List<ToolResult> results) =
       CompoundToolResult;
+
+  /// An agent-populated channel: typed content items bound to a channel
+  /// identity. The system draws the items using existing UI primitives
+  /// (`contentCardFor` / `ViewerRouter`) — the agent never authors UI.
+  const factory ToolResult.channel({
+    required Channel channel,
+    required List<ContentItem> items,
+    String? summary,
+  }) = ChannelToolResult;
 
   /// Serialize this result to JSON for LLM context or persistence.
   Map<String, dynamic> toJson();
@@ -215,6 +228,56 @@ final class CompoundToolResult extends ToolResult {
   };
 }
 
+/// An agent-populated channel.
+///
+/// Carries a [Channel] identity plus the typed [ContentItem]s the agent
+/// produced for it. The runtime populates the active channel session and
+/// the OS draws the items with existing primitives.
+final class ChannelToolResult extends ToolResult {
+  /// Creates a [ChannelToolResult].
+  const ChannelToolResult({
+    required this.channel,
+    required this.items,
+    this.summary,
+  });
+
+  /// The channel identity (uri, type, title, artwork).
+  final Channel channel;
+
+  /// Typed content items produced for the channel.
+  final List<ContentItem> items;
+
+  /// Optional one-line summary the agent wrote about the results.
+  final String? summary;
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'channel',
+    'channelUri': channel.entityUri,
+    'title': channel.title,
+    'entityType': channel.entityType.name,
+    'items': items.map(_contentItemToJson).toList(),
+    if (summary != null) 'summary': summary,
+  };
+}
+
+/// Compact JSON serialization of a [ContentItem] for the tool result wire
+/// format (isolate boundary + message persistence).
+Map<String, dynamic> _contentItemToJson(ContentItem item) => {
+  'sourcePluginId': item.sourcePluginId,
+  'externalId': item.externalId,
+  'contentType': item.contentType.name,
+  'title': item.title,
+  if (item.description != null) 'description': item.description,
+  if (item.url != null) 'url': item.url,
+  if (item.thumbnailUrl != null) 'thumbnailUrl': item.thumbnailUrl,
+  if (item.author?.name != null) 'author': item.author!.name,
+  if (item.publishedAt != null)
+    'publishedAt': item.publishedAt!.toIso8601String(),
+  'tags': item.tags,
+  'extra': item.extra,
+};
+
 /// Capabilities that an agent can request.
 ///
 /// The system checks these against the agent's permissions before
@@ -311,6 +374,30 @@ abstract class BaseAgent {
   ) async {
     context.onToolCall?.call(tool.name, args);
     final result = await tool.execute(args, context);
+
+    // Channel results are applied as a side-effect at execution time: the
+    // active channel session is populated and an observation is published
+    // so the OS surfaces can redraw and the perception layer can record it.
+    if (result is ChannelToolResult) {
+      context.channels?.populate(
+        ChannelSession(
+          channel: result.channel,
+          items: result.items,
+          summary: result.summary,
+          agentName: name,
+        ),
+      );
+      context.observation?.publish(
+        ChannelPopulatedEvent(
+          channelUri: result.channel.entityUri,
+          title: result.channel.title,
+          itemCount: result.items.length,
+          agentName: name,
+          summary: result.summary,
+        ),
+      );
+    }
+
     context.onToolResult?.call(tool.name, result);
     return result;
   }
@@ -429,6 +516,9 @@ abstract class BaseAgent {
         ErrorToolResult(:final message) => 'Error: $message',
         WidgetToolResult() => 'Widget rendered successfully.',
         RawWidgetToolResult() => 'Widget rendered successfully.',
+        ChannelToolResult(:final channel, :final items) =>
+          'Channel populated: ${items.length} items for '
+              '"${channel.title}".',
         MutationToolResult(:final added, :final removed) =>
           'Mutation applied: ${added.length} triples added, '
               '${removed.length} removed.',
@@ -530,6 +620,9 @@ abstract class BaseAgent {
         ErrorToolResult(:final message) => 'Error: $message',
         WidgetToolResult() => 'Widget rendered successfully.',
         RawWidgetToolResult() => 'Widget rendered successfully.',
+        ChannelToolResult(:final channel, :final items) =>
+          'Channel populated: ${items.length} items for '
+              '"${channel.title}".',
         MutationToolResult(:final added, :final removed) =>
           'Mutation applied: ${added.length} triples added, '
               '${removed.length} removed.',

@@ -7,6 +7,7 @@ import 'dart:developer' as dev;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:kabuk/agents/channels.dart';
 import 'package:kabuk/agents/cost_tracker.dart';
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/database.dart';
@@ -17,6 +18,7 @@ import 'package:kabuk/ui/chat/chat_view.dart';
 import 'package:kabuk/ui/chat/conversation_detail.dart';
 import 'package:kabuk/ui/chat/message_bubble.dart';
 import 'package:kabuk/ui/chat/nostr_chat_detail.dart';
+import 'package:kabuk/ui/explore/agent_channel_surface.dart';
 import 'package:kabuk/ui/explore/explore_view.dart';
 import 'package:kabuk/ui/explore/profile_view.dart';
 import 'package:kabuk/ui/settings/dev_mode_page.dart';
@@ -191,6 +193,37 @@ class _KabukShellState extends ConsumerState<KabukShell>
         if (!mounted) return;
         Navigator.of(context).push(
           MaterialPageRoute<void>(builder: (_) => ProfileView(pubkey: pubkey)),
+        );
+      });
+    });
+
+    // When an agent populates a channel, offer to open its surface so the
+    // user can see what the agent produced with the existing primitives.
+    ref.listen<ChannelSession?>(agentChannelProvider, (prev, next) {
+      if (next == null) return;
+      if (prev != null && prev.channel.entityUri == next.channel.entityUri) {
+        return;
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '${next.channel.title} — ${next.items.length} items '
+              '${next.agentName != null ? 'from ${next.agentName}' : ''}',
+            ),
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'View',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const AgentChannelPage(),
+                  ),
+                );
+              },
+            ),
+          ),
         );
       });
     });

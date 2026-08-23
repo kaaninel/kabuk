@@ -1,5 +1,7 @@
 # Virtual OS Layer Design
 
+> **⚠️ STATUS (Aug 2026):** Implemented across `lib/platform/{android,ios,desktop,shared}`. Known deviations: `PresentationService.discoverDisplays()` returns `const []` (external displays unsupported), and desktop background refresh is an intentional no-op. The Usenet subsystem (`lib/platform/shared/usenet/`) is a large implemented addition not covered in this document.
+
 ## Philosophy
 
 Just as Flutter doesn't replace Skia/Impeller on each platform but provides a consistent abstraction that maps down to native capabilities, Kabuk's Virtual OS layer abstracts every platform capability behind clean Dart interfaces. Business logic and agents never touch platform APIs directly — they use these interfaces. Implementations live in `lib/platform/` and use platform channels to bridge to native code.

@@ -173,6 +173,9 @@ class ChatService {
             ErrorToolResult(:final message) => 'Error: $message',
             WidgetToolResult() => 'Widget rendered.',
             RawWidgetToolResult() => 'Widget rendered.',
+            ChannelToolResult(:final items, :final channel) =>
+              'Channel populated: ${items.length} items for '
+                  '"${channel.title}".',
             MutationToolResult(:final added, :final removed) =>
               'Mutated: +${added.length} -${removed.length} triples.',
             CompoundToolResult(:final results) => '${results.length} results.',

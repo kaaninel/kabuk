@@ -7,16 +7,21 @@
 library;
 
 import 'package:kabuk/agents/base.dart';
+import 'package:kabuk/agents/channels.dart';
 import 'package:kabuk/agents/context.dart';
 import 'package:kabuk/agents/llm.dart';
 import 'package:kabuk/agents/memory.dart';
 import 'package:kabuk/agents/messages.dart';
+import 'package:kabuk/agents/primitives.dart';
+import 'package:kabuk/agents/subagent.dart';
 import 'package:kabuk/config/namespaces.dart';
 import 'package:kabuk/config/result.dart';
 import 'package:kabuk/knowledge/triple.dart';
 import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/knowledge/types/bookmark.dart';
 import 'package:kabuk/knowledge/types/saved_search.dart';
+import 'package:kabuk/plugins/channel.dart';
+import 'package:kabuk/plugins/content_item.dart';
 import 'package:kabuk/services/feed.dart';
 import 'package:kabuk/services/nostr.dart';
 import 'package:kabuk/services/nostr_utils.dart';
@@ -95,10 +100,16 @@ want Nostr content, local content, or both
 • Offer to subscribe to interesting topics or save searches for later
 • If the user mentions a specific hashtag (prefixed with #), use search_nostr_hashtag
 • For general content discovery, combine trending + hashtag search
+
+Subagent:
+• For complex reasoning about discovered content, or questions the
+on-device model handles poorly, use "delegate_to_subagent" to ask the
+remote advanced-tier model, then summarize its answer.
 ''';
 
   @override
   List<AgentTool> get tools => [
+    kDelegateToSubagentTool,
     AgentTool(
       name: 'search_nostr_hashtag',
       description:
@@ -479,6 +490,10 @@ want Nostr content, local content, or both
     return switch (result) {
       TextToolResult(:final content) => AgentResponse.text(content),
       ErrorToolResult(:final message) => AgentResponse.error(message),
+      ChannelToolResult(:final channel, :final items, :final summary) =>
+        AgentResponse.text(
+          summary ?? 'Populated "${channel.title}" with ${items.length} items.',
+        ),
       _ => const AgentResponse.text('Done.'),
     };
   }
@@ -526,20 +541,43 @@ want Nostr content, local content, or both
     events.removeWhere((e) => !seen.add(e.id));
     events.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-    final lines = events.take(limit).map((event) {
-      final date = DateTime.fromMillisecondsSinceEpoch(event.createdAt * 1000);
-      final preview = event.content.length > 150
-          ? '${event.content.substring(0, 150)}…'
-          : event.content;
-      final author = event.pubkey.substring(0, 8);
-      return '- **$author…** (${_formatDate(date)})\n  $preview';
-    });
+    final limited = events.take(limit).toList();
+    final items = limited.map((e) => _nostrEventToItem(e)).toList();
 
-    return ToolResult.text(
-      'Found ${events.length} post(s) for **#${hashtags.join(', #')}**:\n\n'
-      '${lines.join('\n\n')}\n\n'
-      '💡 You can subscribe to ${hashtags.length > 1 ? "these topics" : "this topic"} '
-      'with: "subscribe to #${hashtags.first}"',
+    final title = '#${hashtags.join(', #')}';
+    return ToolResult.channel(
+      channel: Channel(
+        entityUri: channelUriFor(title, prefix: 'nostr'),
+        entityType: ChannelEntityType.topic,
+        title: title,
+        description:
+            '${events.length} Nostr posts for ${hashtags.length > 1 ? "these topics" : "this topic"}',
+      ),
+      items: items,
+      summary: items.isEmpty
+          ? null
+          : 'Found ${events.length} post(s) for **$title**. '
+              'You can subscribe with: "subscribe to #${hashtags.first}"',
+    );
+  }
+
+  /// Converts a Nostr text note into a [ContentItem] for the primitive
+  /// renderers (article cards + article viewer).
+  static ContentItem _nostrEventToItem(NostrEvent e) {
+    final preview = e.content.length > 300
+        ? '${e.content.substring(0, 300)}…'
+        : e.content;
+    return contentItemFromParts(
+      sourcePluginId: 'nostr',
+      externalId: e.id,
+      contentType: ContentType.article,
+      title: preview,
+      url: 'https://njump.me/${e.id}',
+      author: e.pubkey.substring(0, 12),
+      publishedAt: DateTime.fromMillisecondsSinceEpoch(
+        e.createdAt * 1000,
+        isUtc: true,
+      ),
     );
   }
 
@@ -577,18 +615,22 @@ want Nostr content, local content, or both
     events.removeWhere((e) => !seen.add(e.id));
     events.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-    final lines = events.take(limit).map((event) {
-      final date = DateTime.fromMillisecondsSinceEpoch(event.createdAt * 1000);
-      final preview = event.content.length > 150
-          ? '${event.content.substring(0, 150)}…'
-          : event.content;
-      final author = event.pubkey.substring(0, 8);
-      return '- **$author…** (${_formatDate(date)})\n  $preview';
-    });
+    final limited = events.take(limit).toList();
+    final items = limited.map((e) => _nostrEventToItem(e)).toList();
 
-    return ToolResult.text(
-      'Found ${events.length} Nostr post(s) matching "$query":\n\n'
-      '${lines.join('\n\n')}',
+    final title = 'Search: "$query"';
+    return ToolResult.channel(
+      channel: Channel(
+        entityUri: channelUriFor(query, prefix: 'nostr-search'),
+        entityType: ChannelEntityType.topic,
+        title: title,
+        description: '${events.length} Nostr post(s) matching "$query"',
+      ),
+      items: items,
+      summary: items.isEmpty
+          ? null
+          : 'Found ${events.length} Nostr post(s) matching "$query". '
+              'Not all relays support full-text search.',
     );
   }
 
@@ -937,29 +979,44 @@ want Nostr content, local content, or both
     switch (result) {
       case Success(:final value):
         if (value.isEmpty) {
-          return ToolResult.text(
+          return ToolResult.error(
             'No Usenet results found for "$query"'
             '${category != null ? ' in ${category.name}' : ''}. '
             'Try different keywords or broaden the category.',
           );
         }
 
-        final lines = value.take(limit).map((UsenetRelease release) {
+        final items = value.take(limit).map((release) {
           final size = _formatBytes(release.sizeBytes);
-          final attrs = release.attributes.entries
-              .map((MapEntry<String, String> e) => '${e.key}: ${e.value}')
-              .join(', ');
-          final attrsLine = attrs.isNotEmpty ? '\n  Attributes: $attrs' : '';
-          return '- **${release.title}**\n'
-              '  Size: $size · Category: ${release.category.name}\n'
-              '  NZB: ${release.nzbUrl}$attrsLine';
-        });
+          final attrs = release.attributes.values.join(' · ');
+          return contentItemFromParts(
+            sourcePluginId: 'usenet',
+            externalId: release.id,
+            contentType: ContentType.video,
+            title: release.title,
+            description:
+                '${release.category.name} · $size${attrs.isNotEmpty ? ' · $attrs' : ''}',
+            url: release.nzbUrl,
+            author: release.poster,
+            publishedAt: release.publishedAt,
+            metadata: VideoMeta(duration: null, resolution: release.attributes['resolution']),
+            extra: {'category': release.category.name, 'size': size},
+          );
+        }).toList();
 
-        return ToolResult.text(
-          'Found ${value.length} Usenet release(s) for "$query"'
-          '${category != null ? ' in ${category.name}' : ''}:\n\n'
-          '${lines.join('\n\n')}\n\n'
-          '💡 Stream any result with: "stream <title>"',
+        final title = category != null
+            ? 'Usenet ${category.name}: "$query"'
+            : 'Usenet: "$query"';
+        return ToolResult.channel(
+          channel: Channel(
+            entityUri: channelUriFor('$title', prefix: 'usenet'),
+            entityType: ChannelEntityType.custom,
+            title: title,
+            description: '${value.length} release(s) found via Usenet indexers',
+          ),
+          items: items,
+          summary: 'Found ${value.length} Usenet release(s) for "$query". '
+              '💡 Stream any result with: "stream <title>"',
         );
 
       case Failure(:final error):
@@ -1047,15 +1104,5 @@ want Nostr content, local content, or both
       return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     }
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
-  }
-
-  static String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final diff = now.difference(date);
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    if (diff.inDays < 7) return '${diff.inDays}d ago';
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-'
-        '${date.day.toString().padLeft(2, '0')}';
   }
 }

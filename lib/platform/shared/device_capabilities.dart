@@ -111,3 +111,32 @@ RemoteModelInfo pickModelForDevice(
 
   return best;
 }
+
+/// The canonical ID of Kabuk's standard on-device model (MiniCPM5 1B).
+const String kStandardModelId = 'minicpm5-1b-q4km';
+
+/// Picks the model to auto-download: prefers the standard on-device model
+/// (MiniCPM5 1B) when it fits within the device RAM budget, otherwise
+/// falls back to [pickModelForDevice] (largest model that fits).
+RemoteModelInfo pickStandardModelForDevice(
+  DeviceCapabilities device,
+  List<RemoteModelInfo> candidates,
+) {
+  if (candidates.isEmpty) {
+    throw ArgumentError('candidates must not be empty');
+  }
+
+  final standard = candidates
+      .where((m) => m.id == kStandardModelId)
+      .firstOrNull;
+
+  if (standard != null) {
+    final estimatedRam = standard.sizeBytes * 2;
+    final ramBudget = device.totalRamBytes ~/ 2;
+    if (estimatedRam <= ramBudget) {
+      return standard;
+    }
+  }
+
+  return pickModelForDevice(device, candidates);
+}

@@ -4,6 +4,14 @@
 
 ---
 
+> **⚠️ Reality check (Aug 2026):** This document describes the target architecture. The implemented system matches it closely, with three important deviations that affect daily use:
+>
+> 1. **Two content systems coexist.** The original `FeedService` (`lib/services/feed.dart` + `lib/platform/shared/feed_service_impl.dart`) ingests RSS/Reddit/4chan/Nostr/Usenet into `schema:Article` entities for the Explore feed. A newer `ContentPlugin` system (`lib/plugins/`) produces `ContentItem`s for YouTube/HN/Wikipedia/SoundCloud/Bandcamp/Media that are only surfaced via omnibar search/URL resolution and the Marketplace — **not** the Explore feed or channel views. The Explore feed is additionally capped at 200 articles and unread articles are pruned 48h after publication. See `docs/IMPROVEMENT_ROADMAP.md` §Phase E.
+> 2. **The tiered LLM runs everything on the base tier.** `LlmTier.standard`/`advanced` exist but no domain agent requests them; all agent work uses the base model. Local GGUF tool-calling is brittle, so agent requests often degrade to raw text. See §E.1–E.2.
+> 3. **Channel views are Reddit-centric.** The "unified" `ChannelView` only fetches fresh content for Reddit; the intended replacement `ChannelPage` is not wired into navigation. See §E.5.
+
+---
+
 ## Table of Contents
 
 - [1. System Overview](#1-system-overview)

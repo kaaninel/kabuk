@@ -6,7 +6,9 @@
 library;
 
 import 'package:kabuk/agents/base.dart';
+import 'package:kabuk/agents/channels.dart';
 import 'package:kabuk/agents/llm.dart';
+import 'package:kabuk/agents/observation.dart';
 import 'package:kabuk/agents/privacy_filter.dart';
 import 'package:kabuk/agents/runtime.dart';
 import 'package:kabuk/agents/tiered_llm.dart';
@@ -53,6 +55,8 @@ class AgentContext {
     this.usenet,
     this.onToolCall,
     this.onToolResult,
+    this.channels,
+    this.observation,
     this.privacyLevel = PrivacyLevel.standard,
   });
 
@@ -134,6 +138,17 @@ class AgentContext {
   /// Usenet service for indexer/provider management, search, and streaming.
   final UsenetService? usenet;
 
+  /// The active channel controller. When an agent returns a
+  /// [ChannelToolResult], the runtime populates the session here so the
+  /// OS can draw it with existing primitives.
+  final ChannelController? channels;
+
+  /// The observation bus for publishing perception events (OS → agent).
+  ///
+  /// Agents and the runtime publish [ObservationEvent]s here so the
+  /// Concierge and proactive agents can react to OS activity.
+  final ObservationBus? observation;
+
   /// Optional callback invoked when a tool is about to be called.
   final ToolCallCallback? onToolCall;
 
@@ -160,6 +175,8 @@ class AgentContext {
       usenet: usenet,
       onToolCall: onToolCall ?? this.onToolCall,
       onToolResult: onToolResult ?? this.onToolResult,
+      channels: channels,
+      observation: observation,
       privacyLevel: privacyLevel,
     );
   }

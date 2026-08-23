@@ -77,6 +77,10 @@ Future<void> main() async {
   // Reading the provider ensures it's created and available for agents.
   container.read(usenetServiceProvider);
 
+  // Activate the Concierge — subscribes to the observation bus and records
+  // OS activity into the knowledge store so agents can perceive the user.
+  container.read(conciergeProvider);
+
   // Register OS-level periodic feed refresh (Android: WorkManager, iOS: BGTask).
   // This ensures content stays fresh even when the app is fully closed.
   final bgRefresh = WorkmanagerRefreshService();

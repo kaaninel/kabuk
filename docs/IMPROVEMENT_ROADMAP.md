@@ -6,6 +6,82 @@
 
 ---
 
+## Status as of Aug 2026
+
+This roadmap was written Feb 2026. **Phase A items are now largely implemented; the document has been annotated accordingly.** The new, highest-priority gaps (verified in code Aug 2026) concern LLM behavior and the content/channel pipeline. They are collected in **Phase E** below and are the recommended next focus.
+
+### Verified status of Phase A items
+
+| Item | Feb 2026 status | Aug 2026 status |
+|---|---|---|
+| A.1 Router text-fallback | Open | ✅ **Implemented** — keyword re-match → system-agent catch-all → raw text last resort (`lib/agents/domains/router.dart:361`) |
+| A.2 Isolate runtime safety | Open | 🔄 **Partial** — isolate spawning now falls back to in-process execution; no `DriftIsolate` yet (`lib/agents/isolate_runtime.dart:1060`) |
+| A.3 Streaming tool-call handling | Open | ✅ **Implemented** — `ToolCallEvent` accumulation + re-prompt loop (`lib/ui/chat/chat_service.dart:328`, `lib/agents/base.dart:381`) |
+| A.4 Agent memory pruning | Open | ✅ **Implemented** — `maxMemories = 50` with oldest-first eviction (`lib/agents/memory.dart`) |
+| A.5 LLM tier selection | Open | 🔄 **Not adopted** — the `tier` parameter exists (`lib/agents/base.dart:338`) but **no domain agent passes a tier**, so everything runs on the base tier |
+
+### Verified status of key Phase B/C items
+
+- B.1.1 DriftKnowledgeStore tests — 🔄 **Still no dedicated `drift_store_test.dart`**, though `database_test.dart`/`query_test.dart`/`types_test.dart` exist.
+- B.1.3 MessagingAgent tests — ✅ Now covered (`test/agents/` includes messaging agent coverage).
+- B.2.1 NIP-09 deletion, B.2.2 NIP-25 reactions — ✅ Reactions implemented; deletion partially (kind 5 models exist).
+- B.2.4 NIP-28 group channels — ✅ Implemented (messaging agent + chat UI).
+- B.2.6 Trending topics — 🔄 Implemented as a Nostr hashtag/NIP-50 search in the discovery agent; the Explore "Trending" UI was flagged as often empty in the UX audit.
+
+## Phase E — Current Reality Gaps (added Aug 2026)
+
+*These are "supposedly implemented but not working correctly" issues verified in the current code. They are the recommended focus before new features.*
+
+### E.1 All domain agents run on the base LLM tier (Priority: High)
+
+**Problem:** `processLlmRequest()` defaults to `LlmTier.base` and no agent passes a tier (`grep -r "tier:" lib/agents` shows only the router using `tier:base`). With a local GGUF model configured, every agent works through the small base model; with a remote-only config, every message costs two remote calls (router + agent). The `standard`/`advanced` tiers are effectively dead code.
+
+**Fix:** Have agents declare a default tier (e.g. feeds/search/discovery → standard, identity/system → base, complex tasks → advanced). Route by task complexity.
+
+### E.2 Local model tool-calling is unreliable (Priority: High)
+
+**Problem:** `LocalLlmService` only parses tool calls wrapped in a ```` ```json `` block (`lib/agents/local_llm.dart:444`). Small models frequently emit raw JSON, prose, or malformed arguments; when parsing fails the response degrades to plain text and the requested action is never performed. Combined with E.1 this is the main cause of "AI doesn't do what I asked".
+
+**Fix:** Accept bare `{"tool_calls": ...}` JSON, add a JSON-repair pass (truncated/fence-less), retry-with-correction prompts, and fall back to keyword dispatch before giving up.
+
+### E.3 Explore feed capped at 200 articles (Priority: High)
+
+**Problem:** `articlesProvider` calls `listArticles(limit: 200)` (`lib/ui/explore/explore_view.dart:72`). The feed can never show more than the 200 newest stored articles.
+
+**Fix:** Paginate the provider (limit/offset or cursor) and load-more from the store, mirroring the existing network pagination.
+
+### E.4 Unread articles are auto-deleted after 48h (Priority: High)
+
+**Problem:** `createArticle` stamps `kabuk:expiresAt = published + 48h` (`lib/knowledge/types/article.dart:364`); `pruneStaleArticles` runs on startup and after every refresh and deletes expired unread articles. Users lose content they didn't open within 48h.
+
+**Fix:** Raise the default TTL, make it configurable, and only prune truly ancient content (or bookmark-on-view).
+
+### E.5 Only Reddit channels refresh; ChannelPage is dead code (Priority: High)
+
+**Problem:** `ChannelView._authorFeedUrl`/`_channelFeedUrl` return `null` for every source except Reddit (`lib/ui/explore/channel_view.dart:31-46`), so Nostr/RSS/4chan/USenet channels only ever show cached store content and never fetch fresh items. The unified `ChannelPage` (`lib/ui/explore/channel_page.dart`) is never navigated to and returns `const []` for non-plugin channels.
+
+**Fix:** Route channel fetches through the feed sources/plugins per source type; wire `ChannelPage` into navigation; implement knowledge-store queries for non-plugin channels.
+
+### E.6 Plugin content has no Explore/channel surface (Priority: Medium)
+
+**Problem:** Plugins (YouTube, HackerNews, Wikipedia, SoundCloud, Bandcamp, Media) produce `ContentItem`s usable only via omnibar search / URL resolution / marketplace. They never appear in the Explore feed or channel views, so "YouTube feed source" and similar advertised features don't surface content.
+
+**Fix:** Add a plugin-backed feed source to the Explore pipeline and route resolved channels to `ChannelPage`.
+
+### E.7 Reddit unauthenticated API is rate-limited (Priority: Medium)
+
+**Problem:** `RedditFeedSource` hits `www.reddit.com/.../hot.json` with a browser User-Agent but no OAuth (`lib/platform/shared/reddit_source.dart`). Reddit aggressively 429s/403s unauthenticated requests, and failures are swallowed (`_fetchFeed` returns `[]`), so feeds silently go stale.
+
+**Fix:** Surface per-feed fetch errors in the UI, back off on 429, and consider authenticated/OAuth access for the Reddit plugin.
+
+### E.8 Privacy filter latency when local model is slow (Priority: Low)
+
+**Problem:** With a local base model configured, every remote-tier request first runs an on-device anonymization pass (`lib/agents/privacy_filter.dart`), doubling latency for small/large model combos. When only a remote provider is configured, filtering is disabled entirely (`lib/config/providers.dart:764`).
+
+**Fix:** Cache anonymization results, allow "regex-only" mode, and surface the trade-off in settings.
+
+---
+
 ## Executive Summary
 
 Five workstreams, 4 phases, ~16 weeks estimated:
@@ -23,11 +99,13 @@ Five workstreams, 4 phases, ~16 weeks estimated:
 
 *These are architectural bugs that undermine the core agent loop. Fix before building anything else.*
 
-### A.1 Router Text-Fallback (Priority: Critical)
+### A.1 Router Text-Fallback (Priority: Critical) ✅ IMPLEMENTED
 
 **Problem:** When the LLM returns `TextLlmResponse` instead of calling `route_to_agent`, the router returns that text verbatim. The user's request never reaches a specialized agent.
 
 **File:** `lib/agents/domains/router.dart` line 311
+
+**Status (Aug 2026):** Resolved. `_handleTextFallback` now keyword re-matches, falls back to `SystemAgent`, and only returns raw text last (`router.dart:361`). Acceptance criteria tests exist in `test/agents/router_test.dart`.
 
 **Fix:**
 1. When `TextLlmResponse` is received, attempt keyword-based re-matching on the original message content
@@ -42,11 +120,13 @@ Five workstreams, 4 phases, ~16 weeks estimated:
 
 ---
 
-### A.2 Isolate Runtime Safety (Priority: Critical)
+### A.2 Isolate Runtime Safety (Priority: Critical) 🔄 PARTIAL
 
 **Problem:** `_IsolateProxyContext` proxies only `LlmService` across isolate boundary. `KnowledgeStore` (Drift/SQLite) cannot safely cross isolate boundaries. Agents running in isolates will crash when accessing the knowledge store.
 
 **File:** `lib/agents/isolate_runtime.dart` lines 121–140, 209–213
+
+**Status (Aug 2026):** Partial. Isolate spawn failures now fall back to in-process execution with logging (`isolate_runtime.dart:1060`), so agents don't crash — but the underlying Drift-isolate limitation remains and the sandboxing benefit is effectively unused.
 
 **Fix options (choose one):**
 - **Option 1 (Recommended):** Open a secondary Drift database connection inside the isolate using `DriftIsolate` (Drift's built-in isolate support). Proxy mutations back to the main isolate for change event emission.
@@ -60,11 +140,13 @@ Five workstreams, 4 phases, ~16 weeks estimated:
 
 ---
 
-### A.3 Streaming Tool-Call Handling (Priority: High)
+### A.3 Streaming Tool-Call Handling (Priority: High) ✅ IMPLEMENTED
 
 **Problem:** `HttpLlmService.stream()` correctly accumulates tool call deltas in `_ToolCallBuffer`, but `ChatService` only processes `TextDeltaEvent` from the stream — tool calls are silently dropped.
 
 **File:** `lib/ui/chat/chat_service.dart` line 159
+
+**Status (Aug 2026):** Resolved. `_handleStream` collects `ToolCallEvent`s (`chat_service.dart:328`) and `BaseAgent._streamWithToolHandling` executes tools and chains re-prompts (`base.dart:381`). Covered by `test/agents/stream_events_test.dart`.
 
 **Fix:**
 1. After stream completes, check if accumulated content includes tool calls
@@ -77,11 +159,13 @@ Five workstreams, 4 phases, ~16 weeks estimated:
 
 ---
 
-### A.4 Agent Memory Pruning (Priority: Medium)
+### A.4 Agent Memory Pruning (Priority: Medium) ✅ IMPLEMENTED
 
 **Problem:** `AgentMemoryMixin` stores memories as RDF triples with no eviction. `buildMemoryContext()` will eventually exceed context windows.
 
 **File:** `lib/agents/memory.dart`
+
+**Status (Aug 2026):** Resolved. `maxMemories = 50` with oldest-first pruning on save (`memory.dart:41`). Covered by `test/agents/memory_test.dart` and `memory_pruning_test.dart`.
 
 **Fix:**
 1. Add `maxMemories` constant (default: 50 per agent)
@@ -96,11 +180,13 @@ Five workstreams, 4 phases, ~16 weeks estimated:
 
 ---
 
-### A.5 LLM Tier Selection in processLlmRequest (Priority: Low)
+### A.5 LLM Tier Selection in processLlmRequest (Priority: Low) 🔄 NOT ADOPTED
 
 **Problem:** `processLlmRequest()` always uses the default tier. Complex multi-step operations should use higher tiers.
 
 **File:** `lib/agents/base.dart` line 339
+
+**Status (Aug 2026):** The `tier` parameter exists, but no domain agent passes it — every agent still runs on the base tier. See **Phase E.1**.
 
 **Fix:**
 1. Add optional `tier` parameter to `processLlmRequest()`

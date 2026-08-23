@@ -7,17 +7,33 @@ Build an agent-centric personal OS shell where users interact primarily through 
 
 **The local LLM is the primary AI provider.** All AI interactions default to the on-device model. External LLM APIs (OpenAI, Anthropic, Ollama) are optional extensions. **MCP (Model Context Protocol)** connects external tools and servers to the local LLM, expanding its capabilities without compromising privacy.
 
-## Current Status (as of Feb 26, 2026)
-**Overall Progress:** 55% complete across all phases. **Phases 0–4 complete (Foundation through Dynamic UI).** Phases 5–6 in active development.
+## Current Status (as of Aug 2026)
 
-- ✅ **10+ specialized agents** deployed and functional
+**This roadmap was written Feb 26, 2026 and was significantly out of date.** It has been reconciled with the actual codebase (verified Aug 2026). The app is running on iOS; `flutter analyze` is clean and 634 tests pass, but several "done" items are only partially true (see the Reality Check below).
+
+- ✅ **11 specialized agents** deployed and functional
 - ✅ **Full RFW widget system** with dynamic agent-generated UIs
-- ✅ **Multi-model LLM support** (Anthropic, OpenAI, local inference)
+- ✅ **Multi-model LLM support** (Anthropic, OpenAI, local GGUF inference)
 - ✅ **Knowledge store** with 100+ Schema.org type support
-- 🔄 **Nostr integration** (E2E messaging, relays, offline sync)
-- 🔄 **Feed aggregation** (RSS/Atom agent)
-- 🔄 **Local LLM** (llamadart, model switching)
-- ⏳ **Multi-platform** (iOS, Desktop), **Provider agents** (CalDAV, CardDAV), **Widget repository**
+- ✅ **Usenet streaming** — Newznab indexers, NNTP, NZB/yEnc/par2/RAR, local stream server (post-ROADMAP work, undocumented before this update)
+- ✅ **Content plugin system** — 8 bundled adapters (Reddit, 4chan, YouTube, HN, Wikipedia, SoundCloud, Bandcamp, Media)
+- 🔄 **Nostr integration** (E2E messaging, relays, DMs, group channels)
+- 🔄 **Feed aggregation** (RSS/Reddit/4chan/Nostr/Usenet) — functional but fragile (see Reality Check)
+- ⚠️ **Local LLM** (llamadart) — works, but weak tool-calling makes agent flows unreliable
+- ⏳ **MCP** — design only, zero code
+- ⏳ **Multi-platform** (Desktop), **Provider agents** (CalDAV, CardDAV), **Widget repository**
+
+### Reality Check (what "done" actually means, Aug 2026)
+
+| Claimed | Actual |
+|---|---|
+| "Unified ChannelView — any author across all sources" | Only Reddit fetches fresh content; all other sources show cached store content only (`lib/ui/explore/channel_view.dart`) |
+| "Multi-model LLM support" | Real, but all domain agents default to the base tier; tiers `standard`/`advanced` are never requested by agents (`lib/agents/base.dart`) |
+| "Explore feeds with real-time data" | Feed is capped at 200 articles and unread articles are pruned 48h after publication (`lib/ui/explore/explore_view.dart`, `lib/knowledge/types/article.dart`) |
+| "Local LLM + hybrid routing" | On-device inference works; tool-calling/JSON output from small models is unreliable and frequently degrades to raw text |
+| "Nostr social layer" | Reactions/comments/DMs implemented; broader cross-content social graph (NIP-22/25 on every content type) still planned |
+| "MCP server support" | **Not implemented** — `docs/MCP.md` is a design document only |
+| "8/9 relays connected" | Relay list is configurable; default connection count varies by environment |
 
 ## Phase Overview
 
@@ -30,6 +46,8 @@ Build an agent-centric personal OS shell where users interact primarily through 
 | 4 | Dynamic UI | Weeks 23–28 | RFW runtime, built-in widgets, agent UI generation | ✅ **COMPLETE** |
 | 5 | Communication | Weeks 29–36 | Human messaging, mesh networking, sync | 🔄 **IN PROGRESS** |
 | 6 | Ecosystem | Weeks 37–48 | Provider agents, widget repos, local LLM | 🔄 **IN PROGRESS** |
+| 7 | Media & Usenet | Post-roadmap | Universal video playback, Usenet streaming, content plugins | ✅ **COMPLETE** (unplanned scope) |
+| 8 | Stabilization | 2026 | Fix fragile LLM/channel behavior, doc accuracy, tests | 🔄 **RECOMMENDED NEXT** |
 
 ---
 
@@ -410,29 +428,34 @@ Camera, audio recording, calendar, contacts, search all work through agents. Sys
 ### M4 — "Beautiful" ✅ COMPLETE
 Agents generate rich UI via RFW. Dashboard shows custom widgets. Built-in widget libraries complete. The system looks polished. **Status:** Fully achieved.
 
-### M5 — "Connected" 🔄 IN PROGRESS
-Human-to-human messaging works with E2E encryption (NIP-44). Devices can sync via Nostr relays. Offline queue ensures no messages lost. Feed agent aggregates content. **Status:** ~60% complete. NIP-44 encryption and Nostr relay connectivity achieved; group chat and device sync planned.
+### M5 — "Connected" ✅ COMPLETE (as of Aug 2026)
+Human-to-human messaging works with E2E encryption (NIP-44). Devices can sync via Nostr relays. Offline queue ensures no messages lost. Feed agent aggregates content. **Status:** Achieved. Group chat (NIP-28) and device pairing (UDP discovery + HTTP replication) also implemented.
 
 ### M6 — "Open" 🔄 IN PROGRESS
-Local LLM support (local_llm.dart via llamadart). Feed agent for RSS/Atom. Model manager for switching between providers. Multi-platform groundwork. **Status:** ~40% complete. Local LLM and feed support achieved; CalDAV/CardDAV and widget repository planned.
+Local LLM support (local_llm.dart via llamadart). Feed agent for RSS/Atom. Model manager for switching between providers. Multi-platform groundwork. **Status:** ~50% complete. Local LLM, feed agent, and content plugins achieved; MCP, CalDAV/CardDAV, widget repository, and desktop platforms remain planned. Agent flows on the local model are fragile (see Reality Check).
 
 ---
 
 ## Implementation Summary
 
-### Completed Work (Phases 0–4)
-- **Full agent-centric architecture:** Router agent dispatches user messages to 10+ specialized domain agents (Note, File, System, Media, Calendar, Contact, Search, Calendar, Identity, Feed, Discovery).
+### Completed Work (Phases 0–4 + post-roadmap)
+- **Full agent-centric architecture:** Router agent dispatches user messages to 11 specialized domain agents (Note, File, System, Media, Calendar, Contact, Search, Identity, Messaging, Feed, Discovery).
 - **Knowledge store with RDF triples:** Drift-backed SQLite with full-text search, query builder, mutation events, and Riverpod reactivity.
 - **4-view navigation + extras:** Explore (content feed/social), Chat (Nostr messaging + local LLM), Vault (private capture + AI organization), Apps, plus Onboarding and Settings.
-- **Multi-model LLM support:** HTTP integration with Anthropic/OpenAI + local LLM inference via llamadart. Hybrid routing for cost optimization.
-- **RFW dynamic UI:** Full RFW runtime, widget registry, data binding to knowledge store, and 7+ built-in widget libraries.
+- **Multi-model LLM support:** HTTP integration with Anthropic/OpenAI + local LLM inference via llamadart. Hybrid routing for cost optimization. *(Note: agents currently run everything on the base tier — see Reality Check.)*
+- **RFW dynamic UI:** Full RFW runtime, widget registry, data binding to knowledge store, and 7 built-in widget libraries.
 - **Virtual OS abstraction:** Services for Vault, Auth, Media, Notification, Presentation, Mesh, and Feed — with platform implementations.
+- **Usenet streaming (post-roadmap):** Newznab indexers, NNTP provider pool with priority/SSL, NZB parser, yEnc decoder, par2 verification, RAR extraction, progressive streaming pipeline with local HTTP server, entity resolution, and a media_kit-based player with smart source selection.
+- **Content plugin system (post-roadmap):** Plugin interface with capabilities (search/channel/urlResolve/trending), registry with persistence, 8 bundled adapters, and a Marketplace UI.
 
 ### Active Work (Phases 5–6)
-- **Nostr integration:** E2E encryption (NIP-44), relay support, decentralized messaging. Message routing and offline queueing.
-- **Feed aggregation:** FeedAgent for RSS/Atom parsing and timeline integration.
+- **Nostr integration:** E2E encryption (NIP-44), relay support, DMs, group channels (NIP-28), reactions.
+- **Feed aggregation:** FeedAgent for RSS/Atom/Reddit/4chan/Nostr/Usenet parsing and timeline integration.
 - **Model management:** Local LLM support with model switching and hybrid dispatch.
-- **Planned:** Group messaging, device sync, CalDAV/CardDAV providers, widget repository, multi-platform (iOS/Desktop).
+- **Planned:** Group messaging enhancements, device sync hardening, CalDAV/CardDAV providers, widget repository, multi-platform (Desktop).
+
+### Recommended Next Work (Stabilization, 2026)
+See [IMPROVEMENT_ROADMAP.md](IMPROVEMENT_ROADMAP.md) — the highest-impact items are fixing LLM tier selection + local-model tool-calling reliability, removing the 200-article feed cap and 48h article expiry, wiring plugin content into Explore/channels, making non-Reddit channels refresh, and building (or explicitly deferring) MCP.
 
 ### Key Architecture Decisions
 1. **Privacy-first by design:** All data encrypted at rest (Vault service). No cloud dependency. Local-first with opt-in sync.
@@ -448,8 +471,12 @@ Local LLM support (local_llm.dart via llamadart). Feed agent for RSS/Atom. Model
 | Risk | Impact | Status | Mitigation |
 |---|---|---|---|
 | RFW too limited for complex UIs | High | ✅ Mitigated | Built-in libraries handle 90% of needs. Custom renderers available if needed. |
-| LLM quality insufficient for routing | Medium | ✅ Mitigated | Improved prompts, fallback to text commands. User feedback loop. |
+| LLM quality insufficient for routing | Medium | 🔄 Ongoing | Improved prompts, fallback to text commands. User feedback loop. |
+| **Local LLM tool-calling unreliable** | High | ⚠️ **Unresolved** | Small GGUF models emit malformed tool-call JSON; agents degrade to raw text. Fix: prompt hardening, JSON repair, fallback tiers. |
+| **Feed content volatility** | High | ⚠️ **Unresolved** | 200-article cap + 48h unread expiry removes content aggressively; Reddit unauthenticated API is rate-limited. |
+| **Channel refresh coverage** | Medium | ⚠️ **Unresolved** | Only Reddit channels refresh; plugin/local channels are static or dead code. |
 | Mobile background execution limits | Medium | 🔄 Ongoing | FCM/APNs for wake-ups (planned). Minimize background processing. |
 | Knowledge store performance at scale | Low-Medium | ✅ Mitigated | FTS5 indexing, pagination, query optimization in practice. |
 | E2E encryption complexity | Medium | ✅ Mitigated | Using NIP-44 (established Nostr standard) instead of rolling own. |
 | Scope creep | High | 🔄 Ongoing | Phases 5–6 focused on specific wins. Strict feature gates. |
+| **MCP scope without implementation** | Medium | ⚠️ Unresolved | `docs/MCP.md` is design-only; either build a minimal client or archive the doc. |

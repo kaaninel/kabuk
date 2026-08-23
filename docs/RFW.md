@@ -1,5 +1,7 @@
 # Remote Flutter Widgets & Dynamic UI
 
+> **⚠️ STATUS (Aug 2026):** Implemented (`lib/rfw/`) with 7 built-in libraries (core, notes, contacts, media, calendar, chat, dashboard). Data bindings (`RfwDataBindings`) support reactive entity/query binding. The widget-repository distribution model is still planned, not built.
+
 ## Overview
 
 Remote Flutter Widgets (RFW) is one of the most critical features of Kabuk. It enables agents to generate and serve UI dynamically without deploying new code. Instead of pre-building screens for every possible interaction, agents can compose widget trees on the fly and return them as part of tool results. Users and third-party developers can install widget packs from repositories, extending the system's visual capabilities.

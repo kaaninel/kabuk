@@ -2,6 +2,8 @@
 
 > Model Context Protocol (MCP) support for extending the local LLM with external tools and data sources.
 
+> **⚠️ STATUS (Aug 2026): DESIGN ONLY — NOT IMPLEMENTED.** No MCP code exists in `lib/`. There is no `McpClient` interface, no transport, and no settings UI. The checklist below is a plan, not a record of work. Either implement a minimal client (see `docs/ROADMAP.md` Phase 6) or archive this document.
+
 ## What is MCP?
 
 [Model Context Protocol](https://modelcontextprotocol.io) is an open standard that defines how AI models (LLMs) communicate with external tools, data sources, and services. An MCP server exposes a set of **tools** (functions the LLM can call) and optionally **resources** (data the LLM can read) over a standard JSON-RPC protocol transported via stdio or HTTP/SSE.

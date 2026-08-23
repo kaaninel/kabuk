@@ -1,5 +1,7 @@
 # Chat & Communication Protocol
 
+> **⚠️ STATUS (Aug 2026):** Implemented for agent chat (`lib/ui/chat/chat_service.dart`) and Nostr DMs/group channels (NIP-17/28). The gRPC-based mesh described below was superseded in practice by direct WebSocket/HTTP Nostr relays (`lib/platform/shared/nostr_service_impl.dart`). NIP-44 E2E encryption is implemented. Delivery/read receipts and full multi-device sync remain planned.
+
 ## Overview
 
 Chat is the primary interface in Kabuk. It serves two purposes:

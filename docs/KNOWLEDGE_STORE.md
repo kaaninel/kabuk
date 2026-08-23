@@ -2,6 +2,8 @@
 
 > The single source of truth in Kabuk — an RDF triple store backed by SQLite via Drift ORM.
 
+> **⚠️ STATUS (Aug 2026):** Implemented as Drift schemaVersion 4 (`lib/knowledge/database.dart`) with FTS5, change events, and device-sync columns. Two behavioral notes: article entities are stamped with `kabuk:expiresAt` (published + 48h) and pruned when unread — see `lib/knowledge/types/article.dart` and `TODO.md` #7. The `QueryBuilder` throws `UnimplementedError` unless connected to a store (by design).
+
 ---
 
 ## Table of Contents

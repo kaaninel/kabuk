@@ -16,12 +16,15 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, debugPrint, defaultTargetPlatform;
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:kabuk/agents/channels.dart';
+import 'package:kabuk/agents/concierge.dart';
 import 'package:kabuk/agents/context.dart';
 import 'package:kabuk/agents/cost_tracker.dart';
 import 'package:kabuk/agents/http_llm.dart';
 import 'package:kabuk/agents/isolate_runtime.dart';
 import 'package:kabuk/agents/llm.dart';
 import 'package:kabuk/agents/local_llm.dart';
+import 'package:kabuk/agents/observation.dart';
 import 'package:kabuk/agents/privacy_filter.dart';
 import 'package:kabuk/agents/runtime.dart';
 import 'package:kabuk/agents/tiered_llm.dart';
@@ -236,6 +239,24 @@ final presentationServiceProvider = Provider<PresentationService>((ref) {
   return const SharedPresentationService();
 });
 
+/// The perception layer's [ObservationBus] — subsystems publish OS
+/// activity here, and the [Concierge] records it into the knowledge store.
+/// (Defined in `lib/agents/observation.dart` as [observationBusProvider].)
+
+/// The [Concierge] — listens to OS observations and records them into the
+/// knowledge store so agents can perceive the user's activity.
+///
+/// Reading this provider activates the listener. The app reads it once at
+/// startup (`main.dart`).
+final conciergeProvider = Provider<Concierge>((ref) {
+  final concierge = Concierge(
+    store: ref.watch(knowledgeStoreProvider),
+    bus: ref.watch(observationBusProvider),
+  );
+  ref.onDispose(concierge.dispose);
+  return concierge;
+});
+
 /// The [AgentContext] providing agents access to all services.
 ///
 /// Uses late-binding: services that don't yet have platform
@@ -262,6 +283,8 @@ final agentContextProvider = Provider<AgentContext>((ref) {
     nostr: nostr,
     feed: feed,
     usenet: usenet,
+    channels: ref.watch(agentChannelProvider.notifier),
+    observation: ref.watch(observationBusProvider),
   );
 });
 
@@ -745,10 +768,14 @@ final llmServiceProvider = Provider<LlmService>((ref) {
 
   LlmService inner;
   if (baseLlm != null) {
-    // Best case: local model as base, remote as advanced.
+    // Best case: local model as base + standard, remote as advanced.
+    // The standard tier runs the on-device MiniCPM5 1B — agents that want
+    // the default on-device model without routing-level latency request it
+    // explicitly; the advanced tier is the remote (OpenAI-compatible) model.
     inner = TieredLlmService(
       config: TieredLlmConfig(
         baseLlm: baseLlm,
+        standardLlm: baseLlm,
         advancedLlm: advancedLlm,
         defaultPrivacyLevel: privacyLevel,
         enablePrivacyFilter: privacyEnabled,
@@ -1162,7 +1189,10 @@ class ModelReadinessNotifier extends Notifier<ModelReadyState> {
       final device = await DeviceCapabilities.detect();
       if (_disposed) return;
 
-      final recommended = pickModelForDevice(device, manager.recommendedModels);
+      final recommended = pickStandardModelForDevice(
+        device,
+        manager.recommendedModels,
+      );
 
       state = ModelReadyState(
         status: ModelReadyStatus.downloading,

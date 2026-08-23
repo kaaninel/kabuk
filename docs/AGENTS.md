@@ -2,6 +2,8 @@
 
 > Core design document for the Kabuk agent architecture — the primary interaction layer of the personal OS shell.
 
+> **⚠️ STATUS (Aug 2026):** This is the *design* reference. The implementation is largely complete (11 agents in `lib/agents/domains/`), so the "Implementation Task List" at the bottom is mostly historical. Known gaps: all domain agents run on the base LLM tier (`lib/agents/base.dart`), local-model tool-calling is brittle, and isolate sandboxing falls back to in-process execution. See `docs/IMPROVEMENT_ROADMAP.md` §Phase E.
+
 ## Philosophy
 
 Users interact with the system primarily through small, specialized agents via chat. Each agent is an expert in one domain. Agents are stateless — all persistent state lives in the RDF knowledge store. Agents can generate UI on the fly using Remote Flutter Widgets (RFW). The system should feel like talking to a knowledgeable assistant that can show you things, not just tell you.

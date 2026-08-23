@@ -5,6 +5,7 @@ import 'package:kabuk/agents/llm.dart';
 import 'package:kabuk/agents/messages.dart';
 import 'package:kabuk/config/namespaces.dart';
 import 'package:kabuk/knowledge/triple.dart';
+import 'package:kabuk/plugins/channel.dart';
 import 'package:kabuk/services/nostr.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -247,9 +248,15 @@ void main() {
         'hashtags': ['flutter'],
       }, bundle.context);
 
-      expect(result, isA<TextToolResult>());
-      final text = (result as TextToolResult).content;
-      expect(text, contains('2'));
+      // The tool populates a channel with typed content items so the OS
+      // can draw them with the existing primitives.
+      expect(result, isA<ChannelToolResult>());
+      final channel = result as ChannelToolResult;
+      expect(channel.channel.title, contains('flutter'));
+      expect(channel.channel.entityType, ChannelEntityType.topic);
+      expect(channel.items, hasLength(2));
+      expect(channel.items.first.sourcePluginId, 'nostr');
+      expect(channel.summary, contains('2'));
     });
   });
 

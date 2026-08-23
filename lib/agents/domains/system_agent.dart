@@ -11,6 +11,7 @@ import 'package:kabuk/agents/llm.dart';
 import 'package:kabuk/agents/memory.dart';
 import 'package:kabuk/agents/messages.dart';
 import 'package:kabuk/agents/privacy_filter.dart';
+import 'package:kabuk/agents/subagent.dart';
 import 'package:kabuk/agents/tiered_llm.dart';
 import 'package:kabuk/config/constants.dart';
 import 'package:kabuk/config/namespaces.dart';
@@ -57,6 +58,11 @@ you with...", "I store your data locally...")
 • Be warm, approachable, and genuinely helpful
 • When a user asks what you can do, give concrete examples rather than abstract descriptions
 • If a user seems new, proactively suggest things to try
+
+Subagent:
+• For complex reasoning, long-form writing, or questions the on-device
+model handles poorly, use "delegate_to_subagent" to ask the remote
+advanced-tier model, then summarize its answer for the user.
 ''';
 
   @override
@@ -70,6 +76,7 @@ you with...", "I store your data locally...")
       },
       execute: _getSystemInfo,
     ),
+    kDelegateToSubagentTool,
     AgentTool(
       name: 'search_knowledge',
       description: 'Search the knowledge store for information.',

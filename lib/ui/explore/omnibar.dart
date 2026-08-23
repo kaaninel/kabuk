@@ -20,6 +20,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:kabuk/agents/observation.dart';
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/config/result.dart';
 import 'package:kabuk/knowledge/types/article.dart';
@@ -927,7 +928,15 @@ class _OmniBarSearchPageState extends ConsumerState<OmniBarSearchPage> {
               await ViewerRouter.open(context, item);
             }
             return;
-          case ResolvedChannel(:final entityUri):
+          case ResolvedChannel(:final entityUri, :final title):
+            // Perception: the user resolved a URL to a channel.
+            ref.read(observationBusProvider).publish(
+              ChannelResolvedEvent(
+                source: feedUrl,
+                channelUri: entityUri,
+                title: title,
+              ),
+            );
             if (mounted) {
               await Navigator.of(context).pushReplacement(
                 MaterialPageRoute<void>(

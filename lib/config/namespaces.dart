@@ -567,6 +567,24 @@ abstract final class NS {
   static const String kabukMemberEntity = '${kabuk}memberEntity';
 
   // ---------------------------------------------------------------------------
+  // Observation predicates & types
+  // ---------------------------------------------------------------------------
+
+  /// `kabuk:Observation` entity type — a recorded observation of user/OS
+  /// activity that the perception layer streams to agents.
+  static const String kabukObservation = '${kabuk}Observation';
+
+  /// `kabuk:observationType` — the observation kind
+  /// (channel_resolved, channel_populated, channel_viewed, item_opened).
+  static const String kabukObservationType = '${kabuk}observationType';
+
+  /// `kabuk:observationData` — JSON-encoded payload of the observation.
+  static const String kabukObservationData = '${kabuk}observationData';
+
+  /// `kabuk:observationSource` — the source URL/query that triggered it.
+  static const String kabukObservationSource = '${kabuk}observationSource';
+
+  // ---------------------------------------------------------------------------
   // Kabuk entity types
   // ---------------------------------------------------------------------------
 

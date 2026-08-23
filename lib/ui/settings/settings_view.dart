@@ -13,7 +13,6 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:kabuk/agents/llm.dart';
 import 'package:kabuk/config/constants.dart';
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/plugins/registry.dart';
@@ -25,6 +24,7 @@ import 'package:kabuk/ui/settings/feed_sources_page.dart';
 import 'package:kabuk/ui/settings/identity_page.dart';
 import 'package:kabuk/ui/settings/llm_settings_page.dart';
 import 'package:kabuk/ui/settings/local_models_page.dart';
+import 'package:kabuk/ui/settings/trace_export_page.dart';
 import 'package:kabuk/ui/settings/my_profile_page.dart';
 import 'package:kabuk/ui/settings/relay_settings_page.dart';
 import 'package:kabuk/ui/settings/service_providers_page.dart';
@@ -185,7 +185,7 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
             iconColor: KabukTheme.accentGreen,
             title: 'LLM Configuration',
             subtitle: llmConfig != null
-                ? '${_providerLabel(llmConfig.provider)} \u00b7 ${llmConfig.defaultModel ?? "default"}'
+                ? 'Custom endpoint \u00b7 ${llmConfig.defaultModel ?? "default"}'
                 : 'Not configured',
             trailing: Semantics(
               label: llmConfig != null ? 'Configured' : 'Not configured',
@@ -217,6 +217,21 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
             ),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const LocalModelsPage()),
+            ),
+          ),
+          const SizedBox(height: KabukTheme.spacingSm),
+          SettingsTile(
+            icon: Icons.science_outlined,
+            iconColor: KabukTheme.accentGreen,
+            title: 'Agent Traces',
+            subtitle: 'Replay conversations & export finetuning data',
+            trailing: Icon(
+              Icons.chevron_right,
+              color: context.kabukTextSecondary,
+              size: 20,
+            ),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const TraceExportPage()),
             ),
           ),
           const SizedBox(height: KabukTheme.spacingLg),
@@ -730,13 +745,6 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
       ),
     );
   }
-
-  static String _providerLabel(LlmProvider provider) => switch (provider) {
-    LlmProvider.anthropic => 'Anthropic',
-    LlmProvider.openai => 'OpenAI',
-    LlmProvider.ollama => 'Ollama',
-    LlmProvider.local => 'Local',
-  };
 
   String _relaySubtitle() {
     final nostr = ref.watch(nostrServiceProvider);

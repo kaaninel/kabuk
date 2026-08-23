@@ -1,7 +1,10 @@
 /// LLM configuration settings sub-page.
 ///
-/// Provides UI for selecting an LLM provider, entering API keys,
-/// configuring model parameters, and testing the connection.
+/// Kabuk standardizes on the on-device MiniCPM5 1B model for the agent.
+/// This page configures the optional **remote subagent endpoint** — a
+/// single OpenAI-compatible endpoint the user provides (LM Studio, vLLM,
+/// llama.cpp server, a hosted gateway, etc.). No external providers
+/// (OpenAI, Anthropic) are offered.
 library;
 
 import 'package:flutter/material.dart';
@@ -27,7 +30,7 @@ enum ConnectionTestStatus {
   error,
 }
 
-/// LLM configuration sub-page.
+/// LLM configuration sub-page — the remote subagent endpoint.
 class LlmSettingsPage extends ConsumerStatefulWidget {
   /// Creates a [LlmSettingsPage].
   const LlmSettingsPage({super.key});
@@ -39,7 +42,6 @@ class LlmSettingsPage extends ConsumerStatefulWidget {
 class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
   final _formKey = GlobalKey<FormState>();
 
-  late LlmProvider _provider;
   late TextEditingController _apiKeyController;
   late TextEditingController _modelController;
   late TextEditingController _baseUrlController;
@@ -51,17 +53,20 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
   ConnectionTestStatus _testStatus = ConnectionTestStatus.idle;
   String? _testMessage;
 
+  /// The standard remote model name for the custom endpoint.
+  static const String _defaultRemoteModel = 'minicpm5-1b';
+
   @override
   void initState() {
     super.initState();
     final existing = ref.read(llmConfigProvider);
-    _provider = existing?.provider ?? LlmProvider.anthropic;
+    // Only the OpenAI-compatible wire format is used for the remote tier.
     _apiKeyController = TextEditingController(text: existing?.apiKey ?? '');
     _modelController = TextEditingController(
-      text: existing?.defaultModel ?? _defaultModelFor(_provider),
+      text: existing?.defaultModel ?? _defaultRemoteModel,
     );
     _baseUrlController = TextEditingController(
-      text: existing?.baseUrl ?? _defaultBaseUrlFor(_provider),
+      text: existing?.baseUrl ?? '',
     );
     _maxTokensController = TextEditingController(
       text: (existing?.defaultMaxTokens ?? 4096).toString(),
@@ -79,60 +84,31 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
     super.dispose();
   }
 
-  static String _defaultModelFor(LlmProvider provider) => switch (provider) {
-    LlmProvider.anthropic => 'claude-sonnet-4-20250514',
-    LlmProvider.openai => 'gpt-4o',
-    LlmProvider.ollama => 'llama3.1',
-    LlmProvider.local => 'llama3.1',
-  };
-
-  static String _defaultBaseUrlFor(LlmProvider provider) => switch (provider) {
-    LlmProvider.anthropic => 'https://api.anthropic.com/v1',
-    LlmProvider.openai => 'https://api.openai.com/v1',
-    LlmProvider.ollama => 'http://localhost:11434',
-    LlmProvider.local => 'http://localhost:8080',
-  };
-
-  static String _providerLabel(LlmProvider provider) => switch (provider) {
-    LlmProvider.anthropic => 'Anthropic',
-    LlmProvider.openai => 'OpenAI',
-    LlmProvider.ollama => 'Ollama',
-    LlmProvider.local => 'Local',
-  };
-
-  bool get _requiresApiKey =>
-      _provider == LlmProvider.anthropic || _provider == LlmProvider.openai;
-
-  void _onProviderChanged(LlmProvider provider) {
-    setState(() {
-      _provider = provider;
-      _baseUrlController.text = _defaultBaseUrlFor(provider);
-      _modelController.text = _defaultModelFor(provider);
-      _testStatus = ConnectionTestStatus.idle;
-      _testMessage = null;
-    });
+  LlmConfig? _buildConfig({int? maxTokens, int? timeoutSeconds}) {
+    if (!_formKey.currentState!.validate()) return null;
+    return LlmConfig.openAICompatible(
+      baseUrl: _baseUrlController.text.trim(),
+      apiKey: _apiKeyController.text.trim(),
+      model: _modelController.text.trim().isEmpty
+          ? null
+          : _modelController.text.trim(),
+      // Base constructor defaults are applied; override token/timeout when
+      // building a test config.
+    ).copyWithTestParams(
+      maxTokens: maxTokens,
+      timeoutSeconds: timeoutSeconds,
+    );
   }
 
   void _save() {
-    if (!_formKey.currentState!.validate()) return;
-
-    final config = LlmConfig(
-      provider: _provider,
-      baseUrl: _baseUrlController.text.trim(),
-      apiKey: _apiKeyController.text.trim(),
-      defaultModel: _modelController.text.trim().isEmpty
-          ? null
-          : _modelController.text.trim(),
-      defaultTemperature: _temperature,
-      defaultMaxTokens: int.tryParse(_maxTokensController.text.trim()) ?? 4096,
-      timeoutSeconds: _timeoutSeconds,
-    );
+    final config = _buildConfig();
+    if (config == null) return;
 
     ref.read(llmConfigProvider.notifier).setConfig(config);
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('LLM configuration saved'),
+        content: Text('Remote endpoint saved'),
         backgroundColor: KabukTheme.primaryGreen,
         behavior: SnackBarBehavior.floating,
         duration: Duration(seconds: 2),
@@ -141,24 +117,13 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
   }
 
   Future<void> _testConnection() async {
-    if (!_formKey.currentState!.validate()) return;
+    final config = _buildConfig(maxTokens: 32, timeoutSeconds: 15);
+    if (config == null) return;
 
     setState(() {
       _testStatus = ConnectionTestStatus.testing;
       _testMessage = null;
     });
-
-    final config = LlmConfig(
-      provider: _provider,
-      baseUrl: _baseUrlController.text.trim(),
-      apiKey: _apiKeyController.text.trim(),
-      defaultModel: _modelController.text.trim().isEmpty
-          ? null
-          : _modelController.text.trim(),
-      defaultTemperature: _temperature,
-      defaultMaxTokens: 32,
-      timeoutSeconds: 15,
-    );
 
     final service = HttpLlmService(config: config);
 
@@ -206,7 +171,7 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
     });
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('LLM configuration cleared'),
+        content: Text('Remote endpoint cleared'),
         behavior: SnackBarBehavior.floating,
         duration: Duration(seconds: 2),
       ),
@@ -220,7 +185,7 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('LLM Configuration'),
+        title: const Text('Remote LLM Endpoint'),
         actions: [
           if (isConfigured)
             IconButton(
@@ -237,30 +202,58 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Status banner.
               _buildStatusBanner(isConfigured),
               const SizedBox(height: KabukTheme.spacingLg),
 
-              _buildSectionLabel('Provider'),
-              const SizedBox(height: KabukTheme.spacingSm),
-              _buildProviderSelector(),
+              Container(
+                padding: const EdgeInsets.all(KabukTheme.spacingMd),
+                decoration: BoxDecoration(
+                  color: KabukTheme.primaryGreen.withAlpha(15),
+                  borderRadius: BorderRadius.circular(KabukTheme.radiusMd),
+                  border: Border.all(
+                    color: KabukTheme.accentGreen.withAlpha(40),
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.smart_toy_outlined,
+                      size: 16,
+                      color: KabukTheme.accentGreen,
+                    ),
+                    const SizedBox(width: KabukTheme.spacingSm),
+                    Expanded(
+                      child: Text(
+                        'The agent runs on-device on MiniCPM5 1B. '
+                        'This optional endpoint is used only as a remote '
+                        'subagent for complex tasks. Point it at any '
+                        'OpenAI-compatible server you control.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: context.kabukTextSecondary,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(height: KabukTheme.spacingLg),
 
-              if (_requiresApiKey) ...[
-                _buildSectionLabel('API Key'),
-                const SizedBox(height: KabukTheme.spacingSm),
-                _buildApiKeyField(),
-                const SizedBox(height: KabukTheme.spacingLg),
-              ],
+              _buildSectionLabel('Base URL'),
+              const SizedBox(height: KabukTheme.spacingSm),
+              _buildBaseUrlField(),
+              const SizedBox(height: KabukTheme.spacingLg),
 
               _buildSectionLabel('Model'),
               const SizedBox(height: KabukTheme.spacingSm),
               _buildModelField(),
               const SizedBox(height: KabukTheme.spacingLg),
 
-              _buildSectionLabel('Base URL'),
+              _buildSectionLabel('API Key (optional)'),
               const SizedBox(height: KabukTheme.spacingSm),
-              _buildBaseUrlField(),
+              _buildApiKeyField(),
               const SizedBox(height: KabukTheme.spacingLg),
 
               _buildSectionLabel(
@@ -310,7 +303,7 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
       child: Row(
         children: [
           Icon(
-            isConfigured ? Icons.check_circle_outline : Icons.warning_amber,
+            isConfigured ? Icons.check_circle_outline : Icons.info_outline,
             color: isConfigured ? KabukTheme.accentGreen : KabukTheme.error,
             size: 24,
           ),
@@ -318,11 +311,13 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
           Expanded(
             child: Text(
               isConfigured
-                  ? 'LLM configured: ${_providerLabel(ref.read(llmConfigProvider)!.provider)} '
-                        '(${ref.read(llmConfigProvider)!.defaultModel ?? "default"})'
-                  : 'No LLM configured — chat will not work until you set a provider.',
+                  ? 'Endpoint configured: '
+                        '${ref.read(llmConfigProvider)!.defaultModel ?? "default"}'
+                  : 'No remote endpoint configured — the on-device '
+                        'MiniCPM5 1B handles everything.',
               style: TextStyle(
-                color: isConfigured ? KabukTheme.accentGreen : KabukTheme.error,
+                color:
+                    isConfigured ? KabukTheme.accentGreen : KabukTheme.error,
                 fontSize: 13,
               ),
             ),
@@ -342,35 +337,6 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
     ),
   );
 
-  Widget _buildProviderSelector() {
-    return SegmentedButton<LlmProvider>(
-      segments: const [
-        ButtonSegment(value: LlmProvider.anthropic, label: Text('Anthropic')),
-        ButtonSegment(value: LlmProvider.openai, label: Text('OpenAI')),
-        ButtonSegment(value: LlmProvider.ollama, label: Text('Ollama')),
-        ButtonSegment(
-          value: LlmProvider.local,
-          label: Text('Local'),
-          icon: Icon(Icons.phone_android, size: 16),
-        ),
-      ],
-      selected: {_provider},
-      onSelectionChanged: (selected) {
-        final value = selected.firstOrNull;
-        if (value != null) _onProviderChanged(value);
-      },
-      style: ButtonStyle(
-        visualDensity: VisualDensity.compact,
-        foregroundColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) {
-            return KabukTheme.accentGreen;
-          }
-          return context.kabukTextSecondary;
-        }),
-      ),
-    );
-  }
-
   Widget _buildApiKeyField() {
     return TextFormField(
       controller: _apiKeyController,
@@ -379,7 +345,7 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
       enableSuggestions: false,
       style: TextStyle(color: context.kabukTextPrimary, fontSize: 14),
       decoration: InputDecoration(
-        hintText: _provider == LlmProvider.anthropic ? 'sk-ant-...' : 'sk-...',
+        hintText: 'sk-... (optional for self-hosted gateways)',
         hintStyle: TextStyle(color: context.kabukTextSecondary.withAlpha(100)),
         suffixIcon: IconButton(
           icon: Icon(
@@ -390,12 +356,6 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
           onPressed: () => setState(() => _obscureApiKey = !_obscureApiKey),
         ),
       ),
-      validator: (value) {
-        if (_requiresApiKey && (value == null || value.trim().isEmpty)) {
-          return 'API key is required for ${_providerLabel(_provider)}';
-        }
-        return null;
-      },
     );
   }
 
@@ -404,7 +364,7 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
       controller: _modelController,
       style: TextStyle(color: context.kabukTextPrimary, fontSize: 14),
       decoration: InputDecoration(
-        hintText: _defaultModelFor(_provider),
+        hintText: _defaultRemoteModel,
         hintStyle: TextStyle(color: context.kabukTextSecondary.withAlpha(100)),
       ),
     );
@@ -416,7 +376,7 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
       style: TextStyle(color: context.kabukTextPrimary, fontSize: 14),
       keyboardType: TextInputType.url,
       decoration: InputDecoration(
-        hintText: _defaultBaseUrlFor(_provider),
+        hintText: 'https://your-endpoint/v1',
         hintStyle: TextStyle(color: context.kabukTextSecondary.withAlpha(100)),
       ),
       validator: (value) {
@@ -425,7 +385,7 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
         }
         final uri = Uri.tryParse(value.trim());
         if (uri == null || !uri.hasScheme) {
-          return 'Enter a valid URL (e.g. https://api.openai.com/v1)';
+          return 'Enter a valid URL (e.g. https://your-endpoint/v1)';
         }
         return null;
       },
@@ -592,4 +552,18 @@ class _LlmSettingsPageState extends ConsumerState<LlmSettingsPage> {
       ],
     );
   }
+}
+
+extension on LlmConfig {
+  /// Returns a copy with overridden test params.
+  LlmConfig copyWithTestParams({int? maxTokens, int? timeoutSeconds}) =>
+      LlmConfig(
+        provider: provider,
+        baseUrl: baseUrl,
+        apiKey: apiKey,
+        defaultModel: defaultModel,
+        defaultTemperature: defaultTemperature,
+        defaultMaxTokens: maxTokens ?? this.defaultMaxTokens,
+        timeoutSeconds: timeoutSeconds ?? this.timeoutSeconds,
+      );
 }

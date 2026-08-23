@@ -49,6 +49,7 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
   final _formKey = GlobalKey<FormState>();
   LlmProvider _provider = LlmProvider.local;
   final _apiKeyController = TextEditingController();
+  final _baseUrlController = TextEditingController();
   final _modelController = TextEditingController();
   bool _obscureApiKey = true;
   _TestStatus _testStatus = _TestStatus.idle;
@@ -85,6 +86,7 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
   void dispose() {
     _pageController.dispose();
     _apiKeyController.dispose();
+    _baseUrlController.dispose();
     _modelController.dispose();
     super.dispose();
   }
@@ -105,7 +107,11 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
     final device = await DeviceCapabilities.detect();
     if (!mounted) return;
     final manager = ref.read(modelManagerProvider);
-    final recommended = pickModelForDevice(device, manager.recommendedModels);
+    // Kabuk standardizes on MiniCPM5 1B — prefer it whenever it fits.
+    final recommended = pickStandardModelForDevice(
+      device,
+      manager.recommendedModels,
+    );
 
     if (!mounted) return;
     setState(() => _recommendedModel = recommended);
@@ -157,27 +163,17 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
 
   static String _defaultModelFor(LlmProvider provider) => switch (provider) {
     LlmProvider.anthropic => 'claude-sonnet-4-20250514',
-    LlmProvider.openai => 'gpt-4o',
+    LlmProvider.openai => 'minicpm5-1b',
     LlmProvider.ollama => 'llama3.1',
     LlmProvider.local => '',
   };
 
   static String _defaultBaseUrlFor(LlmProvider provider) => switch (provider) {
     LlmProvider.anthropic => 'https://api.anthropic.com/v1',
-    LlmProvider.openai => 'https://api.openai.com/v1',
+    LlmProvider.openai => '',
     LlmProvider.ollama => 'http://localhost:11434',
     LlmProvider.local => 'http://localhost:8080',
   };
-
-  static String _providerLabel(LlmProvider provider) => switch (provider) {
-    LlmProvider.anthropic => 'Anthropic',
-    LlmProvider.openai => 'OpenAI',
-    LlmProvider.ollama => 'Ollama',
-    LlmProvider.local => 'Local',
-  };
-
-  bool get _requiresApiKey =>
-      _provider == LlmProvider.anthropic || _provider == LlmProvider.openai;
 
   // ---------------------------------------------------------------------------
   // Actions
@@ -195,6 +191,7 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
     setState(() {
       _provider = provider;
       _modelController.text = _defaultModelFor(provider);
+      _baseUrlController.text = _defaultBaseUrlFor(provider);
       _testStatus = _TestStatus.idle;
       _testMessage = null;
     });
@@ -273,11 +270,11 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
 
     if (!_formKey.currentState!.validate()) return;
 
-    final config = LlmConfig(
-      provider: _provider,
-      baseUrl: _defaultBaseUrlFor(_provider),
+    // Remote tier: the user's own OpenAI-compatible endpoint.
+    final config = LlmConfig.openAICompatible(
+      baseUrl: _baseUrlController.text.trim(),
       apiKey: _apiKeyController.text.trim(),
-      defaultModel: _modelController.text.trim().isEmpty
+      model: _modelController.text.trim().isEmpty
           ? null
           : _modelController.text.trim(),
     );
@@ -351,8 +348,8 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
     });
 
     final config = LlmConfig(
-      provider: _provider,
-      baseUrl: _defaultBaseUrlFor(_provider),
+      provider: LlmProvider.openai,
+      baseUrl: _baseUrlController.text.trim(),
       apiKey: _apiKeyController.text.trim(),
       defaultModel: _modelController.text.trim().isEmpty
           ? null
@@ -698,8 +695,9 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
             ),
             const SizedBox(height: KabukTheme.spacingSm),
             Text(
-              'Connect an LLM provider so agents can understand '
-              'your requests and respond intelligently.',
+              'The agent runs on-device on MiniCPM5 1B — it auto-downloads '
+              'during setup. You can optionally add your own remote '
+              'OpenAI-compatible endpoint for complex subagent tasks.',
               style: TextStyle(
                 color: context.kabukTextSecondary,
                 fontSize: 14,
@@ -709,21 +707,20 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
             ),
             const SizedBox(height: KabukTheme.spacingLg),
 
-            // Provider selector.
+            // Provider selector — on-device MiniCPM or a custom endpoint.
             _buildLabel('Provider'),
             const SizedBox(height: KabukTheme.spacingSm),
             SegmentedButton<LlmProvider>(
               segments: const [
                 ButtonSegment(
-                  value: LlmProvider.anthropic,
-                  label: Text('Anthropic'),
-                ),
-                ButtonSegment(value: LlmProvider.openai, label: Text('OpenAI')),
-                ButtonSegment(value: LlmProvider.ollama, label: Text('Ollama')),
-                ButtonSegment(
                   value: LlmProvider.local,
-                  label: Text('Local'),
+                  label: Text('On-device'),
                   icon: Icon(Icons.phone_android, size: 16),
+                ),
+                ButtonSegment(
+                  value: LlmProvider.openai,
+                  label: Text('Custom endpoint'),
+                  icon: Icon(Icons.dns_rounded, size: 16),
                 ),
               ],
               selected: {_provider},
@@ -740,12 +737,55 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
             ),
             const SizedBox(height: KabukTheme.spacingMd),
 
-            // Local model picker (when Local is selected).
+            // Local model picker (on-device MiniCPM).
             if (_provider == LlmProvider.local) ...[_buildLocalModelSection()],
 
-            // API key (remote providers only).
-            if (_provider != LlmProvider.local && _requiresApiKey) ...[
-              _buildLabel('API Key'),
+            // Remote custom endpoint fields.
+            if (_provider != LlmProvider.local) ...[
+              _buildLabel('Base URL'),
+              const SizedBox(height: KabukTheme.spacingSm),
+              TextFormField(
+                controller: _baseUrlController,
+                style: TextStyle(
+                  color: context.kabukTextPrimary,
+                  fontSize: 14,
+                ),
+                keyboardType: TextInputType.url,
+                decoration: InputDecoration(
+                  hintText: 'https://your-endpoint/v1',
+                  hintStyle: TextStyle(
+                    color: context.kabukTextSecondary.withAlpha(100),
+                  ),
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Base URL is required';
+                  }
+                  final uri = Uri.tryParse(value.trim());
+                  if (uri == null || !uri.hasScheme) {
+                    return 'Enter a valid URL';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: KabukTheme.spacingMd),
+              _buildLabel('Model'),
+              const SizedBox(height: KabukTheme.spacingSm),
+              TextFormField(
+                controller: _modelController,
+                style: TextStyle(
+                  color: context.kabukTextPrimary,
+                  fontSize: 14,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'minicpm5-1b',
+                  hintStyle: TextStyle(
+                    color: context.kabukTextSecondary.withAlpha(100),
+                  ),
+                ),
+              ),
+              const SizedBox(height: KabukTheme.spacingMd),
+              _buildLabel('API Key (optional)'),
               const SizedBox(height: KabukTheme.spacingSm),
               TextFormField(
                 controller: _apiKeyController,
@@ -757,48 +797,20 @@ class _OnboardingViewState extends ConsumerState<OnboardingView> {
                   fontSize: 14,
                 ),
                 decoration: InputDecoration(
-                  hintText: _provider == LlmProvider.anthropic
-                      ? 'sk-ant-...'
-                      : 'sk-...',
+                  hintText: 'sk-... (optional)',
                   hintStyle: TextStyle(
                     color: context.kabukTextSecondary.withAlpha(100),
                   ),
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _obscureApiKey ? Icons.visibility_off : Icons.visibility,
+                      _obscureApiKey
+                          ? Icons.visibility_off
+                          : Icons.visibility,
                       size: 20,
                       color: context.kabukTextSecondary,
                     ),
                     onPressed: () =>
                         setState(() => _obscureApiKey = !_obscureApiKey),
-                  ),
-                ),
-                validator: (value) {
-                  if (_requiresApiKey &&
-                      (value == null || value.trim().isEmpty)) {
-                    return 'API key is required for '
-                        '${_providerLabel(_provider)}';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: KabukTheme.spacingMd),
-            ],
-
-            // Model (remote providers only).
-            if (_provider != LlmProvider.local) ...[
-              _buildLabel('Model'),
-              const SizedBox(height: KabukTheme.spacingSm),
-              TextFormField(
-                controller: _modelController,
-                style: TextStyle(
-                  color: context.kabukTextPrimary,
-                  fontSize: 14,
-                ),
-                decoration: InputDecoration(
-                  hintText: _defaultModelFor(_provider),
-                  hintStyle: TextStyle(
-                    color: context.kabukTextSecondary.withAlpha(100),
                   ),
                 ),
               ),

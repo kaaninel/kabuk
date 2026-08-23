@@ -1,5 +1,7 @@
 # Kabuk OS — UX/UI Audit Report
 
+> **⚠️ STATUS (Aug 2026):** Audit performed Feb 28, 2026 (iPhone 17 Pro simulator). Since then the article detail / reader experience and the omnibar were reworked, media playback moved to media_kit, and the Usenet player was added. The audit's structural findings (Swiss-army-knife density, inconsistent navigation, dead-end screens) largely still apply. Cross-reference with `docs/IMPROVEMENT_ROADMAP.md` §Phase E for current functional gaps.
+
 **Date**: February 28, 2026  
 **Method**: Live simulator inspection (iPhone 17 Pro) + full source code review (30 UI files, ~16,840 lines)  
 **Benchmarks**: Reddit, Twitter/X, Telegram, Signal, Instagram, ChatGPT, Apple Notes, iOS Settings
