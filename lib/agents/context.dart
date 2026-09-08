@@ -14,6 +14,7 @@ import 'package:kabuk/agents/runtime.dart';
 import 'package:kabuk/agents/tiered_llm.dart';
 import 'package:kabuk/knowledge/store.dart';
 import 'package:kabuk/services/auth.dart';
+import 'package:kabuk/services/channels.dart';
 import 'package:kabuk/services/feed.dart';
 import 'package:kabuk/services/media.dart';
 import 'package:kabuk/services/mesh.dart';
@@ -57,6 +58,7 @@ class AgentContext {
     this.onToolResult,
     this.channels,
     this.observation,
+    this.channelRegistry,
     this.privacyLevel = PrivacyLevel.standard,
   });
 
@@ -149,6 +151,13 @@ class AgentContext {
   /// Concierge and proactive agents can react to OS activity.
   final ObservationBus? observation;
 
+  /// The MCP-style channel registry (web search, fetch, Reddit, Nostr, …).
+  ///
+  /// Agents invoke channels as tools via [ChannelRegistry.invoke] — the same
+  /// interface the omnibar and feed engine use. This is how the LLM gets
+  /// `web_search` / `web_fetch`-style capabilities without external servers.
+  final ChannelRegistry? channelRegistry;
+
   /// Optional callback invoked when a tool is about to be called.
   final ToolCallCallback? onToolCall;
 
@@ -177,6 +186,7 @@ class AgentContext {
       onToolResult: onToolResult ?? this.onToolResult,
       channels: channels,
       observation: observation,
+      channelRegistry: channelRegistry,
       privacyLevel: privacyLevel,
     );
   }

@@ -81,6 +81,7 @@ Future<int> processNostrEvents(
   required Future<void> Function(NostrEvent event) onEvent,
   Duration timeout = const Duration(seconds: 8),
   bool Function(NostrEvent)? where,
+  int? limit,
 }) async {
   var count = 0;
   final completer = Completer<void>();
@@ -101,6 +102,9 @@ Future<int> processNostrEvents(
       if (where != null && !where(event)) return;
       await onEvent(event);
       count++;
+      if (limit != null && count >= limit) {
+        finish();
+      }
     },
     onDone: finish,
     onError: (Object e) {

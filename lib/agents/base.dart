@@ -517,8 +517,8 @@ abstract class BaseAgent {
         WidgetToolResult() => 'Widget rendered successfully.',
         RawWidgetToolResult() => 'Widget rendered successfully.',
         ChannelToolResult(:final channel, :final items) =>
-          'Channel populated: ${items.length} items for '
-              '"${channel.title}".',
+          'Channel: "${channel.title}" (${items.length} items)\n'
+              '${_channelItemsToText(items)}',
         MutationToolResult(:final added, :final removed) =>
           'Mutation applied: ${added.length} triples added, '
               '${removed.length} removed.',
@@ -621,8 +621,8 @@ abstract class BaseAgent {
         WidgetToolResult() => 'Widget rendered successfully.',
         RawWidgetToolResult() => 'Widget rendered successfully.',
         ChannelToolResult(:final channel, :final items) =>
-          'Channel populated: ${items.length} items for '
-              '"${channel.title}".',
+          'Channel: "${channel.title}" (${items.length} items)\n'
+              '${_channelItemsToText(items)}',
         MutationToolResult(:final added, :final removed) =>
           'Mutation applied: ${added.length} triples added, '
               '${removed.length} removed.',
@@ -687,5 +687,24 @@ abstract class BaseAgent {
     required AgentContext context,
   }) async {
     return AgentResponse.text('Event not handled: $eventName');
+  }
+
+  /// Renders a [ContentItem] list as a compact, LLM-friendly text list.
+  ///
+  /// Used to serialize [ChannelToolResult]s back into the conversation so the
+  /// model can reason about the actual items (titles/URLs/snippets) rather
+  /// than a placeholder.
+  static String _channelItemsToText(List<ContentItem> items) {
+    final lines = <String>[];
+    for (final item in items) {
+      final title = item.title.trim();
+      final url = item.url ?? '';
+      final snippet = item.description ?? '';
+      final line = url.isNotEmpty ? '$title — $url' : title;
+      lines.add(
+        snippet.isNotEmpty ? '$line\n  $snippet' : line,
+      );
+    }
+    return lines.join('\n');
   }
 }

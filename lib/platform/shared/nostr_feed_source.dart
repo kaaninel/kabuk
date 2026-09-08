@@ -91,100 +91,101 @@ class NostrFeedSource implements FeedSource {
   }
 
   /// Converts Nostr events to [FeedItem]s for the unified feed.
-  List<FeedItem> _eventsToFeedItems(List<NostrEvent> events) {
-    // Deduplicate by event ID.
-    final seen = <String>{};
-    final unique = <NostrEvent>[];
-    for (final event in events) {
-      if (seen.add(event.id)) unique.add(event);
+  List<FeedItem> _eventsToFeedItems(List<NostrEvent> events) =>
+      nostrEventsToFeedItems(events);
+}
+
+/// Converts a list of Nostr text-note events into [FeedItem]s.
+///
+/// Shared between [NostrFeedSource] (hashtag subscriptions) and the global
+/// feed refresh so all Nostr content enters the store through the same
+/// `schema:Article` path.
+List<FeedItem> nostrEventsToFeedItems(List<NostrEvent> events) {
+  // Deduplicate by event ID.
+  final seen = <String>{};
+  final unique = <NostrEvent>[];
+  for (final event in events) {
+    if (seen.add(event.id)) unique.add(event);
+  }
+
+  // Sort newest first.
+  unique.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+  return unique.map((event) {
+    // Extract hashtags from t tags.
+    final categories = <String>[];
+    for (final tag in event.tags) {
+      if (tag.isNotEmpty && tag[0] == 't' && tag.length >= 2) {
+        categories.add(tag[1]);
+      }
     }
 
-    // Sort newest first.
-    unique.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    // Extract first image URL from content.
+    final imageUrl = _extractImageUrl(event.content);
 
-    return unique.map((event) {
-      // Extract hashtags from t tags.
-      final categories = <String>[];
-      for (final tag in event.tags) {
-        if (tag.isNotEmpty && tag[0] == 't' && tag.length >= 2) {
-          categories.add(tag[1]);
-        }
-      }
+    // Work with raw content lines first, then strip URLs per line.
+    final rawLines = event.content.trim().split('\n');
 
-      // Extract first image URL from content.
-      final imageUrl = _extractImageUrl(event.content);
-
-      // Work with raw content lines first, then strip URLs per line.
-      final rawLines = event.content.trim().split('\n');
-
-      // Find the first line that has real text content (not just hashtags/markdown headers).
-      String? meaningfulLine;
-      for (final line in rawLines) {
-        // Strip URLs from this line for evaluation.
-        final cleaned = line
-            .replaceAll(RegExp(r'https?://\S+'), '')
-            .trim()
-            // Remove leading markdown headers (###, ##, #).
-            .replaceFirst(RegExp(r'^#{1,6}\s*'), '');
-        if (cleaned.isEmpty) continue;
-        // Skip lines that are only hashtag tokens (e.g. "#V2EX").
-        final words = cleaned.split(RegExp(r'\s+'));
-        if (words.every((w) => w.startsWith('#') || w.isEmpty)) continue;
-        meaningfulLine = cleaned;
-        break;
-      }
-
-      // Full stripped content for description (collapse excess whitespace but keep newlines).
-      final stripped = event.content
-          .trim()
+    // Find the first line that has real text content (not just hashtags/markdown headers).
+    String? meaningfulLine;
+    for (final line in rawLines) {
+      // Strip URLs from this line for evaluation.
+      final cleaned = line
           .replaceAll(RegExp(r'https?://\S+'), '')
-          .replaceAll(RegExp(r'[ \t]{2,}'), ' ')
-          .trim();
+          .trim()
+          // Remove leading markdown headers (###, ##, #).
+          .replaceFirst(RegExp(r'^#{1,6}\s*'), '');
+      if (cleaned.isEmpty) continue;
+      // Skip lines that are only hashtag tokens (e.g. "#V2EX").
+      final words = cleaned.split(RegExp(r'\s+'));
+      if (words.every((w) => w.startsWith('#') || w.isEmpty)) continue;
+      meaningfulLine = cleaned;
+      break;
+    }
 
-      final titleSource = meaningfulLine ?? stripped;
-      final titleEnd = titleSource.indexOf('\n');
-      final title = titleSource.isEmpty
-          ? 'Nostr post'
-          : titleEnd > 0 && titleEnd < 120
-              ? titleSource.substring(0, titleEnd)
-              : titleSource.length > 120
-                  ? '${titleSource.substring(0, 120)}…'
-                  : titleSource;
+    // Full stripped content for description (collapse excess whitespace but keep newlines).
+    final stripped = event.content
+        .trim()
+        .replaceAll(RegExp(r'https?://\S+'), '')
+        .replaceAll(RegExp(r'[ \t]{2,}'), ' ')
+        .trim();
 
-      return FeedItem(
-        title: title,
-        url: 'nostr:${event.id}',
-        description: stripped.isEmpty || stripped == title
-            ? null
-            : stripped.length > 5000
-                ? '${stripped.substring(0, 5000)}…'
-                : stripped,
-        author: _resolveAuthorName(event),
-        imageUrl: imageUrl,
-        datePublished: DateTime.fromMillisecondsSinceEpoch(
-          event.createdAt * 1000,
-        ),
-        identifier: event.id,
-        categories: categories,
-      );
-    }).toList();
-  }
+    final titleSource = meaningfulLine ?? stripped;
+    final titleEnd = titleSource.indexOf('\n');
+    final title = titleSource.isEmpty
+        ? 'Nostr post'
+        : titleEnd > 0 && titleEnd < 120
+            ? titleSource.substring(0, titleEnd)
+            : titleSource.length > 120
+                ? '${titleSource.substring(0, 120)}…'
+                : titleSource;
 
-  /// Returns the full hex pubkey so the UI can navigate to the author's profile.
-  ///
-  /// Display formatting (truncation, `@` prefix) happens in the card widget.
-  String? _resolveAuthorName(NostrEvent event) {
-    return event.pubkey;
-  }
+    return FeedItem(
+      title: title,
+      url: 'nostr:${event.id}',
+      description: stripped.isEmpty || stripped == title
+          ? null
+          : stripped.length > 5000
+              ? '${stripped.substring(0, 5000)}…'
+              : stripped,
+      author: event.pubkey,
+      imageUrl: imageUrl,
+      datePublished: DateTime.fromMillisecondsSinceEpoch(
+        event.createdAt * 1000,
+      ),
+      identifier: event.id,
+      categories: categories,
+    );
+  }).toList();
+}
 
-  /// Extracts the first image URL from note content.
-  static String? _extractImageUrl(String content) {
-    final match = RegExp(
-      r'https?://\S+\.(?:jpg|jpeg|png|gif|webp|svg)',
-      caseSensitive: false,
-    ).firstMatch(content);
-    return match?.group(0);
-  }
+/// Extracts the first image URL from note content.
+String? _extractImageUrl(String content) {
+  final match = RegExp(
+    r'https?://\S+\.(?:jpg|jpeg|png|gif|webp|svg)',
+    caseSensitive: false,
+  ).firstMatch(content);
+  return match?.group(0);
 }
 
 /// Parsed Nostr feed URL.

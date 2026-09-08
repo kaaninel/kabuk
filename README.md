@@ -100,9 +100,9 @@ The app runs on iOS (iPhone 17 Pro simulator) and the codebase is healthy, but t
 ### Working (verified)
 
 - ✅ 4-view shell — Explore, Chat, Vault, Apps — plus Onboarding, Settings (12 sub-pages), Marketplace
-- ✅ Explore feed — RSS, Reddit, 4chan, Nostr, Usenet articles stored as `schema:Article` and rendered as native cards; pull-to-refresh, sort modes, filters, 30-min background refresh
+- ✅ Explore feed — RSS, Reddit, 4chan, Nostr, Usenet, and **DuckDuckGo search** articles stored as `schema:Article` and rendered as native cards; pull-to-refresh, sort modes, filters, 30-min background refresh. DDG is searchable in the omnibar ("Web" results) and subscribable as a feed (`ddg://search?q=…`). Plain-text omnibar queries route **prompt → agent → tools → channels → UI** (answer + optional channel surface).
 - ✅ Nostr social layer — NIP-01/19/44/25, relays, DMs, group channels, reactions
-- ✅ Agent system — 11 domain agents (router, system, note, contact, calendar, file, search, identity, messaging, feeds, discover); isolate runtime; tiered LLM (local GGUF + OpenAI/Anthropic HTTP); privacy filter; memory; cost tracking
+- ✅ Agent system — 12 domain agents (router, system, note, contact, calendar, file, search, identity, messaging, feeds, discover, **web & channels**); isolate runtime; tiered LLM (local GGUF + OpenAI/Anthropic HTTP); privacy filter; memory; cost tracking. The **web & channels agent** exposes `web_search`/`web_fetch`/`reddit_search`/`nostr_search`/`usenet_search`/`rss_fetch` through an in-process MCP-style channel registry (`lib/services/channels.dart`) — agents, the omnibar, and the feed engine all invoke channels through the same interface.
 - ✅ Knowledge store — Drift/SQLite RDF triple store (schemaVersion 4), FTS5, change events, device-sync columns
 - ✅ Usenet stack — Newznab indexers, NNTP provider pool, NZB/yEnc/par2/RAR, streaming pipeline + local HTTP server, "Find on Usenet", media_kit video player
 - ✅ Content plugins — Reddit, 4chan, Media, YouTube, HackerNews, Wikipedia, SoundCloud, Bandcamp (searchable/usable via omnibar + marketplace)
@@ -114,20 +114,20 @@ The app runs on iOS (iPhone 17 Pro simulator) and the codebase is healthy, but t
 ### Partially working / fragile (see docs/IMPROVEMENT_ROADMAP.md)
 
 - 🔄 LLM behavior is the weakest area — see "Known Gaps" below. Local GGUF tool-calling is unreliable, all domain agents run on the base tier, and unconfigured setups show a misleading "AI model is being prepared" stub.
-- 🔄 Content sources/channels — see "Known Gaps". Feed is capped at 200 articles, articles are pruned 48h after publication, non-Reddit channels never fetch fresh content, and plugin content has no Explore surface.
+- 🔄 Feed/channel system was fragmented — **reworked Aug 2026** (see `docs/FEED_CHANNEL_PLAN.md`). Feed refresh now surfaces per-source errors, chips fetch-on-select, filters persist and work, the "Nostr" chip shows real content, web subscriptions refresh, and `ChannelPage` is functional and wired for plugin channels.
 
 ### Known Gaps (verified in code, Aug 2026)
 
-1. **Explore feed hard-capped at 200 articles** — `articlesProvider` reads `listArticles(limit: 200)`; older content is never visible.
-2. **Articles auto-delete after 48h** — unread articles expire 48h after publication and are pruned on startup/refresh; users lose content they didn't read in time.
-3. **ChannelView only refreshes Reddit** — non-Reddit channels show only cached knowledge-store content and never fetch fresh items.
-4. **Unified ChannelPage is dead code** — `channel_page.dart` is never wired into navigation and returns an empty list for non-plugin channels.
-5. **Plugin content (YouTube, HN, Wikipedia, SoundCloud, Bandcamp) has no Explore/channel surface** — only reachable via omnibar search/URL-resolution.
-6. **Reddit uses the unauthenticated JSON API** — subject to aggressive 429/403 blocking; failures are silently swallowed so feeds go stale without feedback.
-7. **All domain agents run on the base LLM tier** — `processLlmRequest` never sets a tier, so with a local model everything runs on the small, tool-calling-weak model; `standard`/`advanced` tiers are unused by agents.
-8. **MCP and wallet/Lightning are design-only** — `docs/MCP.md` exists but there is zero MCP code; wallet/zaps are documented as "not implemented".
-9. **Remote-only LLM config makes two API calls per message** — one for routing (base tier = remote) plus one for the response.
-10. **iOS build artifacts are uncommitted** — SPM dirs, Xcode scheme pre-action, `Podfile.lock`, `pubspec.lock` changes left from the last build.
+1. ~~**Explore feed hard-capped at 200 articles**~~ → **Fixed**: `articlesProvider` raised to 500 and `_loadMore` pages non-Reddit feeds from the store via a `before` cursor (`lib/knowledge/types/article.dart`, `lib/ui/explore/explore_view.dart`).
+2. ~~**Articles auto-delete after 48h**~~ → **Fixed**: default unread TTL raised to 14 days (`kUnreadArticleTtl`); read → 7 days; bookmarks never pruned.
+3. ~~**ChannelView only refreshes Reddit**~~ → **Partial**: `ChannelView` remains Reddit-only, but the unified `ChannelPage` now has a working store branch + plugin branch and is wired for plugin channels via the omnibar. (`docs/FEED_CHANNEL_PLAN.md` §Phase 3.)
+4. ~~**Unified ChannelPage is dead code**~~ → **Fixed**: store branch implemented; `ResolvedChannel` carries plugin refs and plugin channels open in `ChannelPage`.
+5. ~~**Plugin content has no Explore/channel surface**~~ → **Partial**: plugin channels now open in `ChannelPage` via URL resolution; a full plugin-backed Explore feed source remains future work.
+6. ~~**Reddit unauthenticated API rate-limited**~~ → **Improved**: Reddit deprecated anonymous `.json` in May 2026 (403 + TLS fingerprinting). The Reddit source now uses the recommended descriptive User-Agent plus a host fallback chain (`api.reddit.com` → `old.reddit.com` → `www.reddit.com`) with 429 back-off (`lib/platform/shared/reddit_api.dart`); per-feed errors are surfaced in the refresh banner. OAuth remains future work.
+7. **All domain agents run on the base LLM tier** — unchanged.
+8. **MCP and wallet/Lightning are design-only** — unchanged.
+9. **Remote-only LLM config makes two API calls per message** — unchanged.
+10. **iOS build artifacts are uncommitted** — unchanged.
 
 See [docs/IMPROVEMENT_ROADMAP.md](docs/IMPROVEMENT_ROADMAP.md) for the full status and remediation plan.
 

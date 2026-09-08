@@ -498,6 +498,7 @@ class _AddFeedDialogState extends ConsumerState<_AddFeedDialog> {
       (FeedSourceType.rss, Icons.rss_feed_rounded, 'RSS', KabukTheme.blueAccent),
       (FeedSourceType.nostr, Icons.bolt_rounded, 'Nostr', KabukTheme.purpleAccent),
       (FeedSourceType.fourchan, Icons.image_rounded, '4chan', Color(0xFF648034)),
+      (FeedSourceType.duckduckgo, Icons.public_rounded, 'DuckDuckGo', Color(0xFFDE5833)),
     ];
 
     return Wrap(
@@ -543,6 +544,7 @@ class _AddFeedDialogState extends ConsumerState<_AddFeedDialog> {
     FeedSourceType.rss || FeedSourceType.atom => 'Feed URL',
     FeedSourceType.nostr => 'Nostr Hashtag or npub',
     FeedSourceType.fourchan => 'Board Name',
+    FeedSourceType.duckduckgo => 'Search Query',
     FeedSourceType.usenet => 'Search Query or Category',
   };
 
@@ -551,6 +553,7 @@ class _AddFeedDialogState extends ConsumerState<_AddFeedDialog> {
     FeedSourceType.rss || FeedSourceType.atom => 'https://example.com/feed.xml',
     FeedSourceType.nostr => 'e.g. bitcoin, npub1...',
     FeedSourceType.fourchan => 'e.g. g, sci, wg',
+    FeedSourceType.duckduckgo => 'e.g. flutter, "why is the sky blue"',
     FeedSourceType.usenet => 'e.g. usenet://search?q=linux or usenet://category/movies',
   };
 
@@ -596,18 +599,28 @@ class _AddFeedDialogState extends ConsumerState<_AddFeedDialog> {
               ? _nameController.text.trim()
               : 'Usenet: $input',
         ),
+        FeedSourceType.duckduckgo => (
+          'ddg://search?q=${Uri.encodeQueryComponent(input)}',
+          _nameController.text.trim().isNotEmpty
+              ? _nameController.text.trim()
+              : 'ddg:$input',
+        ),
       };
 
       final name = _nameController.text.trim().isNotEmpty
           ? _nameController.text.trim()
           : displayName;
 
-      await store.createFeedSubscription(
+      final feedUri = await store.createFeedSubscription(
         name: name,
         feedUrl: feedUrl,
         feedType: feedType,
       );
 
+      // Fetch initial content so the new chip is not empty.
+      await refreshAllFeeds(ref, force: true, onlyUri: feedUri);
+      ref.invalidate(subscriptionsProvider);
+      ref.invalidate(articlesProvider);
       if (mounted) Navigator.of(context).pop(true);
     } on Object catch (e) {
       if (mounted) {

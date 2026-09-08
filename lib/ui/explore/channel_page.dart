@@ -14,6 +14,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:kabuk/config/providers.dart';
+import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/plugins/channel.dart';
 import 'package:kabuk/plugins/content_item.dart';
 import 'package:kabuk/plugins/plugin.dart';
@@ -173,11 +175,80 @@ class _ChannelPageState extends ConsumerState<ChannelPage> {
     if (pluginId != null && _channel.externalEntityId != null) {
       return _fetchFromPlugin(pluginId, page);
     }
-    // No plugin — return empty for now.
-    // In a full implementation this would query the knowledge store for
-    // content linked to _channel.entityUri.
+    // No plugin — query the knowledge store for content linked to this
+    // channel's entity (by feedSource, tag, or author).
+    return _fetchFromStore(page);
+  }
+
+  /// Queries the knowledge store for articles belonging to this channel.
+  ///
+  /// Tries, in order:
+  /// 1. articles whose `kabuk:feedSource` matches the channel's entity URI,
+  /// 2. articles tagged with the channel identifier (e.g. `r/flutter`,
+  ///    `/g/`, `#topic`),
+  /// 3. articles authored by the channel (for person channels).
+  Future<List<ContentItem>> _fetchFromStore(int page) async {
+    final store = ref.read(knowledgeStoreProvider);
+
+    final bySource = await store.listArticles(
+      feedSource: _channel.entityUri,
+      limit: _pageSize * 4,
+    );
+    if (bySource.isNotEmpty) {
+      return bySource.map(_articleToContentItem).toList();
+    }
+
+    final tag = _tagForChannel(_channel);
+    if (tag != null) {
+      final all = await store.listArticles(limit: 500);
+      final tagged = all.where((a) => a.tags.contains(tag)).toList();
+      if (tagged.isNotEmpty) {
+        return tagged.map(_articleToContentItem).toList();
+      }
+    }
+
+    if (_channel.entityType == ChannelEntityType.person) {
+      final byAuthor = await store.listArticles(
+        author: _channel.title,
+        limit: _pageSize * 4,
+      );
+      if (byAuthor.isNotEmpty) {
+        return byAuthor.map(_articleToContentItem).toList();
+      }
+    }
+
     return const [];
   }
+
+  /// Derives a knowledge-store tag for a channel (e.g. `r/flutter`).
+  static String? _tagForChannel(Channel channel) {
+    final title = channel.title.trim();
+    return switch (channel.entityType) {
+      ChannelEntityType.subreddit =>
+        title.startsWith('r/') ? title : 'r/$title',
+      ChannelEntityType.board => title.startsWith('/') && title.endsWith('/')
+          ? title
+          : '/$title/',
+      ChannelEntityType.topic => title.startsWith('#') ? title : '#$title',
+      _ => null,
+    };
+  }
+
+  /// Converts a stored [ArticleData] into a [ContentItem] for the card grid.
+  static ContentItem _articleToContentItem(ArticleData a) => ContentItem(
+    sourcePluginId: 'knowledge',
+    externalId: a.uri,
+    contentType: ContentType.article,
+    title: a.name ?? 'Untitled',
+    description: a.description,
+    url: a.url,
+    thumbnailUrl: a.image,
+    author: a.author == null
+        ? null
+        : ContentAuthor(name: a.author),
+    publishedAt: a.datePublished,
+    tags: a.tags,
+  );
 
   Future<List<ContentItem>> _fetchFromPlugin(String pluginId, int page) async {
     final registry = ref.read(pluginRegistryProvider);

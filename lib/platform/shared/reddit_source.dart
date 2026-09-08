@@ -2,11 +2,13 @@
 ///
 /// Fetches posts from public subreddits using Reddit's JSON API.
 /// No authentication is required for public subreddit listings.
-/// Uses [MeshService] for HTTP requests.
+/// Uses [MeshService] for HTTP requests and the shared Reddit API helpers
+/// (descriptive User-Agent + host fallback) from `reddit_api.dart`.
 library;
 
 import 'dart:convert';
 
+import 'package:kabuk/platform/shared/reddit_api.dart';
 import 'package:kabuk/services/feed.dart';
 import 'package:kabuk/services/mesh.dart';
 
@@ -24,11 +26,6 @@ class RedditFeedSource implements FeedSource {
 
   final MeshService _mesh;
 
-  /// Browser-like User-Agent to avoid Reddit blocking API requests.
-  static const _userAgent =
-      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
-      'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-
   @override
   FeedSourceType get type => FeedSourceType.reddit;
 
@@ -41,31 +38,21 @@ class RedditFeedSource implements FeedSource {
   /// Fetches a page of posts, optionally starting after [afterCursor].
   ///
   /// Returns the parsed feed items and an optional nextCursor to pass
-  /// on subsequent calls for incremental pagination.
+  /// on subsequent calls for incremental pagination. Tries `api.reddit.com`,
+  /// `old.reddit.com`, and `www.reddit.com` in order so a 403 on one host
+  /// doesn't kill the feed.
   Future<({List<FeedItem> items, String? nextCursor})> fetchPage(
     String url, {
     String? afterCursor,
   }) async {
-    var jsonUrl = _toJsonUrl(url);
-    if (afterCursor != null && afterCursor.isNotEmpty) {
-      final separator = jsonUrl.contains('?') ? '&' : '?';
-      jsonUrl = '$jsonUrl${separator}after=$afterCursor';
-    }
-
-    final response = await _mesh.get(
-      Uri.parse(jsonUrl),
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': _userAgent,
-        'Cookie': 'over18=1',
+    final response = await fetchRedditJson(
+      get: (uri) async {
+        final res = await _mesh.get(uri, headers: kRedditHeaders);
+        return (statusCode: res.statusCode, body: res.body);
       },
+      pathOrUrl: url,
+      after: afterCursor,
     );
-
-    if (response.statusCode != 200) {
-      throw RedditFetchException(
-        'HTTP ${response.statusCode} fetching $jsonUrl',
-      );
-    }
 
     final json = jsonDecode(response.body);
     if (json is! Map<String, dynamic>) {
@@ -285,70 +272,19 @@ class RedditFeedSource implements FeedSource {
   @override
   Future<bool> validate(String url) async {
     try {
-      final jsonUrl = _toJsonUrl(url);
-      final response = await _mesh.get(
-        Uri.parse(jsonUrl),
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': _userAgent,
-          'Cookie': 'over18=1',
+      final response = await fetchRedditJson(
+        get: (uri) async {
+          final res = await _mesh.get(uri, headers: kRedditHeaders);
+          return (statusCode: res.statusCode, body: res.body);
         },
+        pathOrUrl: url,
       );
-      if (response.statusCode != 200) return false;
       final json = jsonDecode(response.body);
       return json is Map<String, dynamic> && json.containsKey('data');
     } on Object {
       return false;
     }
   }
-
-  // ---------------------------------------------------------------------------
-  // URL normalization
-  // ---------------------------------------------------------------------------
-
-  /// Converts various Reddit URL forms to the JSON API URL.
-  static String _toJsonUrl(String input) {
-    var url = input.trim();
-
-    // If it already is a fully-formed JSON endpoint (with or without query
-    // params), return it as-is to avoid double-transforming sort URLs like
-    // /r/flutter/new.json?limit=50&raw_json=1.
-    if (url.contains('.json')) {
-      if (!url.startsWith('http')) url = 'https://www.reddit.com/$url';
-      return url;
-    }
-
-    // Strip full Reddit URLs down to the path.
-    if (url.startsWith('http')) {
-      final uri = Uri.parse(url);
-      url = uri.path;
-    }
-
-    // Handle "r/subreddit" or "/r/subreddit".
-    if (url.startsWith('r/') || url.startsWith('/r/')) {
-      if (!url.startsWith('/')) url = '/$url';
-    } else {
-      // Bare subreddit name (e.g., "flutter").
-      url = '/r/$url';
-    }
-
-    // Remove trailing slash.
-    if (url.endsWith('/')) url = url.substring(0, url.length - 1);
-
-    return 'https://www.reddit.com$url/hot.json?limit=50&raw_json=1';
-  }
-}
-
-/// Exception thrown when Reddit API returns an error.
-class RedditFetchException implements Exception {
-  /// Creates a [RedditFetchException] with a [message].
-  const RedditFetchException(this.message);
-
-  /// The error message.
-  final String message;
-
-  @override
-  String toString() => 'RedditFetchException: $message';
 }
 
 /// Exception thrown when Reddit API response cannot be parsed.

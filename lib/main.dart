@@ -15,6 +15,7 @@ import 'package:kabuk/agents/domains/note_agent.dart';
 import 'package:kabuk/agents/domains/router.dart';
 import 'package:kabuk/agents/domains/search_agent.dart';
 import 'package:kabuk/agents/domains/system_agent.dart';
+import 'package:kabuk/agents/domains/web_agent.dart';
 import 'package:kabuk/app.dart';
 import 'package:kabuk/config/providers.dart';
 import 'package:kabuk/knowledge/types/article.dart';
@@ -71,6 +72,7 @@ Future<void> main() async {
   runtime.register(MessagingAgent());
   runtime.register(FeedAgent());
   runtime.register(DiscoveryAgent());
+  runtime.register(WebAgent());
   runtime.register(RouterAgent());
 
   // Initialize Usenet service (lazy — the provider handles creation).

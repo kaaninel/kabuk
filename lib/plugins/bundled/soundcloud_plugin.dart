@@ -9,6 +9,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/widgets.dart' show IconData;
+import 'package:kabuk/plugins/channel.dart';
 import 'package:kabuk/plugins/content_item.dart';
 import 'package:kabuk/plugins/context.dart';
 import 'package:kabuk/plugins/plugin.dart';
@@ -113,6 +114,9 @@ class SoundCloudPlugin implements ContentPlugin {
           entityUri: 'soundcloud:user:${data['id']}',
           title: (data['username'] as String?) ?? 'Unknown',
           imageUrl: data['avatar_url'] as String?,
+          sourcePluginId: id,
+          externalEntityId: (data['id'] as num?)?.toString(),
+          entityType: ChannelEntityType.musicArtist,
         );
       }
 
@@ -122,6 +126,9 @@ class SoundCloudPlugin implements ContentPlugin {
           entityUri: 'soundcloud:playlist:${data['id']}',
           title: (data['title'] as String?) ?? 'Playlist',
           imageUrl: data['artwork_url'] as String?,
+          sourcePluginId: id,
+          externalEntityId: (data['id'] as num?)?.toString(),
+          entityType: ChannelEntityType.custom,
         );
       }
 

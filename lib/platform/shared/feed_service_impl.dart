@@ -4,12 +4,14 @@
 /// auto-detection of feed types from URLs.
 library;
 
+import 'package:kabuk/platform/shared/duckduckgo_source.dart';
 import 'package:kabuk/platform/shared/fourchan_source.dart';
 import 'package:kabuk/platform/shared/nostr_feed_source.dart';
 import 'package:kabuk/platform/shared/reddit_source.dart';
 import 'package:kabuk/platform/shared/rss_source.dart';
 import 'package:kabuk/platform/shared/usenet/newznab_client.dart';
 import 'package:kabuk/platform/shared/usenet_feed_source.dart';
+import 'package:kabuk/services/content_source.dart';
 import 'package:kabuk/services/feed.dart';
 import 'package:kabuk/services/mesh.dart';
 import 'package:kabuk/services/nostr.dart';
@@ -29,6 +31,7 @@ class SharedFeedService implements FeedService {
          FeedSourceType.atom: RssFeedSource(mesh: mesh), // Atom uses same parser
          FeedSourceType.reddit: RedditFeedSource(mesh: mesh),
          FeedSourceType.fourchan: FourchanFeedSource(mesh: mesh),
+         FeedSourceType.duckduckgo: DuckDuckGoFeedSource(mesh: mesh),
          if (nostr != null) FeedSourceType.nostr: NostrFeedSource(nostr: nostr),
          if (usenet != null)
            FeedSourceType.usenet: UsenetFeedSource(
@@ -41,6 +44,10 @@ class SharedFeedService implements FeedService {
 
   @override
   FeedSource getSource(FeedSourceType type) => _sources[type]!;
+
+  @override
+  ContentSource sourceFor(FeedSourceType type) =>
+      FeedSourceContentSource(feedService: this, type: type);
 
   @override
   Future<List<FeedItem>> fetchItems(String url, {FeedSourceType? type}) async {
@@ -101,6 +108,14 @@ class SharedFeedService implements FeedService {
         lower.contains('boards.4chan.org') ||
         lower.contains('boards.4channel.org')) {
       return FeedSourceType.fourchan;
+    }
+
+    // DuckDuckGo search patterns.
+    if (lower.startsWith('ddg://') ||
+        lower.startsWith('ddg:') ||
+        lower.startsWith('duckduckgo://') ||
+        lower.startsWith('duckduckgo:')) {
+      return FeedSourceType.duckduckgo;
     }
 
     // Usenet URL patterns.

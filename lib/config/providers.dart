@@ -66,6 +66,9 @@ import 'package:kabuk/rfw/built_in_libraries.dart';
 import 'package:kabuk/rfw/registry.dart';
 import 'package:kabuk/rfw/runtime.dart';
 import 'package:kabuk/services/auth.dart';
+import 'package:kabuk/services/channels.dart';
+import 'package:kabuk/services/channels/feed_channel_servers.dart';
+import 'package:kabuk/services/channels/web_channel_server.dart';
 import 'package:kabuk/services/device_sync.dart';
 import 'package:kabuk/services/feed.dart';
 import 'package:kabuk/services/media.dart';
@@ -285,6 +288,7 @@ final agentContextProvider = Provider<AgentContext>((ref) {
     usenet: usenet,
     channels: ref.watch(agentChannelProvider.notifier),
     observation: ref.watch(observationBusProvider),
+    channelRegistry: ref.watch(channelRegistryProvider),
   );
 });
 
@@ -311,6 +315,28 @@ final feedServiceProvider = Provider<FeedService>((ref) {
   final nostr = ref.watch(nostrServiceProvider);
   final usenet = ref.watch(usenetServiceProvider);
   return SharedFeedService(mesh: mesh, nostr: nostr, usenet: usenet);
+});
+
+// =============================================================================
+// Channel Registry (MCP-style tool servers)
+// =============================================================================
+
+/// The MCP-style [ChannelRegistry] of tool servers (web, Reddit, Nostr, RSS,
+/// Usenet).
+///
+/// Agents invoke channels through this registry; the omnibar and feed engine
+/// use the same interface. External MCP servers plug in later as additional
+/// [ChannelServer]s over stdio/HTTP.
+final channelRegistryProvider = Provider<ChannelRegistry>((ref) {
+  final registry = ChannelRegistry();
+  final feed = ref.watch(feedServiceProvider);
+  registry
+    ..register(WebChannelServer(feedService: feed))
+    ..register(RedditChannelServer(feedService: feed))
+    ..register(NostrChannelServer(feedService: feed))
+    ..register(RssChannelServer(feedService: feed))
+    ..register(UsenetChannelServer(feedService: feed));
+  return registry;
 });
 
 // =============================================================================

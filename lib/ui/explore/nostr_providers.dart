@@ -15,7 +15,9 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kabuk/config/providers.dart';
+import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/knowledge/types/nostr_social.dart';
+import 'package:kabuk/platform/shared/nostr_feed_source.dart';
 import 'package:kabuk/services/nostr.dart';
 import 'package:kabuk/services/nostr_utils.dart';
 
@@ -565,14 +567,23 @@ final profileForPubkeyProvider =
 
 /// Fetches Nostr global feed and stores notes in the knowledge store.
 ///
-/// Returns the number of new notes ingested.
+/// Each note is persisted both as a `kabuk:NostrNote` (for the social layer:
+/// reactions, replies, reposts) and as a `schema:Article` tagged with the
+/// `nostr:global` feed source so it appears in the Explore feed's "Nostr" chip.
+///
+/// Returns the number of new notes ingested. Bounded by [limit] and a short
+/// timeout so it never stalls the surrounding refresh pass.
 Future<int> refreshNostrFeed(WidgetRef ref, {int limit = 50}) async {
   final nostr = ref.read(nostrServiceProvider);
   final store = ref.read(knowledgeStoreProvider);
 
+  final existingUrlIndex = await store.listArticleUrlIndex();
+
   return processNostrEvents(
     nostr.fetchGlobalFeed(limit: limit),
     where: (e) => e.kind == NostrKind.textNote,
+    limit: limit,
+    timeout: const Duration(seconds: 4),
     onEvent: (event) async {
       // Deduplicate.
       final existing = await store.findNostrNoteByEventId(event.id);
@@ -597,6 +608,24 @@ Future<int> refreshNostrFeed(WidgetRef ref, {int limit = 50}) async {
         authorName: authorName,
         authorPicture: authorPicture,
       );
+
+      // Persist as a schema:Article so the global Nostr feed shows up in the
+      // Explore feed. Dedup by 'nostr:<eventId>' URL.
+      final items = nostrEventsToFeedItems([event]);
+      for (final item in items) {
+        if (existingUrlIndex.containsKey(item.url)) continue;
+        await store.createArticle(
+          title: item.title,
+          description: item.description,
+          url: item.url,
+          image: item.imageUrl,
+          author: item.author,
+          feedSource: 'nostr:global',
+          datePublished: item.datePublished,
+          tags: item.categories,
+        );
+        existingUrlIndex[item.url] = '';
+      }
     },
   );
 }

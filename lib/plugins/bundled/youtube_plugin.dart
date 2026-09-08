@@ -10,6 +10,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/widgets.dart' show IconData;
+import 'package:kabuk/plugins/channel.dart';
 import 'package:kabuk/plugins/content_item.dart';
 import 'package:kabuk/plugins/context.dart';
 import 'package:kabuk/plugins/plugin.dart';
@@ -354,6 +355,9 @@ class YouTubePlugin implements ContentPlugin {
         entityUri: 'youtube:channel:$authorId',
         title: name,
         imageUrl: imageUrl,
+        sourcePluginId: id,
+        externalEntityId: authorId,
+        entityType: ChannelEntityType.videoChannel,
       );
     }
     return null;

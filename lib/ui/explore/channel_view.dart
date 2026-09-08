@@ -9,6 +9,7 @@
 /// across every service gets the same native treatment.
 library;
 
+import 'dart:async';
 import 'dart:developer' as dev;
 
 import 'package:flutter/material.dart';
@@ -76,6 +77,7 @@ IconData _sourceIcon(FeedSourceType source) {
     FeedSourceType.rss => Icons.rss_feed_rounded,
     FeedSourceType.atom => Icons.rss_feed_rounded,
     FeedSourceType.usenet => Icons.newspaper_rounded,
+    FeedSourceType.duckduckgo => Icons.public_rounded,
   };
 }
 
@@ -279,17 +281,23 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
         if (a.url != null) a.url!,
     };
 
-    final allExisting = await store.listArticles(limit: 2000);
-    final globalUrls = {
-      for (final a in allExisting)
-        if (a.url != null) a.url!: a,
-    };
+    // Deduplicate across the whole store by URL (scales far better than the
+    // old 2000-row window).
+    final globalUrls = await store.listArticleUrlIndex();
+
+    // Use a stable pseudo feedSource until the user subscribes, so articles
+    // can be re-tagged onto the real subscription URI when they follow.
+    final pseudoSource = widget.isChannel
+        ? '${widget.sourceType.name}:${widget.channel}'
+        : '${widget.sourceType.name}:u/${widget.author}';
 
     final newArticles = <ArticleData>[];
     for (final item in items) {
       // Check global store first to avoid cross-session duplicates.
-      if (globalUrls.containsKey(item.url)) {
-        newArticles.add(globalUrls[item.url]!);
+      final existingSubject = globalUrls[item.url];
+      if (existingSubject != null) {
+        final cached = await store.getArticleData(existingSubject);
+        if (cached != null) newArticles.add(cached);
         continue;
       }
       if (existingUrls.contains(item.url)) continue;
@@ -300,7 +308,7 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
         url: item.url,
         videoUrl: item.videoUrl,
         author: item.author ?? widget.author ?? '',
-        feedSource: widget.isChannel ? widget.sourceType.name : null,
+        feedSource: pseudoSource,
         image: item.imageUrl,
         datePublished: item.datePublished,
         tags: item.categories,
@@ -314,11 +322,13 @@ class _ChannelViewState extends ConsumerState<ChannelView> {
         url: item.url,
         videoUrl: item.videoUrl,
         author: item.author ?? widget.author ?? '',
+        feedSource: pseudoSource,
         image: item.imageUrl,
         datePublished: item.datePublished,
         tags: item.categories,
         galleryImages: item.galleryImages,
       ));
+      globalUrls[item.url] = uri;
     }
     return newArticles;
   }
@@ -683,11 +693,17 @@ class _FollowButtonState extends ConsumerState<_FollowButton> {
           ? _channelFeedUrl(widget.channel!, widget.sourceType)
           : _authorFeedUrl(widget.author!, widget.sourceType);
       if (feedUrl == null) return;
-      await store.createFeedSubscription(
+      final feedUri = await store.createFeedSubscription(
         name: widget.displayName,
         feedUrl: feedUrl,
         feedType: widget.sourceType.name,
       );
+      // Re-tag any articles previously cached under the pseudo feedSource so
+      // they show up under the new subscription chip immediately.
+      final pseudoSource = widget.channel != null
+          ? '${widget.sourceType.name}:${widget.channel}'
+          : '${widget.sourceType.name}:u/${widget.author}';
+      unawaited(store.retagArticles(pseudoSource, feedUri));
     }
 
     ref.invalidate(subscriptionsProvider);

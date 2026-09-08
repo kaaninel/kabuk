@@ -609,6 +609,12 @@ abstract final class NS {
   /// `kabuk:Preference` entity type.
   static const String kabukPreference = '${kabuk}Preference';
 
+  /// `kabuk:preferenceKey` — the unique key of a user preference.
+  static const String kabukPreferenceKey = '${kabuk}preferenceKey';
+
+  /// `kabuk:preferenceValue` — the value of a user preference.
+  static const String kabukPreferenceValue = '${kabuk}preferenceValue';
+
   /// `kabuk:FeedSubscription` entity type.
   static const String kabukFeedSubscription = '${kabuk}FeedSubscription';
 
@@ -847,7 +853,7 @@ abstract final class NS {
   /// pruned from the local knowledge store.
   ///
   /// Set automatically when an article is created:
-  /// - Unread articles expire 48 hours after `schema:datePublished`.
+  /// - Unread articles expire 14 days after `schema:datePublished`.
   /// - After the user reads an article the expiry is extended to 7 days.
   /// - Bookmarked articles are excluded from pruning entirely.
   static const String kabukExpiresAt = '${kabuk}expiresAt';

@@ -13,6 +13,13 @@ import 'package:kabuk/knowledge/triple.dart';
 import 'package:kabuk/knowledge/types/nostr_social.dart';
 import 'package:meta/meta.dart';
 
+/// Default time-to-live for unread articles before they are pruned.
+///
+/// Raised from 48 hours to 14 days so users don't silently lose content they
+/// simply haven't opened yet. Read articles extend to 7 days from view, and
+/// bookmarked articles are never pruned.
+const Duration kUnreadArticleTtl = Duration(days: 14);
+
 /// Immutable representation of a Schema.org Article entity.
 ///
 /// Represents a single item from an RSS feed, Reddit post, or similar
@@ -359,9 +366,9 @@ extension KnowledgeStoreArticleExtension on KnowledgeStore {
         DateTime.now().toIso8601String(),
       );
       await ctx.set(uri, NS.kabukRead, 'false');
-      // Stamp expiry: unread articles expire 48 h after publication.
+      // Stamp expiry: unread articles expire 14 days after publication.
       final pub = datePublished ?? DateTime.now();
-      final expiry = pub.add(const Duration(hours: 48));
+      final expiry = pub.add(kUnreadArticleTtl);
       await ctx.set(uri, NS.kabukExpiresAt, expiry.toIso8601String());
       for (final tag in tags) {
         await ctx.add(uri, NS.kabukTag, tag);
@@ -433,17 +440,29 @@ extension KnowledgeStoreArticleExtension on KnowledgeStore {
   }
 
   /// Lists Articles ordered by most recently published.
+  ///
+  /// [before] acts as a pagination cursor: only articles published strictly
+  /// before the given timestamp are returned (combine with [limit] to page
+  /// through the feed). [feedSources] OR-filters on `kabuk:feedSource`
+  /// (applied post-hydration), [keyword] filters title/description, and
+  /// [hideNsfw]/[mutedSources] apply the same rules as the Explore content
+  /// filters.
+  ///
+  /// Sorting and pagination happen in Dart after hydration because the
+  /// triple store cannot order/filter across predicates in a single-table
+  /// query.
   Future<List<ArticleData>> listArticles({
     int limit = 50,
     String? feedSource,
     String? author,
     bool? unreadOnly,
+    List<String> feedSources = const [],
+    String? keyword,
+    bool? hideNsfw,
+    List<String> mutedSources = const [],
+    DateTime? before,
   }) async {
-    var q = query()
-        .where(NS.rdfType, equals: NS.schemaArticle)
-        .orderBy(NS.schemaDatePublished, descending: true)
-        .limit(limit);
-
+    var q = query().where(NS.rdfType, equals: NS.schemaArticle);
     if (feedSource != null) {
       q = q.where(NS.kabukFeedSource, equals: feedSource);
     }
@@ -455,13 +474,58 @@ extension KnowledgeStoreArticleExtension on KnowledgeStore {
     final uris = typeTriples.map((t) => t.subject).toSet().toList();
     if (uris.isEmpty) return [];
     final allTriples = await getEntities(uris);
-    final articles = <ArticleData>[];
+    var articles = <ArticleData>[];
     for (final uri in uris) {
       final triples = allTriples[uri];
       if (triples == null || triples.isEmpty) continue;
       final article = ArticleData.fromTriples(uri, triples);
       if (unreadOnly == true && article.read) continue;
+      // OR-filter on a set of feed sources.
+      if (feedSources.isNotEmpty &&
+          !feedSources.contains(article.feedSource)) {
+        continue;
+      }
+      // Keyword filter (title/description).
+      if (keyword != null && keyword.isNotEmpty) {
+        final text =
+            '${article.name ?? ''} ${article.description ?? ''}'
+                .toLowerCase();
+        if (!text.contains(keyword.toLowerCase())) continue;
+      }
+      // NSFW heuristic.
+      if (hideNsfw == true) {
+        final hasNsfwTag = article.tags.any(
+          (t) => t.toLowerCase() == 'nsfw' || t.toLowerCase() == 'over18',
+        );
+        final titleNsfw = (article.name ?? '').toLowerCase().contains('nsfw');
+        if (hasNsfwTag || titleNsfw) continue;
+      }
+      // Muted sources.
+      if (mutedSources.isNotEmpty &&
+          article.feedSource != null &&
+          mutedSources.contains(article.feedSource)) {
+        continue;
+      }
       articles.add(article);
+    }
+
+    // Newest first.
+    articles.sort((a, b) {
+      final aDate = a.datePublished ?? DateTime(2000);
+      final bDate = b.datePublished ?? DateTime(2000);
+      return bDate.compareTo(aDate);
+    });
+
+    // Pagination cursor.
+    if (before != null) {
+      articles.removeWhere(
+        (a) =>
+            a.datePublished == null ||
+            !a.datePublished!.isBefore(before),
+      );
+    }
+    if (articles.length > limit) {
+      articles = articles.sublist(0, limit);
     }
     return articles;
   }
@@ -654,6 +718,98 @@ extension KnowledgeStoreArticleExtension on KnowledgeStore {
           refreshInterval.toString(),
         );
       }
+    });
+  }
+
+  /// Returns a map from `schema:url` → entity URI across the whole store.
+  ///
+  /// Used for deduplication during feed refresh and channel ingestion. This is
+  /// O(all URLs) instead of hydrating full entities, so it scales far better
+  /// than the old `listArticles(limit: 2000)` dedup window.
+  Future<Map<String, String>> listArticleUrlIndex() async {
+    final urlTriples = await query().predicate(NS.schemaUrl).execute();
+    final index = <String, String>{};
+    for (final t in urlTriples) {
+      final url = t.objectValue;
+      if (url.isNotEmpty && !index.containsKey(url)) {
+        index[url] = t.subject;
+      }
+    }
+    return index;
+  }
+
+  /// Re-tags articles from one `kabuk:feedSource` value to another.
+  ///
+  /// Used when a user follows a channel whose content was previously stored
+  /// under a pseudo feedSource (e.g. `reddit:r/flutter`); the articles are
+  /// relabeled to the real subscription URI so they appear under the chip.
+  /// Returns the number of articles re-tagged.
+  Future<int> retagArticles(String fromFeedSource, String toFeedSource) async {
+    if (fromFeedSource == toFeedSource) return 0;
+    final triples = await query()
+        .where(NS.kabukFeedSource, equals: fromFeedSource)
+        .execute();
+    final uris = triples.map((t) => t.subject).toSet();
+    if (uris.isEmpty) return 0;
+    await mutate((ctx) async {
+      for (final uri in uris) {
+        await ctx.set(
+          uri,
+          NS.kabukFeedSource,
+          toFeedSource,
+          objectType: ObjectType.uri,
+        );
+      }
+    });
+    return uris.length;
+  }
+}
+
+/// Convenience methods for persisting user preferences as `kabuk:Preference`
+/// entities (one entity per key, with `kabuk:preferenceKey`/`kabuk:preferenceValue`).
+extension KnowledgeStorePreferenceExtension on KnowledgeStore {
+  /// Sets a preference [key] to the string [value], upserting the entity.
+  Future<void> setPreference(String key, String value) async {
+    final existing = await query()
+        .where(NS.kabukPreferenceKey, equals: key)
+        .execute();
+    final uri = existing.firstOrNull?.subject;
+    await mutate((ctx) async {
+      final target = uri ?? ctx.create('Preference');
+      await ctx.set(
+        target,
+        NS.rdfType,
+        NS.kabukPreference,
+        objectType: ObjectType.uri,
+      );
+      await ctx.set(target, NS.kabukPreferenceKey, key);
+      await ctx.set(target, NS.kabukPreferenceValue, value);
+    });
+  }
+
+  /// Reads a preference [key], returning `null` when unset.
+  Future<String?> getPreference(String key) async {
+    final triples = await query()
+        .where(NS.kabukPreferenceKey, equals: key)
+        .execute();
+    if (triples.isEmpty) return null;
+    final uri = triples.first.subject;
+    final entity = await getEntity(uri);
+    return entity
+        .where((t) => t.predicate == NS.kabukPreferenceValue)
+        .firstOrNull
+        ?.objectValue;
+  }
+
+  /// Deletes a preference [key] if present.
+  Future<void> deletePreference(String key) async {
+    final triples = await query()
+        .where(NS.kabukPreferenceKey, equals: key)
+        .execute();
+    final uri = triples.firstOrNull?.subject;
+    if (uri == null) return;
+    await mutate((ctx) async {
+      await ctx.remove(subject: uri);
     });
   }
 }

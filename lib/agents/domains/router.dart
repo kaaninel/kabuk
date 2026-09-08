@@ -150,6 +150,28 @@ and a brief reason for choosing it.
       RegExp(r'(list|show|search|find)\b.*\bnotes?', caseSensitive: false),
       'notes',
     ),
+    // Web search / page-read intents.
+    (
+      RegExp(
+        r'(search|look up|find|google|browse|check)\b.*\b(web|online|internet|site|website|page|article|news|url)',
+        caseSensitive: false,
+      ),
+      'web',
+    ),
+    (
+      RegExp(
+        r'(what|who|when|where|how|why)\b.*\b(on the web|online|in the news|right now|today)',
+        caseSensitive: false,
+      ),
+      'web',
+    ),
+    (
+      RegExp(
+        r'(read|summarize|open|fetch)\b.*\b(url|page|article|link)',
+        caseSensitive: false,
+      ),
+      'web',
+    ),
     // Calendar intents.
     (
       RegExp(

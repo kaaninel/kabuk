@@ -219,7 +219,10 @@ class DriftQueryExecutor implements QueryExecutor {
       q.limit(builder.limitValue!, offset: builder.offsetValue);
     }
     final rows = await q.get();
-    final results = rows.map(_tripleFromRow).toList();
+    var results = _enforceClauseIntersection(
+      rows.map(_tripleFromRow).toList(),
+      builder,
+    );
 
     // Follow graph traversal: for each follow predicate, collect URI objects
     // from matching triples and fetch their triples as well.
@@ -255,7 +258,11 @@ class DriftQueryExecutor implements QueryExecutor {
     q.limit(1);
     final rows = await q.get();
     if (rows.isEmpty) return null;
-    return _tripleFromRow(rows.first);
+    final result = _enforceClauseIntersection(
+      rows.map(_tripleFromRow).toList(),
+      builder,
+    );
+    return result.isEmpty ? null : result.first;
   }
 
   @override
@@ -277,12 +284,20 @@ class DriftQueryExecutor implements QueryExecutor {
     }
 
     if (builder.follows.isEmpty) {
-      return q.watch().map((rows) => rows.map(_tripleFromRow).toList());
+      return q.watch().map(
+            (rows) => _enforceClauseIntersection(
+              rows.map(_tripleFromRow).toList(),
+              builder,
+            ),
+          );
     }
 
     // With follow directives, perform graph traversal on each emission.
     return q.watch().asyncMap((rows) async {
-      final results = rows.map(_tripleFromRow).toList();
+      final results = _enforceClauseIntersection(
+        rows.map(_tripleFromRow).toList(),
+        builder,
+      );
       final visitedUris = <String>{};
       for (final followPredicate in builder.follows) {
         final urisToFollow = results
@@ -329,47 +344,56 @@ class DriftQueryExecutor implements QueryExecutor {
       if (builder.objectTypeFilter != null) {
         expr = expr & t.objectType.equals(builder.objectTypeFilter!.name);
       }
-      for (final clause in builder.clauses) {
-        if (clause.equals != null) {
-          expr =
-              expr &
-              t.predicate.equals(clause.predicate) &
-              (t.objectString.equals(clause.equals!) |
-                  t.objectUri.equals(clause.equals!));
-        }
-        if (clause.contains != null) {
-          expr =
-              expr &
-              t.predicate.equals(clause.predicate) &
-              (t.objectString.like('%${clause.contains!}%') |
-                  t.objectUri.like('%${clause.contains!}%'));
-        }
-        if (clause.greaterThan != null) {
-          final gt = clause.greaterThan!;
-          final gtInt = int.tryParse(gt);
-          final gtReal = double.tryParse(gt);
-          Expression<bool> gtExpr = t.objectString.isBiggerThanValue(gt);
-          if (gtInt != null) {
-            gtExpr = gtExpr | t.objectInt.isBiggerThanValue(gtInt);
+      // Clauses are OR-ed at the row level (a row carries one predicate) and
+      // AND-ed with the top-level filters. The subject-level AND across
+      // clause predicates is enforced afterwards via
+      // [_enforceClauseIntersection].
+      if (builder.clauses.isNotEmpty) {
+        Expression<bool> clauseOr = const Constant(false);
+        for (final clause in builder.clauses) {
+          Expression<bool> clauseExpr =
+              t.predicate.equals(clause.predicate);
+          if (clause.equals != null) {
+            clauseExpr =
+                clauseExpr &
+                (t.objectString.equals(clause.equals!) |
+                    t.objectUri.equals(clause.equals!));
           }
-          if (gtReal != null) {
-            gtExpr = gtExpr | t.objectReal.isBiggerThanValue(gtReal);
+          if (clause.contains != null) {
+            clauseExpr =
+                clauseExpr &
+                (t.objectString.like('%${clause.contains!}%') |
+                    t.objectUri.like('%${clause.contains!}%'));
           }
-          expr = expr & t.predicate.equals(clause.predicate) & gtExpr;
+          if (clause.greaterThan != null) {
+            final gt = clause.greaterThan!;
+            final gtInt = int.tryParse(gt);
+            final gtReal = double.tryParse(gt);
+            Expression<bool> gtExpr = t.objectString.isBiggerThanValue(gt);
+            if (gtInt != null) {
+              gtExpr = gtExpr | t.objectInt.isBiggerThanValue(gtInt);
+            }
+            if (gtReal != null) {
+              gtExpr = gtExpr | t.objectReal.isBiggerThanValue(gtReal);
+            }
+            clauseExpr = clauseExpr & gtExpr;
+          }
+          if (clause.lessThan != null) {
+            final lt = clause.lessThan!;
+            final ltInt = int.tryParse(lt);
+            final ltReal = double.tryParse(lt);
+            Expression<bool> ltExpr = t.objectString.isSmallerThanValue(lt);
+            if (ltInt != null) {
+              ltExpr = ltExpr | t.objectInt.isSmallerThanValue(ltInt);
+            }
+            if (ltReal != null) {
+              ltExpr = ltExpr | t.objectReal.isSmallerThanValue(ltReal);
+            }
+            clauseExpr = clauseExpr & ltExpr;
+          }
+          clauseOr = clauseOr | clauseExpr;
         }
-        if (clause.lessThan != null) {
-          final lt = clause.lessThan!;
-          final ltInt = int.tryParse(lt);
-          final ltReal = double.tryParse(lt);
-          Expression<bool> ltExpr = t.objectString.isSmallerThanValue(lt);
-          if (ltInt != null) {
-            ltExpr = ltExpr | t.objectInt.isSmallerThanValue(ltInt);
-          }
-          if (ltReal != null) {
-            ltExpr = ltExpr | t.objectReal.isSmallerThanValue(ltReal);
-          }
-          expr = expr & t.predicate.equals(clause.predicate) & ltExpr;
-        }
+        expr = expr & clauseOr;
       }
       return expr;
     });
@@ -455,6 +479,10 @@ class DriftQueryExecutor implements QueryExecutor {
               'predicate' => t.predicate,
               'createdAt' => t.createdAt,
               'updatedAt' => t.updatedAt,
+              // Arbitrary predicate URIs cannot be ordered across rows in a
+              // single-table query (the value lives on a different row than
+              // the filtered row). Fall back to the row's own created-at;
+              // typed list helpers (e.g. listArticles) sort in Dart instead.
               _ => t.createdAt,
             };
             return o.descending
@@ -464,6 +492,75 @@ class DriftQueryExecutor implements QueryExecutor {
         }).toList(),
       );
     }
+  }
+
+  /// Filters [rows] to subjects that match *all* distinct clause predicates.
+  ///
+  /// Clauses are OR-ed at the row level (a single row can only carry one
+  /// predicate), so the subject-level conjunction must be enforced here:
+  /// a subject must appear in at least one row per distinct clause predicate.
+  List<model.Triple> _enforceClauseIntersection(
+    List<model.Triple> rows,
+    QueryBuilder builder,
+  ) {
+    final clauses = builder.clauses;
+    if (clauses.length < 2) return rows;
+    final predicates = clauses.map((c) => c.predicate).toSet();
+    if (predicates.length < 2) return rows;
+
+    final matched = <String, Set<String>>{};
+    for (final row in rows) {
+      for (final clause in clauses) {
+        if (row.predicate == clause.predicate &&
+            _rowMatchesClause(row, clause)) {
+          matched.putIfAbsent(row.subject, () => {}).add(clause.predicate);
+        }
+      }
+    }
+    return rows
+        .where((r) {
+          final m = matched[r.subject];
+          return m != null && m.containsAll(predicates);
+        })
+        .toList();
+  }
+
+  /// Whether a single [row] satisfies a [clause] (ignoring its predicate).
+  bool _rowMatchesClause(model.Triple row, QueryClause clause) {
+    if (clause.equals != null && row.objectValue == clause.equals) return true;
+    if (clause.contains != null &&
+        row.objectValue.toLowerCase().contains(clause.contains!.toLowerCase())) {
+      return true;
+    }
+    if (clause.greaterThan != null) {
+      final gt = clause.greaterThan!;
+      final gtInt = int.tryParse(gt);
+      final gtReal = double.tryParse(gt);
+      if (gtInt != null) {
+        final v = int.tryParse(row.objectValue);
+        if (v != null && v > gtInt) return true;
+      }
+      if (gtReal != null) {
+        final v = double.tryParse(row.objectValue);
+        if (v != null && v > gtReal) return true;
+      }
+      if (row.objectValue.compareTo(gt) > 0) return true;
+    }
+    if (clause.lessThan != null) {
+      final lt = clause.lessThan!;
+      final ltInt = int.tryParse(lt);
+      final ltReal = double.tryParse(lt);
+      if (ltInt != null) {
+        final v = int.tryParse(row.objectValue);
+        if (v != null && v < ltInt) return true;
+      }
+      if (ltReal != null) {
+        final v = double.tryParse(row.objectValue);
+        if (v != null && v < ltReal) return true;
+      }
+      if (row.objectValue.compareTo(lt) < 0) return true;
+    }
+    return false;
   }
 }
 

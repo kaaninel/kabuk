@@ -15,6 +15,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/widgets.dart' show IconData;
+import 'package:kabuk/plugins/channel.dart';
 import 'package:kabuk/plugins/content_item.dart';
 import 'package:kabuk/plugins/context.dart';
 import 'package:kabuk/plugins/plugin.dart';
@@ -144,6 +145,9 @@ class FourchanPlugin implements ContentPlugin {
       return ResolvedChannel(
         entityUri: '4chan://$board',
         title: '/$board/',
+        sourcePluginId: id,
+        externalEntityId: board,
+        entityType: ChannelEntityType.board,
       );
     }
 

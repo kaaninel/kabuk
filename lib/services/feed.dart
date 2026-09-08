@@ -5,6 +5,7 @@
 /// and storing feed content in the knowledge store.
 library;
 
+import 'package:kabuk/services/content_source.dart';
 import 'package:meta/meta.dart';
 
 /// A single item from a content feed.
@@ -84,6 +85,9 @@ enum FeedSourceType {
 
   /// Usenet indexer search results (Newznab API).
   usenet,
+
+  /// DuckDuckGo search results.
+  duckduckgo,
 }
 
 /// Abstract interface for a content feed source.
@@ -137,4 +141,11 @@ abstract interface class FeedService {
 
   /// Validates a feed URL and returns the detected source type, or `null`.
   Future<FeedSourceType?> detectType(String url);
+
+  /// Returns a unified [ContentSource] for the given [type].
+  ///
+  /// The returned source supports cursor pagination through
+  /// [ContentSource.fetchPage]. This is the adapter used by the feed refresh
+  /// engine and the unified channel page.
+  ContentSource sourceFor(FeedSourceType type);
 }

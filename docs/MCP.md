@@ -2,7 +2,7 @@
 
 > Model Context Protocol (MCP) support for extending the local LLM with external tools and data sources.
 
-> **⚠️ STATUS (Aug 2026): DESIGN ONLY — NOT IMPLEMENTED.** No MCP code exists in `lib/`. There is no `McpClient` interface, no transport, and no settings UI. The checklist below is a plan, not a record of work. Either implement a minimal client (see `docs/ROADMAP.md` Phase 6) or archive this document.
+> **⚠️ STATUS (Aug 2026): In-process channel layer exists; external MCP transport is NOT implemented.** `lib/services/channels.dart` implements the MCP-shaped tool model in-process — `ChannelServer`, `ChannelTool`, `ChannelCallResult`, `ChannelRegistry` — with servers for `web` (`web_search`/`web_fetch`), `reddit`, `nostr`, `rss`, and `usenet`, wired into the `web` agent and omnibar. What remains from the plan below is the **wire transport** (stdio/HTTP JSON-RPC) for connecting *external* MCP servers, plus the settings UI.
 
 ## What is MCP?
 

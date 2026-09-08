@@ -10,16 +10,19 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/widgets.dart' show IconData;
+import 'package:kabuk/platform/shared/reddit_api.dart';
+import 'package:kabuk/plugins/channel.dart';
 import 'package:kabuk/plugins/content_item.dart';
 import 'package:kabuk/plugins/context.dart';
 import 'package:kabuk/plugins/plugin.dart';
-
 
 /// A [ContentPlugin] for Reddit.
 ///
 /// Uses Reddit's public JSON API (no OAuth) to fetch posts from
 /// subreddits, search across all of Reddit, resolve Reddit URLs, and
-/// surface trending content from r/popular.
+/// surface trending content from r/popular. Requests go through the shared
+/// Reddit API helpers (descriptive User-Agent + host fallback) so a 403 on
+/// one host doesn't break the plugin.
 ///
 /// ```dart
 /// final plugin = RedditPlugin();
@@ -32,15 +35,8 @@ class RedditPlugin implements ContentPlugin {
 
   late PluginContext _ctx;
 
-  /// User-Agent header sent with every request.
-  static const _userAgent = 'kabuk:1.0 (by /u/kabukapp)';
-
   /// Common HTTP headers for Reddit JSON API requests.
-  static const _headers = <String, String>{
-    'Accept': 'application/json',
-    'User-Agent': _userAgent,
-    'Cookie': 'over18=1',
-  };
+  static const _headers = kRedditHeaders;
 
   /// Hosts recognised as Reddit domains.
   static const _redditHosts = {
@@ -134,6 +130,9 @@ class RedditPlugin implements ContentPlugin {
         entityUri: 'reddit:subreddit:$sub',
         title: 'r/$sub',
         imageUrl: null,
+        sourcePluginId: id,
+        externalEntityId: sub,
+        entityType: ChannelEntityType.subreddit,
       );
     }
 
@@ -146,10 +145,12 @@ class RedditPlugin implements ContentPlugin {
       final postId = postMatch.group(2)!;
       // Fetch the single post to build a ContentItem.
       try {
-        final jsonUrl = 'https://www.reddit.com$path.json?raw_json=1';
-        final response = await _ctx.httpClient.get(
-          Uri.parse(jsonUrl),
-          headers: _headers,
+        final response = await fetchRedditJson(
+          get: (uri) async {
+            final res = await _ctx.httpClient.get(uri, headers: _headers);
+            return (statusCode: res.statusCode, body: res.body);
+          },
+          pathOrUrl: '$path.json?raw_json=1',
         );
         if (response.statusCode == 200) {
           final json = jsonDecode(response.body);
@@ -238,9 +239,12 @@ class RedditPlugin implements ContentPlugin {
   /// [ContentItem] objects. Returns an empty list on error.
   Future<List<ContentItem>> _fetchListing(String url, String label) async {
     try {
-      final response = await _ctx.httpClient.get(
-        Uri.parse(url),
-        headers: _headers,
+      final response = await fetchRedditJson(
+        get: (uri) async {
+          final res = await _ctx.httpClient.get(uri, headers: _headers);
+          return (statusCode: res.statusCode, body: res.body);
+        },
+        pathOrUrl: url,
       );
       if (response.statusCode != 200) {
         _ctx.log(

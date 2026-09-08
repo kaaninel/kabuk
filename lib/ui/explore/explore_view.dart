@@ -7,6 +7,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:developer' as dev;
 import 'dart:math' as math;
 
@@ -16,10 +17,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kabuk/config/namespaces.dart';
 import 'package:kabuk/config/providers.dart';
-import 'package:kabuk/knowledge/store.dart';
 import 'package:kabuk/knowledge/triple.dart';
 import 'package:kabuk/knowledge/types/article.dart';
 import 'package:kabuk/services/feed.dart';
+import 'package:kabuk/services/feed_refresh.dart';
 import 'package:kabuk/services/media_cache.dart';
 import 'package:kabuk/ui/explore/browse_session.dart';
 import 'package:kabuk/ui/explore/classic_web_view.dart';
@@ -69,7 +70,7 @@ final articleTypeTriplesProvider = StreamProvider<List<Triple>>((ref) {
 final articlesProvider = FutureProvider<List<ArticleData>>((ref) async {
   ref.watch(articleTypeTriplesProvider);
   final store = ref.watch(knowledgeStoreProvider);
-  final all = await store.listArticles(limit: 200);
+  final all = await store.listArticles(limit: 500);
   // Deduplicate by URL — the same content can be stored under different
   // feedSource URIs if subscriptions were recreated between sessions.
   final seenUrls = <String>{};
@@ -114,6 +115,74 @@ final hideNsfwProvider = StateProvider<bool>((ref) => true);
 
 /// Feed source URIs that are temporarily muted (hidden from All view).
 final mutedSourcesProvider = StateProvider<Set<String>>((ref) => {});
+
+// -----------------------------------------------------------------------------
+// Persisted feed filters
+//
+// The content-filter state lives in in-memory providers for reactive updates,
+// but is mirrored to the knowledge store (kabuk:Preference entities) so it
+// survives restarts.
+// -----------------------------------------------------------------------------
+
+/// Preference key for the blocked-keywords list (JSON-encoded).
+const String kFeedFilterBlockedKeywords = 'feed.filters.blockedKeywords';
+
+/// Preference key for the hide-NSFW toggle.
+const String kFeedFilterHideNsfw = 'feed.filters.hideNsfw';
+
+/// Preference key for the muted-source URI list (JSON-encoded).
+const String kFeedFilterMutedSources = 'feed.filters.mutedSources';
+
+/// Loads persisted feed filters into their providers.
+///
+/// Call once at startup (Explore view mount) so user-selected filters survive
+/// app restarts.
+Future<void> loadPersistedFeedFilters(WidgetRef ref) async {
+  final store = ref.read(knowledgeStoreProvider);
+  try {
+    final kw = await store.getPreference(kFeedFilterBlockedKeywords);
+    if (kw != null && kw.isNotEmpty) {
+      final list = (jsonDecode(kw) as List).cast<String>();
+      ref.read(blockedKeywordsProvider.notifier).state = list;
+    }
+  } on Object {
+    // Corrupt preference — ignore.
+  }
+  try {
+    final nsfw = await store.getPreference(kFeedFilterHideNsfw);
+    if (nsfw != null) {
+      ref.read(hideNsfwProvider.notifier).state = nsfw == 'true';
+    }
+  } on Object {
+    // Ignore.
+  }
+  try {
+    final muted = await store.getPreference(kFeedFilterMutedSources);
+    if (muted != null && muted.isNotEmpty) {
+      final list = (jsonDecode(muted) as List).cast<String>();
+      ref.read(mutedSourcesProvider.notifier).state = list.toSet();
+    }
+  } on Object {
+    // Ignore.
+  }
+}
+
+/// Persists the current feed-filter state to the knowledge store.
+Future<void> persistFeedFilters(WidgetRef ref) async {
+  final store = ref.read(knowledgeStoreProvider);
+  await store.setPreference(
+    kFeedFilterBlockedKeywords,
+    jsonEncode(ref.read(blockedKeywordsProvider)),
+  );
+  await store.setPreference(
+    kFeedFilterHideNsfw,
+    ref.read(hideNsfwProvider).toString(),
+  );
+  await store.setPreference(
+    kFeedFilterMutedSources,
+    jsonEncode(ref.read(mutedSourcesProvider).toList()),
+  );
+}
 
 /// Applies content filters to an article list.
 List<ArticleData> applyContentFilters(
@@ -217,156 +286,40 @@ final _feedRefreshingProvider = StateProvider<bool>((ref) => false);
 /// Fetches new articles from all subscribed feeds concurrently.
 ///
 /// Each feed is fetched in parallel. New articles are persisted to
-/// Fetches new articles from all subscribed feeds concurrently.
-///
-/// Each feed is fetched in parallel. New articles are persisted to
 /// the knowledge store. The caller should invalidate [articlesProvider]
 /// after this returns to reflect new content in the UI.
 ///
-/// Per-subscription [FeedSubscriptionData.refreshInterval] is respected:
-/// feeds that were fetched within their interval are skipped.
+/// Per-subscription [FeedSubscriptionData.refreshInterval] is respected
+/// when [force] is false: feeds that were fetched within their interval
+/// are skipped.
+///
+/// When [onlyUri] is provided, only that subscription is refreshed.
 ///
 /// Reddit feeds use the current [feedSortProvider] value to choose the
 /// appropriate server-side sort endpoint (`/new.json`, `/hot.json`, etc.).
-Future<int> refreshAllFeeds(WidgetRef ref, {bool force = false}) async {
-  final store = ref.read(knowledgeStoreProvider);
-  final feedService = ref.read(feedServiceProvider);
-  final subs = await store.listFeedSubscriptions();
-  if (subs.isEmpty) return 0;
-
-  // Map current sort mode to a Reddit-compatible sort endpoint name.
-  final sort = ref.read(feedSortProvider);
-  final redditSort = switch (sort) {
-    FeedSort.newest => 'new',
-    FeedSort.hot => 'hot',
-    FeedSort.top => 'top',
-  };
-
-  // Fetch all feeds concurrently.
-  final futures = <Future<List<ArticleData>>>[];
-  for (final sub in subs) {
-    if (sub.feedUrl == null) continue;
-    // Web page subscriptions are one-time AI-parsed — skip automatic refresh.
-    if (sub.feedType == 'web') continue;
-    futures.add(
-      _fetchFeed(store, feedService, sub,
-          redditSort: redditSort, force: force),
-    );
-  }
-
-  final results = await Future.wait(futures);
-  return results.expand((list) => list).length;
-}
-
-/// Fetches a single feed subscription and returns new (deduplicated) articles.
 ///
-/// Respects [FeedSubscriptionData.refreshInterval]: if the feed was fetched
-/// more recently than its interval, the fetch is skipped and an empty list
-/// is returned to avoid redundant network requests.
-Future<List<ArticleData>> _fetchFeed(
-  KnowledgeStore store,
-  FeedService feedService,
-  FeedSubscriptionData sub, {
-  String redditSort = 'hot',
+/// This is a thin wrapper around [FeedRefreshEngine] — the single shared
+/// implementation of the refresh pipeline.
+Future<FeedRefreshSummary> refreshAllFeeds(
+  WidgetRef ref, {
   bool force = false,
+  String? onlyUri,
 }) async {
-  // Skip if the feed was fetched more recently than its configured interval.
-  if (!force) {
-    final last = sub.lastFetched;
-    if (last != null) {
-      final age = DateTime.now().difference(last);
-      if (age < Duration(minutes: sub.refreshInterval)) return [];
-    }
-  }
-
-  try {
-    final sourceType = FeedSourceType.values.firstWhere(
-      (t) => t.name == sub.feedType,
-      orElse: () => FeedSourceType.rss,
-    );
-
-    // For Reddit sources, inject the server-side sort into the URL.
-    final fetchUrl = sourceType == FeedSourceType.reddit && sub.feedUrl != null
-        ? _buildRedditSortUrl(sub.feedUrl!, redditSort)
-        : sub.feedUrl!;
-
-    final items = await feedService.fetchItems(fetchUrl, type: sourceType);
-    // Deduplicate globally by URL — prevents duplicates when a subscription
-    // is recreated with a new feedSource URI between sessions.
-    final allExisting = await store.listArticles(limit: 2000);
-    final existingByUrl = {
-      for (final a in allExisting)
-        if (a.url != null) a.url!: a,
-    };
-
-    final newArticles = <ArticleData>[];
-    for (final item in items) {
-      final cached = existingByUrl[item.url];
-      if (cached != null) {
-        // For Nostr items, patch stale titles (e.g. bare hashtag from mirror bots).
-        final isNostr = item.url.startsWith('nostr:');
-        if (isNostr && cached.name != item.title && item.title.isNotEmpty) {
-          await store.updateArticleTitleAndDescription(
-            cached.uri,
-            title: item.title,
-            description: item.description,
-          );
-        }
-        continue;
-      }
-      final uri = await store.createArticle(
-        title: item.title,
-        description: item.description,
-        url: item.url,
-        videoUrl: item.videoUrl,
-        author: item.author,
-        image: item.imageUrl,
-        feedSource: sub.uri,
-        datePublished: item.datePublished,
-        tags: item.categories,
-        galleryImages: item.galleryImages,
-      );
-      newArticles.add(
-        ArticleData(
-          uri: uri,
-          name: item.title,
-          description: item.description,
-          url: item.url,
-          videoUrl: item.videoUrl,
-          author: item.author,
-          image: item.imageUrl,
-          feedSource: sub.uri,
-          datePublished: item.datePublished,
-          tags: item.categories,
-          galleryImages: item.galleryImages,
-        ),
-      );
-    }
-    await store.updateFeedLastFetched(sub.uri);
-    return newArticles;
-  } on Object catch (e) {
-    dev.log(
-      'Feed refresh failed for ${sub.uri}: $e',
-      name: 'Explore',
-      error: e,
-    );
-    return [];
-  }
+  final engine = _buildRefreshEngine(ref);
+  return engine.refreshAll(force: force, onlyUri: onlyUri);
 }
 
-/// Builds a Reddit JSON URL with the specified sort endpoint.
-///
-/// Replaces any existing sort path (e.g. `/hot.json`) with [sort],
-/// so `r/flutter` with sort `'new'` becomes
-/// `https://www.reddit.com/r/flutter/new.json?limit=50&raw_json=1`.
-String _buildRedditSortUrl(String baseUrl, String sort) {
-  // Strip .json suffix and any previous sort path component.
-  var url = baseUrl
-      .replaceAll(RegExp(r'/\w+\.json(\?.*)?$'), '') // remove /XXX.json[?...]
-      .replaceAll(RegExp(r'\?.*$'), '') // remove stray query strings
-      .trimRight();
-  if (url.endsWith('/')) url = url.substring(0, url.length - 1);
-  return '$url/$sort.json?limit=50&raw_json=1';
+/// Builds a [FeedRefreshEngine] wired to the current providers.
+FeedRefreshEngine _buildRefreshEngine(WidgetRef ref) {
+  return FeedRefreshEngine(
+    store: ref.read(knowledgeStoreProvider),
+    feedService: ref.read(feedServiceProvider),
+    redditSort: () => switch (ref.read(feedSortProvider)) {
+      FeedSort.newest => 'new',
+      FeedSort.hot => 'hot',
+      FeedSort.top => 'top',
+    },
+  );
 }
 
 // =============================================================================
@@ -409,6 +362,15 @@ class _ExploreViewState extends ConsumerState<ExploreView>
   /// provider errors so the feed never flashes an error screen on refresh.
   List<ArticleData>? _cachedArticles;
 
+  /// Outcome of the last refresh pass — drives the error banner.
+  FeedRefreshSummary? _lastRefreshSummary;
+
+  /// Whether the user has dismissed the current refresh-error banner.
+  bool _dismissedRefreshError = false;
+
+  /// Guards filter hydration so it runs exactly once per app session.
+  bool _didLoadFilters = false;
+
   /// URI of the article the user last opened; used to scroll back on return.
   String? _lastOpenedUri;
 
@@ -436,6 +398,11 @@ class _ExploreViewState extends ConsumerState<ExploreView>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Hydrate persisted content filters once.
+    if (!_didLoadFilters) {
+      _didLoadFilters = true;
+      unawaited(loadPersistedFeedFilters(ref));
+    }
     // Auto-refresh feeds on first mount (after frame so providers are ready).
     WidgetsBinding.instance.addPostFrameCallback((_) => _autoRefresh());
     // Background refresh every 30 minutes while the view is alive.
@@ -487,7 +454,9 @@ class _ExploreViewState extends ConsumerState<ExploreView>
   /// Fetches the next page of results for the currently visible feed.
   ///
   /// For Reddit sources, uses the `after` cursor from the last fetch.
-  /// For non-Reddit sources (RSS / Nostr) there is nothing to page through.
+  /// For non-Reddit sources (RSS / Nostr / 4chan / web) the next page is
+  /// read from the knowledge store via a `before` date cursor, so no feed is
+  /// hard-capped at the initial page size.
   Future<void> _loadMore() async {
     if (_isLoadingMore || !mounted) return;
     final selectedFeed = ref.read(activeExploreTabProvider)?.selectedFeed;
@@ -506,59 +475,80 @@ class _ExploreViewState extends ConsumerState<ExploreView>
               .toList()
         : (sub?.feedType == 'reddit' ? [sub!] : <FeedSubscriptionData>[]);
 
-    if (redditSubs.isEmpty) return; // no paginatable source
-
     setState(() => _isLoadingMore = true);
     try {
       final store = ref.read(knowledgeStoreProvider);
       final feedService = ref.read(feedServiceProvider);
       final sort = ref.read(feedSortProvider);
-      final redditSort = switch (sort) {
-        FeedSort.newest => 'new',
-        FeedSort.hot => 'hot',
-        FeedSort.top => 'top',
-      };
 
-      for (final sub in redditSubs) {
-        final baseUrl = _buildRedditSortUrl(sub.feedUrl!, redditSort);
-        final cursor = _afterTokens[sub.uri];
-        final result = await feedService.fetchItemsPage(
-          baseUrl,
-          type: FeedSourceType.reddit,
-          cursor: cursor,
-        );
-        // Persist new articles and update the displayed list.
-        for (final item in result.items) {
-          if (_displayedUris.contains(item.url)) continue;
-          final uri = await store.createArticle(
-            title: item.title,
-            description: item.description,
-            url: item.url,
-            videoUrl: item.videoUrl,
-            author: item.author,
-            image: item.imageUrl,
-            feedSource: sub.uri,
-            datePublished: item.datePublished,
-            tags: item.categories,
-            galleryImages: item.galleryImages,
+      // Reddit → network cursor pagination (keeps server-side `after`).
+      if (redditSubs.isNotEmpty) {
+        final redditSort = switch (sort) {
+          FeedSort.newest => 'new',
+          FeedSort.hot => 'hot',
+          FeedSort.top => 'top',
+        };
+        for (final rsub in redditSubs) {
+          final baseUrl = buildRedditSortUrl(rsub.feedUrl!, redditSort);
+          final cursor = _afterTokens[rsub.uri];
+          final result = await feedService.fetchItemsPage(
+            baseUrl,
+            type: FeedSourceType.reddit,
+            cursor: cursor,
           );
-          final article = ArticleData(
-            uri: uri,
-            name: item.title,
-            description: item.description,
-            url: item.url,
-            videoUrl: item.videoUrl,
-            author: item.author,
-            image: item.imageUrl,
-            feedSource: sub.uri,
-            datePublished: item.datePublished,
-            tags: item.categories,
-            galleryImages: item.galleryImages,
-          );
-          _displayedArticles.add(article);
-          _displayedUris.add(uri);
+          // Persist new articles and update the displayed list.
+          for (final item in result.items) {
+            if (_displayedUris.contains(item.url)) continue;
+            final uri = await store.createArticle(
+              title: item.title,
+              description: item.description,
+              url: item.url,
+              videoUrl: item.videoUrl,
+              author: item.author,
+              image: item.imageUrl,
+              feedSource: rsub.uri,
+              datePublished: item.datePublished,
+              tags: item.categories,
+              galleryImages: item.galleryImages,
+            );
+            final article = ArticleData(
+              uri: uri,
+              name: item.title,
+              description: item.description,
+              url: item.url,
+              videoUrl: item.videoUrl,
+              author: item.author,
+              image: item.imageUrl,
+              feedSource: rsub.uri,
+              datePublished: item.datePublished,
+              tags: item.categories,
+              galleryImages: item.galleryImages,
+            );
+            _displayedArticles.add(article);
+            _displayedUris.add(uri);
+          }
+          _afterTokens[rsub.uri] = result.nextCursor;
         }
-        _afterTokens[sub.uri] = result.nextCursor;
+      } else {
+        // Non-Reddit → next page from the knowledge store. Paginate by the
+        // oldest date currently displayed (a `before` cursor).
+        final lastDate = _oldestDisplayedDate();
+        final filters = ref.read(blockedKeywordsProvider);
+        final hideNsfw = ref.read(hideNsfwProvider);
+        final muted = ref.read(mutedSourcesProvider);
+        final more = await store.listArticles(
+          limit: 100,
+          feedSource: sub?.uri,
+          before: lastDate,
+          keyword: filters.isEmpty ? null : filters.join(' '),
+          hideNsfw: hideNsfw,
+          mutedSources: muted.toList(),
+        );
+        for (final article in more) {
+          if (_displayedUris.add(article.uri)) {
+            _displayedArticles.add(article);
+          }
+        }
       }
     } on Object catch (e) {
       dev.log('Load more failed: $e', name: 'Explore', error: e);
@@ -578,6 +568,20 @@ class _ExploreViewState extends ConsumerState<ExploreView>
     } finally {
       _refreshFuture = null;
     }
+  }
+
+  /// Returns the oldest `datePublished` currently in the displayed list, or
+  /// `null` when the list is empty. Used as the pagination cursor for
+  /// store-based load-more.
+  DateTime? _oldestDisplayedDate() {
+    if (_displayedArticles.isEmpty) return null;
+    DateTime? oldest;
+    for (final a in _displayedArticles) {
+      final d = a.datePublished;
+      if (d == null) continue;
+      if (oldest == null || d.isBefore(oldest)) oldest = d;
+    }
+    return oldest;
   }
 
   /// Scrolls to the article that was last viewed, if it is still in the list.
@@ -662,12 +666,17 @@ class _ExploreViewState extends ConsumerState<ExploreView>
     ref.read(_feedRefreshingProvider.notifier).state = true;
     try {
       if (online) {
-        // Refresh traditional feeds and Nostr in parallel.
-        // Force bypasses per-feed refresh interval so stale feeds get retried.
-        await Future.wait([
-          refreshAllFeeds(ref, force: true),
-          refreshNostrFeed(ref, limit: 30),
-        ]);
+        // Refresh traditional feeds first, then Nostr. The Nostr pass is
+        // bounded and runs after the feed pass so the feed renders without
+        // waiting on relay streams.
+        final summary = await refreshAllFeeds(ref, force: true);
+        _lastRefreshSummary = summary;
+        _dismissedRefreshError = false;
+        try {
+          summary.nostrNewCount = await refreshNostrFeed(ref, limit: 30);
+        } on Object catch (e) {
+          summary.nostrError = e;
+        }
         _lastRefreshedAt = DateTime.now();
       }
       // Prune stale articles regardless of connectivity — keeps the store lean.
@@ -865,6 +874,15 @@ class _ExploreViewState extends ConsumerState<ExploreView>
                   ref.read(exploreTabsProvider.notifier).updateTab(
                     tab.id,
                     (t) => t.copyWith(selectedFeed: uri),
+                  );
+                }
+                // Fetch-on-select: refresh the chosen feed so its chip is not
+                // empty when the user switches to it.
+                if (uri != null && uri != 'nostr:global') {
+                  unawaited(
+                    refreshAllFeeds(ref, onlyUri: uri).then((_) {
+                      if (mounted) ref.invalidate(articlesProvider);
+                    }),
                   );
                 }
               },
@@ -1356,12 +1374,21 @@ class _ExploreViewState extends ConsumerState<ExploreView>
           subs.where((s) => s.uri == selectedFeed).firstOrNull?.feedUrl,
     );
 
+    // URIs of all Nostr subscriptions — used so the "Nostr" chip matches both
+    // global notes (feedSource 'nostr:global') and hashtag-subscription
+    // articles (feedSource = subscription URI).
+    final nostrSubUris = (subsAsync.valueOrNull ?? const [])
+        .where((s) => s.feedType == 'nostr')
+        .map((s) => s.uri)
+        .toSet();
+
     var articles = switch (selectedFeed) {
       null => allArticles,
       'nostr:global' =>
-        allArticles
-            .where((a) => a.feedSource?.startsWith('nostr') ?? false)
-            .toList(),
+        allArticles.where((a) {
+          final fs = a.feedSource ?? '';
+          return fs.startsWith('nostr') || nostrSubUris.contains(fs);
+        }).toList(),
       _ when selectedFeedType == 'web' && selectedFeedUrl != null =>
         allArticles.where((a) {
           if (a.feedSource == selectedFeed) return true;
@@ -1407,6 +1434,11 @@ class _ExploreViewState extends ConsumerState<ExploreView>
         slivers: [
           // Offline notice — shown whenever there is no network connection.
           if (isOffline) _buildOfflineBanner(),
+          // Refresh failure banner — surfaces per-feed errors instead of
+          // silently going stale.
+          if (!_dismissedRefreshError &&
+              (_lastRefreshSummary?.hasFailures ?? false))
+            _buildRefreshErrorBanner(_lastRefreshSummary!),
           // Empty filter state.
           if (articles.isEmpty)
             SliverFillRemaining(
@@ -1670,6 +1702,8 @@ class _ExploreViewState extends ConsumerState<ExploreView>
           ref.read(blockedKeywordsProvider.notifier).state = keywords;
           ref.read(hideNsfwProvider.notifier).state = nsfw;
           ref.read(mutedSourcesProvider.notifier).state = muted;
+          // Persist so filters survive restarts.
+          unawaited(persistFeedFilters(ref));
         },
       ),
     );
@@ -1750,6 +1784,63 @@ class _ExploreViewState extends ConsumerState<ExploreView>
       child: Padding(
         padding: EdgeInsets.fromLTRB(12, 6, 12, 0),
         child: _OfflineBanner(),
+      ),
+    );
+  }
+
+  /// Banner listing feeds that failed during the last refresh.
+  ///
+  /// Surfaces rate limits (Reddit 429/403), dead hosts, and timeout errors
+  /// so a failed refresh is never mistaken for "no new content".
+  SliverToBoxAdapter _buildRefreshErrorBanner(FeedRefreshSummary summary) {
+    final failures = summary.failures;
+    final parts = <String>[
+      for (final f in failures) f.name,
+      if (summary.nostrError != null) 'Nostr',
+    ];
+    final label = 'Couldn\'t refresh: ${parts.join(', ')}';
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: KabukTheme.warmAccent.withAlpha(18),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: KabukTheme.warmAccent.withAlpha(60)),
+          ),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.warning_amber_rounded,
+                size: 15,
+                color: KabukTheme.warmAccent,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.kabukTextSecondary,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              GestureDetector(
+                onTap: () {
+                  setState(() => _dismissedRefreshError = true);
+                },
+                child: Icon(
+                  Icons.close_rounded,
+                  size: 16,
+                  color: context.kabukTextTertiary,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

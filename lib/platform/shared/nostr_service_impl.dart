@@ -449,10 +449,15 @@ class SharedNostrService implements NostrService {
 
     switch (msg) {
       case RelayEventMessage(:final subscriptionId, :final event):
-        debugPrint(
-          '[Nostr] EVENT from $relayUrl kind=${event.kind} subId=$subscriptionId hasListener=${_subscriptions.containsKey(subscriptionId)}',
-        );
-        _subscriptions[subscriptionId]?.add(event);
+        // Only log events that actually have a listener — otherwise every
+        // relay push for every connected relay floods the console even when
+        // nobody is consuming the subscription.
+        if (_subscriptions.containsKey(subscriptionId)) {
+          debugPrint(
+            '[Nostr] EVENT from $relayUrl kind=${event.kind} subId=$subscriptionId',
+          );
+          _subscriptions[subscriptionId]?.add(event);
+        }
       case RelayEoseMessage():
         // End of stored events — no action needed for now.
         break;
@@ -1407,13 +1412,10 @@ class SharedNostrService implements NostrService {
 
       innerSub = sub.listen(
         (event) async {
-          debugPrint(
-            '[Nostr] watchDMs: gift wrap event received id=${event.id.substring(0, 8)}',
-          );
           final dm = await unwrapGiftWrap(event);
           if (dm != null && !controller.isClosed) {
             debugPrint(
-              '[Nostr] watchDMs: unwrapped DM from ${dm.senderPubkey.substring(0, 8)}: ${dm.content.substring(0, dm.content.length.clamp(0, 40))}',
+              '[Nostr] watchDMs: DM from ${dm.senderPubkey.substring(0, 8)}: ${dm.content.substring(0, dm.content.length.clamp(0, 40))}',
             );
             controller.add(dm);
           }

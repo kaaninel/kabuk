@@ -8,6 +8,7 @@
 library;
 
 import 'package:flutter/widgets.dart' show IconData;
+import 'package:kabuk/plugins/channel.dart' show ChannelEntityType;
 import 'package:kabuk/plugins/content_item.dart';
 import 'package:kabuk/plugins/context.dart';
 import 'package:meta/meta.dart';
@@ -154,6 +155,9 @@ class ResolvedChannel extends ResolvedContent {
     required this.entityUri,
     required this.title,
     this.imageUrl,
+    this.sourcePluginId,
+    this.externalEntityId,
+    this.entityType = ChannelEntityType.custom,
   });
 
   /// Knowledge store URI for the resolved channel entity.
@@ -164,6 +168,15 @@ class ResolvedChannel extends ResolvedContent {
 
   /// Optional channel avatar or banner image URL.
   final String? imageUrl;
+
+  /// Which plugin provides this channel's content (null = knowledge-store query).
+  final String? sourcePluginId;
+
+  /// Plugin-specific entity ID for fetching channel content.
+  final String? externalEntityId;
+
+  /// The kind of entity this channel represents.
+  final ChannelEntityType entityType;
 }
 
 /// The plugin does not handle this URL.
